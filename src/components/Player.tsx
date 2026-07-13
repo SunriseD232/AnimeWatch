@@ -5,7 +5,11 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
-import { KODIK_EVENTS, type KodikMessage } from '@/lib/video/kodik-events';
+import {
+  KODIK_EVENTS,
+  parseEpisode,
+  type KodikMessage,
+} from '@/lib/video/kodik-events';
 import type { Translation } from '@/lib/video/types';
 import type { ContentType, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
@@ -64,18 +68,32 @@ export default function Player({
   const [showOtherBanner, setShowOtherBanner] = useState(
     otherEpisode !== null,
   );
+  // Активная серия: может измениться из самого плеера Kodik (внутренняя навигация).
+  const [activeEpisode, setActiveEpisode] = useState(episode);
 
   // Позиция/длительность держим в ref, чтобы не триггерить ререндеры.
   const currentTimeRef = useRef(0);
   const durationRef = useRef<number | null>(null);
   const translationRef = useRef<number | null>(initialTranslationId);
   translationRef.current = translationId;
+  const activeEpisodeRef = useRef(activeEpisode);
+  activeEpisodeRef.current = activeEpisode;
   // Держим playing в ref, чтобы realtime-подписка не пересоздавалась.
   const playingRef = useRef(false);
   playingRef.current = playing;
 
-  const hasNext = episode < total;
-  const hasPrev = episode > 1;
+  // Синхронизируем активную серию при смене маршрута (кнопки «След./Пред.»).
+  useEffect(() => {
+    setActiveEpisode(episode);
+  }, [episode]);
+
+  // При навигации по маршруту сервер отдаёт новый embed — обновляем iframe.
+  useEffect(() => {
+    setEmbedUrl(initialEmbedUrl);
+  }, [initialEmbedUrl]);
+
+  const hasNext = activeEpisode < total;
+  const hasPrev = activeEpisode > 1;
 
   // --- Сохранение прогресса ---------------------------------------------
   const saveProgress = useCallback(
@@ -89,7 +107,7 @@ export default function Player({
         shikimori_id: shikimoriId,
         anime_title: animeTitle,
         poster_url: posterUrl,
-        episode,
+        episode: activeEpisodeRef.current,
         position_seconds: position,
         duration_seconds: durationRef.current,
         translation_id: translationRef.current,
@@ -111,7 +129,7 @@ export default function Player({
         });
       }
     },
-    [isAuthed, contentType, shikimoriId, animeTitle, posterUrl, episode],
+    [isAuthed, contentType, shikimoriId, animeTitle, posterUrl],
   );
 
   // --- Переход к следующей серии по окончании ----------------------------
@@ -128,7 +146,7 @@ export default function Player({
           shikimori_id: shikimoriId,
           anime_title: animeTitle,
           poster_url: posterUrl,
-          episode: episode + 1,
+          episode: activeEpisodeRef.current + 1,
           position_seconds: 5, // > 5, чтобы запись прошла порог
           duration_seconds: null,
           translation_id: translationRef.current,
@@ -136,21 +154,28 @@ export default function Player({
         keepalive: true,
       }).catch(() => {});
     }
-  }, [
-    isAuthed,
-    hasNext,
-    contentType,
-    shikimoriId,
-    animeTitle,
-    posterUrl,
-    episode,
-  ]);
+  }, [isAuthed, hasNext, contentType, shikimoriId, animeTitle, posterUrl]);
 
   // --- Подписка на события Kodik через postMessage -----------------------
   useEffect(() => {
     const handler = (e: MessageEvent) => {
       const data = e.data as KodikMessage | undefined;
       if (typeof data !== 'object' || !data?.key) return;
+
+      // Смена серии внутри плеера Kodik — чтобы прогресс писался под новой серией.
+      if (
+        data.key === KODIK_EVENTS.CURRENT_EPISODE ||
+        data.key === KODIK_EVENTS.VIDEO_STARTED
+      ) {
+        const ep = parseEpisode(data.value);
+        if (ep != null && ep >= 1 && ep !== activeEpisodeRef.current) {
+          currentTimeRef.current = 0;
+          durationRef.current = null;
+          activeEpisodeRef.current = ep;
+          setActiveEpisode(ep);
+          setEnded(false);
+        }
+      }
 
       switch (data.key) {
         case KODIK_EVENTS.TIME_UPDATE:
@@ -257,7 +282,7 @@ export default function Player({
     try {
       const params = new URLSearchParams({
         [isCinema ? 'kinopoiskId' : 'shikimoriId']: String(shikimoriId),
-        episode: String(episode),
+        episode: String(activeEpisodeRef.current),
         translationId: String(nextId),
         startFrom: String(Math.floor(currentTimeRef.current)),
       });
@@ -286,7 +311,7 @@ export default function Player({
           </Link>
           {showEpisode && (
             <p className="text-sm text-gray-400">
-              Серия {episode} из {total}
+              Серия {activeEpisode} из {total}
             </p>
           )}
         </div>
@@ -336,7 +361,7 @@ export default function Player({
           <iframe
             key={embedUrl}
             src={embedUrl}
-            title={`${animeTitle} — серия ${episode}`}
+            title={`${animeTitle} — серия ${activeEpisode}`}
             allowFullScreen
             allow="autoplay *; fullscreen *"
             className="absolute inset-0 h-full w-full border-0"
@@ -348,7 +373,9 @@ export default function Player({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Link
-            href={hasPrev ? `${watchBase}/${shikimoriId}/${episode - 1}` : '#'}
+            href={
+              hasPrev ? `${watchBase}/${shikimoriId}/${activeEpisode - 1}` : '#'
+            }
             aria-disabled={!hasPrev}
             className={[
               'rounded-lg px-4 py-2 text-sm font-medium ring-1 ring-white/10 transition',
@@ -360,7 +387,9 @@ export default function Player({
             ← Пред.
           </Link>
           <Link
-            href={hasNext ? `${watchBase}/${shikimoriId}/${episode + 1}` : '#'}
+            href={
+              hasNext ? `${watchBase}/${shikimoriId}/${activeEpisode + 1}` : '#'
+            }
             aria-disabled={!hasNext}
             className={[
               'rounded-lg px-4 py-2 text-sm font-medium ring-1 ring-white/10 transition',
@@ -394,9 +423,9 @@ export default function Player({
       {/* Плашка окончания серии */}
       {ended && hasNext && (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-bg-card px-4 py-3 text-sm">
-          <span>Серия {episode} просмотрена.</span>
+          <span>Серия {activeEpisode} просмотрена.</span>
           <Link
-            href={`${watchBase}/${shikimoriId}/${episode + 1}`}
+            href={`${watchBase}/${shikimoriId}/${activeEpisode + 1}`}
             className="rounded-md bg-accent px-4 py-1.5 font-medium text-white hover:bg-accent-hover"
           >
             Следующая серия →

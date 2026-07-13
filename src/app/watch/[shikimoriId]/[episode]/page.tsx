@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import Player from '@/components/Player';
+import WatchPlayer from '@/components/WatchPlayer';
 import { episodeCount, getAnime, imageUrl } from '@/lib/shikimori';
 import { createClient } from '@/lib/supabase/server';
 import { createVideoSource } from '@/lib/video/kodik';
@@ -43,6 +43,7 @@ export default async function WatchPage({
     const { data } = await supabase
       .from('watch_progress')
       .select('*')
+      .eq('content_type', 'anime')
       .eq('shikimori_id', shikimoriId)
       .maybeSingle();
     progress = (data as WatchProgress | null) ?? null;
@@ -67,7 +68,7 @@ export default async function WatchPage({
 
   const initialTranslationId = progress?.translation_id ?? null;
 
-  // Получаем embed через абстракцию VideoSource (Kodik).
+  // Готовим Kodik как fallback (AniLibria подбирается на клиенте).
   const source = createVideoSource();
   const embed = await source.getEmbedUrl({
     shikimoriId,
@@ -79,22 +80,28 @@ export default async function WatchPage({
   const total = embed.episodesTotal ?? episodeCount(anime);
   const resolvedTranslationId =
     initialTranslationId ?? embed.translations[0]?.id ?? null;
+  const animeYear = anime.aired_on
+    ? Number(anime.aired_on.slice(0, 4)) || null
+    : null;
 
   return (
-    <Player
+    <WatchPlayer
       shikimoriId={shikimoriId}
       contentType="anime"
       episode={episode}
       total={total}
       animeTitle={animeTitle}
       posterUrl={posterUrl}
-      initialEmbedUrl={embed.embedUrl}
-      translations={embed.translations}
-      initialTranslationId={resolvedTranslationId}
+      animeRomaji={anime.name}
+      animeRussian={anime.russian}
+      animeYear={animeYear}
       resumeFrom={resumeFrom}
       otherEpisode={otherEpisode}
-      fallback={embed.fallback}
       isAuthed={!!user}
+      kodikEmbedUrl={embed.embedUrl}
+      kodikTranslations={embed.translations}
+      kodikInitialTranslationId={resolvedTranslationId}
+      kodikFallback={embed.fallback}
     />
   );
 }
