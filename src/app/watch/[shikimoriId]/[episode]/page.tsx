@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import Player from '@/components/Player';
+import WatchPlayer from '@/components/WatchPlayer';
 import { episodeCount, getAnime, imageUrl } from '@/lib/shikimori';
 import { createClient } from '@/lib/supabase/server';
 import { createVideoSource } from '@/lib/video/kodik';
@@ -76,24 +76,31 @@ export default async function WatchPage({
     startFrom: resumeFrom ?? undefined,
   });
 
-  const total = embed.episodesTotal ?? episodeCount(anime);
+  // Число серий берём из Shikimori (согласовано с сеткой на странице тайтла).
+  const total = episodeCount(anime);
   const resolvedTranslationId =
     initialTranslationId ?? embed.translations[0]?.id ?? null;
+  const animeYear = anime.aired_on
+    ? Number(anime.aired_on.slice(0, 4)) || null
+    : null;
 
   return (
-    <Player
+    <WatchPlayer
       shikimoriId={shikimoriId}
       episode={episode}
       total={total}
       animeTitle={animeTitle}
       posterUrl={posterUrl}
-      initialEmbedUrl={embed.embedUrl}
-      translations={embed.translations}
-      initialTranslationId={resolvedTranslationId}
+      animeRomaji={anime.name}
+      animeRussian={anime.russian}
+      animeYear={animeYear}
       resumeFrom={resumeFrom}
       otherEpisode={otherEpisode}
-      fallback={embed.fallback}
       isAuthed={!!user}
+      kodikEmbedUrl={embed.embedUrl}
+      kodikTranslations={embed.translations}
+      kodikInitialTranslationId={resolvedTranslationId}
+      kodikFallback={embed.fallback}
     />
   );
 }
