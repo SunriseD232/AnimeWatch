@@ -14,9 +14,12 @@ export default function ContinueCard({
     progress.duration_seconds,
   );
 
+  const watchBase =
+    progress.content_type === 'cinema' ? '/cinema/watch' : '/watch';
+
   return (
     <Link
-      href={`/watch/${progress.shikimori_id}/${progress.episode}`}
+      href={`${watchBase}/${progress.shikimori_id}/${progress.episode}`}
       className="group flex flex-col overflow-hidden rounded-xl bg-bg-card ring-1 ring-white/5 transition hover:ring-accent/60"
     >
       <div className="relative aspect-video w-full overflow-hidden bg-bg-soft">

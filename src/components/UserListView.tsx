@@ -66,7 +66,7 @@ export default function UserListView({
           {visible.map((item) => (
             <Link
               key={item.id}
-              href={`/anime/${item.shikimori_id}`}
+              href={`/${item.content_type === 'cinema' ? 'cinema' : 'anime'}/${item.shikimori_id}`}
               className="group flex flex-col overflow-hidden rounded-xl bg-bg-card ring-1 ring-white/5 transition hover:ring-accent/60"
             >
               <div className="relative aspect-[2/3] w-full overflow-hidden bg-bg-soft">

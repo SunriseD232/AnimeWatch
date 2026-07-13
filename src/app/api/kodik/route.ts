@@ -7,14 +7,19 @@ import { createVideoSource } from '@/lib/video/kodik';
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const shikimoriId = Number(searchParams.get('shikimoriId'));
+  const shikimoriParam = searchParams.get('shikimoriId');
+  const kinopoiskParam = searchParams.get('kinopoiskId');
+  const shikimoriId = Number(shikimoriParam);
+  const kinopoiskId = Number(kinopoiskParam);
   const episode = Number(searchParams.get('episode') ?? '1');
   const translationParam = searchParams.get('translationId');
   const startParam = searchParams.get('startFrom');
 
-  if (!Number.isFinite(shikimoriId)) {
+  const hasKinopoisk = kinopoiskParam !== null && Number.isFinite(kinopoiskId);
+  const hasShikimori = shikimoriParam !== null && Number.isFinite(shikimoriId);
+  if (!hasKinopoisk && !hasShikimori) {
     return NextResponse.json(
-      { error: 'shikimoriId required' },
+      { error: 'shikimoriId or kinopoiskId required' },
       { status: 400 },
     );
   }
@@ -22,7 +27,8 @@ export async function GET(request: NextRequest) {
   const source = createVideoSource();
   try {
     const result = await source.getEmbedUrl({
-      shikimoriId,
+      shikimoriId: hasKinopoisk ? undefined : shikimoriId,
+      kinopoiskId: hasKinopoisk ? kinopoiskId : undefined,
       episode: Number.isFinite(episode) ? episode : 1,
       translationId: translationParam
         ? Number(translationParam)

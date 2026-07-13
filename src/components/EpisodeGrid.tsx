@@ -4,6 +4,8 @@ interface Props {
   shikimoriId: number;
   total: number;
   currentEpisode: number | null;
+  /** База ссылки просмотра: /watch (аниме) или /cinema/watch (кино). */
+  basePath?: string;
 }
 
 /**
@@ -14,6 +16,7 @@ export default function EpisodeGrid({
   shikimoriId,
   total,
   currentEpisode,
+  basePath = '/watch',
 }: Props) {
   const episodes = Array.from({ length: total }, (_, i) => i + 1);
 
@@ -26,7 +29,7 @@ export default function EpisodeGrid({
         return (
           <Link
             key={ep}
-            href={`/watch/${shikimoriId}/${ep}`}
+            href={`${basePath}/${shikimoriId}/${ep}`}
             className={[
               'grid h-11 place-items-center rounded-lg text-sm font-medium ring-1 transition',
               isCurrent

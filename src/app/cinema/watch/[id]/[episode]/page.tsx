@@ -1,21 +1,21 @@
 import { notFound } from 'next/navigation';
 import Player from '@/components/Player';
-import { episodeCount, getAnime, imageUrl } from '@/lib/shikimori';
+import { getCinemaById } from '@/lib/kodik-catalog';
 import { createClient } from '@/lib/supabase/server';
 import { createVideoSource } from '@/lib/video/kodik';
 import type { WatchProgress } from '@/lib/types';
 
 export const metadata = { title: 'Просмотр — AnimeWatch' };
 
-export default async function WatchPage({
+export default async function CinemaWatchPage({
   params,
 }: {
-  params: { shikimoriId: string; episode: string };
+  params: { id: string; episode: string };
 }) {
-  const shikimoriId = Number(params.shikimoriId);
+  const kinopoiskId = Number(params.id);
   const episode = Number(params.episode);
   if (
-    !Number.isFinite(shikimoriId) ||
+    !Number.isFinite(kinopoiskId) ||
     !Number.isFinite(episode) ||
     episode < 1
   ) {
@@ -23,14 +23,11 @@ export default async function WatchPage({
   }
 
   // Метаданные тайтла (название/постер/число серий).
-  let anime;
-  try {
-    anime = await getAnime(shikimoriId);
-  } catch {
-    notFound();
-  }
-  const animeTitle = anime.russian || anime.name;
-  const posterUrl = imageUrl(anime.image?.original);
+  const item = await getCinemaById(kinopoiskId);
+  if (!item) notFound();
+
+  const title = item.title;
+  const posterUrl = item.poster;
 
   // Прогресс пользователя по этому тайтлу.
   const supabase = createClient();
@@ -43,7 +40,8 @@ export default async function WatchPage({
     const { data } = await supabase
       .from('watch_progress')
       .select('*')
-      .eq('shikimori_id', shikimoriId)
+      .eq('content_type', 'cinema')
+      .eq('shikimori_id', kinopoiskId)
       .maybeSingle();
     progress = (data as WatchProgress | null) ?? null;
   }
@@ -67,26 +65,26 @@ export default async function WatchPage({
 
   const initialTranslationId = progress?.translation_id ?? null;
 
-  // Получаем embed через абстракцию VideoSource (Kodik).
+  // Получаем embed через абстракцию VideoSource (Kodik, поиск по kinopoisk_id).
   const source = createVideoSource();
   const embed = await source.getEmbedUrl({
-    shikimoriId,
+    kinopoiskId,
     episode,
     translationId: initialTranslationId ?? undefined,
     startFrom: resumeFrom ?? undefined,
   });
 
-  const total = embed.episodesTotal ?? episodeCount(anime);
+  const total = embed.episodesTotal ?? item.episodesTotal;
   const resolvedTranslationId =
     initialTranslationId ?? embed.translations[0]?.id ?? null;
 
   return (
     <Player
-      shikimoriId={shikimoriId}
-      contentType="anime"
+      shikimoriId={kinopoiskId}
+      contentType="cinema"
       episode={episode}
       total={total}
-      animeTitle={animeTitle}
+      animeTitle={title}
       posterUrl={posterUrl}
       initialEmbedUrl={embed.embedUrl}
       translations={embed.translations}

@@ -21,7 +21,10 @@ export interface EmbedResult {
 }
 
 export interface GetEmbedParams {
-  shikimoriId: number;
+  /** Внешний id для поиска в Kodik. Для аниме — shikimori_id. */
+  shikimoriId?: number;
+  /** Для фильмов/сериалов — kinopoisk_id (взаимоисключимо с shikimoriId). */
+  kinopoiskId?: number;
   episode: number;
   translationId?: number;
   /** Стартовая позиция в секундах для восстановления просмотра. */

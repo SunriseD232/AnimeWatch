@@ -1,7 +1,15 @@
+/**
+ * Тип контента. 'anime' — каталог Shikimori + поиск Kodik по shikimori_id.
+ * 'cinema' — фильмы/сериалы из каталога Kodik + поиск по kinopoisk_id.
+ */
+export type ContentType = 'anime' | 'cinema';
+
 /** Строка прогресса просмотра (таблица watch_progress). */
 export interface WatchProgress {
   id: string;
   user_id: string;
+  content_type: ContentType;
+  // Для 'anime' — shikimori_id, для 'cinema' — kinopoisk_id (колонка общая).
   shikimori_id: number;
   anime_title: string;
   poster_url: string | null;
@@ -14,6 +22,7 @@ export interface WatchProgress {
 
 /** Данные для upsert прогресса (без серверных полей). */
 export interface WatchProgressInput {
+  content_type: ContentType;
   shikimori_id: number;
   anime_title: string;
   poster_url: string | null;
@@ -33,6 +42,7 @@ export type UserListStatus =
 export interface UserListItem {
   id: string;
   user_id: string;
+  content_type: ContentType;
   shikimori_id: number;
   anime_title: string;
   poster_url: string | null;

@@ -79,13 +79,19 @@ export class KodikVideoSource implements VideoSource {
   private async searchMode(
     params: GetEmbedParams,
   ): Promise<EmbedResult> {
-    const { shikimoriId, episode, translationId, startFrom } = params;
+    const { shikimoriId, kinopoiskId, episode, translationId, startFrom } =
+      params;
 
     const search = new URLSearchParams({
       token: this.token as string,
-      shikimori_id: String(shikimoriId),
       with_episodes: 'true',
     });
+    // Кино ищем по kinopoisk_id, аниме — по shikimori_id.
+    if (kinopoiskId != null) {
+      search.set('kinopoisk_id', String(kinopoiskId));
+    } else {
+      search.set('shikimori_id', String(shikimoriId));
+    }
 
     const res = await fetch(`${KODIK_API}?${search.toString()}`, {
       // Ответ Kodik по тайтлу стабилен — можно кэшировать ненадолго.
@@ -135,13 +141,14 @@ export class KodikVideoSource implements VideoSource {
     };
   }
 
-  /** Режим B: публичный find-player по shikimori id. */
+  /** Режим B: публичный find-player по внешнему id. */
   private fallbackMode(params: GetEmbedParams): EmbedResult {
-    const { shikimoriId, episode, startFrom } = params;
+    const { shikimoriId, kinopoiskId, episode, startFrom } = params;
     const embedUrl = withParams(
       '//kodik.info/find-player',
       {
-        shikimoriID: shikimoriId,
+        shikimoriID: kinopoiskId != null ? undefined : shikimoriId,
+        kinopoiskID: kinopoiskId,
         episode,
         start_from: startFrom,
       },

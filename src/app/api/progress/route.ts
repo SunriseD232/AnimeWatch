@@ -28,6 +28,8 @@ export async function POST(request: NextRequest) {
   const shikimoriId = Number(body.shikimori_id);
   const episode = Number(body.episode);
   const position = Number(body.position_seconds);
+  const contentType =
+    body.content_type === 'cinema' ? 'cinema' : 'anime';
 
   if (!Number.isFinite(shikimoriId) || !Number.isFinite(episode)) {
     return NextResponse.json({ error: 'bad payload' }, { status: 400 });
@@ -40,6 +42,7 @@ export async function POST(request: NextRequest) {
   const { error } = await supabase.from('watch_progress').upsert(
     {
       user_id: user.id,
+      content_type: contentType,
       shikimori_id: shikimoriId,
       anime_title: body.anime_title ?? 'Без названия',
       poster_url: body.poster_url ?? null,
@@ -53,7 +56,7 @@ export async function POST(request: NextRequest) {
         body.translation_id != null ? Number(body.translation_id) : null,
       updated_at: new Date().toISOString(),
     },
-    { onConflict: 'user_id,shikimori_id' },
+    { onConflict: 'user_id,content_type,shikimori_id' },
   );
 
   if (error) {

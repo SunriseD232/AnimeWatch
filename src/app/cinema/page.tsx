@@ -1,12 +1,14 @@
 import { Suspense } from 'react';
-import AnimeCard from '@/components/AnimeCard';
+import CinemaCard from '@/components/CinemaCard';
 import ContinueCard from '@/components/ContinueCard';
 import LoginBanner from '@/components/LoginBanner';
 import ModeSwitch from '@/components/ModeSwitch';
 import { CardGridSkeleton } from '@/components/Skeletons';
-import { getPopular } from '@/lib/shikimori';
+import { getPopularCinema } from '@/lib/kodik-catalog';
 import { createClient } from '@/lib/supabase/server';
 import type { WatchProgress } from '@/lib/types';
+
+export const metadata = { title: 'Фильмы и сериалы — AnimeWatch' };
 
 async function ContinueWatching() {
   const supabase = createClient();
@@ -21,7 +23,7 @@ async function ContinueWatching() {
   const { data } = await supabase
     .from('watch_progress')
     .select('*')
-    .eq('content_type', 'anime')
+    .eq('content_type', 'cinema')
     .order('updated_at', { ascending: false })
     .limit(12);
 
@@ -30,8 +32,8 @@ async function ContinueWatching() {
   if (progress.length === 0) {
     return (
       <div className="rounded-xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
-        Здесь появятся тайтлы, которые вы смотрите. Начните с популярного
-        ниже.
+        Здесь появятся фильмы и сериалы, которые вы смотрите. Начните с
+        популярного ниже.
       </div>
     );
   }
@@ -47,28 +49,36 @@ async function ContinueWatching() {
 
 async function Popular() {
   try {
-    const animes = await getPopular(18);
+    const items = await getPopularCinema(18);
+    if (items.length === 0) {
+      return (
+        <div className="rounded-xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
+          Каталог кино недоступен. Убедитесь, что задан{' '}
+          <code className="rounded bg-black/30 px-1">KODIK_TOKEN</code> — по
+          нему подтягиваются фильмы и сериалы из Kodik.
+        </div>
+      );
+    }
     return (
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-        {animes.map((a) => (
-          <AnimeCard key={a.id} anime={a} />
+        {items.map((item) => (
+          <CinemaCard key={item.id} item={item} />
         ))}
       </div>
     );
   } catch {
     return (
       <div className="rounded-xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
-        Не удалось загрузить каталог Shikimori. Попробуйте обновить страницу
-        позже.
+        Не удалось загрузить каталог Kodik. Попробуйте обновить страницу позже.
       </div>
     );
   }
 }
 
-export default function HomePage() {
+export default function CinemaHomePage() {
   return (
     <div className="flex flex-col gap-10">
-      <ModeSwitch active="anime" />
+      <ModeSwitch active="cinema" />
 
       <section className="flex flex-col gap-4">
         <h1 className="text-xl font-bold">Продолжить просмотр</h1>

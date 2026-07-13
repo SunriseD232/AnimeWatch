@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
-import type { UserListStatus } from '@/lib/types';
+import type { ContentType, UserListStatus } from '@/lib/types';
 
 const STATUS_OPTIONS: { value: UserListStatus; label: string }[] = [
   { value: 'watching', label: 'Смотрю' },
@@ -14,6 +14,7 @@ const STATUS_OPTIONS: { value: UserListStatus; label: string }[] = [
 
 interface Props {
   shikimoriId: number;
+  contentType?: ContentType;
   animeTitle: string;
   posterUrl: string | null;
   initialStatus: UserListStatus | null;
@@ -22,6 +23,7 @@ interface Props {
 
 export default function ListButton({
   shikimoriId,
+  contentType = 'anime',
   animeTitle,
   posterUrl,
   initialStatus,
@@ -49,6 +51,7 @@ export default function ListButton({
         const { error } = await supabase
           .from('user_list')
           .delete()
+          .eq('content_type', contentType)
           .eq('shikimori_id', shikimoriId);
         if (error) throw error;
         setStatus(null);
@@ -61,12 +64,13 @@ export default function ListButton({
         const { error } = await supabase.from('user_list').upsert(
           {
             user_id: user.id,
+            content_type: contentType,
             shikimori_id: shikimoriId,
             anime_title: animeTitle,
             poster_url: posterUrl,
             status: next,
           },
-          { onConflict: 'user_id,shikimori_id' },
+          { onConflict: 'user_id,content_type,shikimori_id' },
         );
         if (error) throw error;
         setStatus(next);
