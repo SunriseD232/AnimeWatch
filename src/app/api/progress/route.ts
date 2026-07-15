@@ -33,10 +33,54 @@ export async function POST(request: NextRequest) {
   const position = Number(body.position_seconds);
   const contentType =
     body.content_type === 'cinema' ? 'cinema' : 'anime';
+  // Режим «отметить открытую серию»: нужен для Videoseed, который не сообщает
+  // странице позицию воспроизведения. Пишем прогресс на уровне сезон/серия.
+  const isMark = (body as { mark?: boolean }).mark === true;
 
   if (!Number.isFinite(shikimoriId) || !Number.isFinite(episode)) {
     return NextResponse.json({ error: 'bad payload' }, { status: 400 });
   }
+
+  if (isMark) {
+    // Не затираем точную позицию, если эта же серия уже сохранена (например,
+    // её раньше писал Kodik с точностью до секунды).
+    const { data: existing } = await supabase
+      .from('watch_progress')
+      .select('season, episode')
+      .eq('user_id', user.id)
+      .eq('content_type', contentType)
+      .eq('shikimori_id', shikimoriId)
+      .maybeSingle();
+    if (
+      existing &&
+      (existing.season ?? 1) === season &&
+      existing.episode === episode
+    ) {
+      return NextResponse.json({ ok: true, kept: true });
+    }
+    const { error: markError } = await supabase.from('watch_progress').upsert(
+      {
+        user_id: user.id,
+        content_type: contentType,
+        shikimori_id: shikimoriId,
+        anime_title: body.anime_title ?? 'Без названия',
+        poster_url: body.poster_url ?? null,
+        season,
+        episode,
+        position_seconds: 0,
+        duration_seconds: null,
+        translation_id:
+          body.translation_id != null ? Number(body.translation_id) : null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id,content_type,shikimori_id' },
+    );
+    if (markError) {
+      return NextResponse.json({ error: markError.message }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, marked: true });
+  }
+
   // Не сохраняем случайные открытия (< 5 сек).
   if (!Number.isFinite(position) || position < 5) {
     return NextResponse.json({ ok: false, reason: 'too-early' });

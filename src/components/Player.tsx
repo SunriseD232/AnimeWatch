@@ -185,6 +185,46 @@ export default function Player({
   const linkFor = (t: StepTarget) =>
     `${watchBase}/${shikimoriId}/${t.season}/${t.episode}`;
 
+  // --- Диагностика: логируем ВСЕ postMessage от плеера -------------------
+  // Включается флагом localStorage 'aw:debugPlayer' = '1'. Нужен, чтобы понять,
+  // шлёт ли Videoseed события воспроизведения (play/time/started) и в каком
+  // формате. Открыть фильм/серию → смотреть консоль.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.localStorage.getItem('aw:debugPlayer') !== '1') return;
+    const log = (e: MessageEvent) => {
+      // eslint-disable-next-line no-console
+      console.log('[player msg]', e.origin, e.data);
+    };
+    window.addEventListener('message', log);
+    // eslint-disable-next-line no-console
+    console.log('[player msg] диагностика включена — играйте видео');
+    return () => window.removeEventListener('message', log);
+  }, []);
+
+  // --- Отметка открытой серии (сезон/серия) ------------------------------
+  // Videoseed (основной плеер) не сообщает странице позицию, поэтому для
+  // сериалов фиксируем хотя бы «на какой серии остановился». Точная секунда
+  // пишется отдельно, когда работает Kodik (он шлёт события времени).
+  useEffect(() => {
+    if (!isAuthed || seasons.length === 0) return;
+    fetch('/api/progress', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content_type: contentType,
+        shikimori_id: shikimoriId,
+        anime_title: animeTitle,
+        poster_url: posterUrl,
+        season,
+        episode,
+        mark: true,
+      }),
+      keepalive: true,
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthed, shikimoriId, season, episode]);
+
   // --- Сохранение прогресса ---------------------------------------------
   const saveProgress = useCallback(
     (useBeacon = false) => {
