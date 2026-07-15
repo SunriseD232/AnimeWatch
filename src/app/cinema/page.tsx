@@ -4,7 +4,7 @@ import ContinueCard from '@/components/ContinueCard';
 import LoginBanner from '@/components/LoginBanner';
 import ModeSwitch from '@/components/ModeSwitch';
 import { CardGridSkeleton } from '@/components/Skeletons';
-import { getPopularCinema } from '@/lib/kodik-catalog';
+import { getPopularCinema } from '@/lib/videoseed-catalog';
 import { createClient } from '@/lib/supabase/server';
 import type { WatchProgress } from '@/lib/types';
 
@@ -54,8 +54,8 @@ async function Popular() {
       return (
         <div className="rounded-xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
           Каталог кино недоступен. Убедитесь, что задан{' '}
-          <code className="rounded bg-black/30 px-1">KODIK_TOKEN</code> — по
-          нему подтягиваются фильмы и сериалы из Kodik.
+          <code className="rounded bg-black/30 px-1">VIDEOSEED_API_TOKEN</code>{' '}
+          — по нему подтягиваются фильмы и сериалы из Videoseed.
         </div>
       );
     }
@@ -69,7 +69,7 @@ async function Popular() {
   } catch {
     return (
       <div className="rounded-xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
-        Не удалось загрузить каталог Kodik. Попробуйте обновить страницу позже.
+        Не удалось загрузить каталог Videoseed. Попробуйте обновить страницу позже.
       </div>
     );
   }
@@ -88,7 +88,7 @@ export default function CinemaHomePage() {
       </section>
 
       <section className="flex flex-col gap-4">
-        <h2 className="text-xl font-bold">Популярное сейчас</h2>
+        <h2 className="text-xl font-bold">Новинки</h2>
         <Suspense fallback={<CardGridSkeleton count={18} />}>
           <Popular />
         </Suspense>

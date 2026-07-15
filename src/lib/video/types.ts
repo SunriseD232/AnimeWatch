@@ -25,6 +25,8 @@ export interface GetEmbedParams {
   shikimoriId?: number;
   /** Для фильмов/сериалов — kinopoisk_id (взаимоисключимо с shikimoriId). */
   kinopoiskId?: number;
+  /** Сезон (для сериалов кино). По умолчанию 1. */
+  season?: number;
   episode: number;
   translationId?: number;
   /** Стартовая позиция в секундах для восстановления просмотра. */

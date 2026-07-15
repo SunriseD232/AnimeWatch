@@ -24,8 +24,11 @@ export default function ContinueCard({
     progress.duration_seconds,
   );
 
-  const watchBase =
-    progress.content_type === 'cinema' ? '/cinema/watch' : '/watch';
+  // Кино маршрутизируется с сезоном, аниме — без.
+  const watchHref =
+    progress.content_type === 'cinema'
+      ? `/cinema/watch/${progress.shikimori_id}/${progress.season ?? 1}/${progress.episode}`
+      : `/watch/${progress.shikimori_id}/${progress.episode}`;
 
   async function remove() {
     if (removing) return;
@@ -50,7 +53,7 @@ export default function ContinueCard({
 
   return (
     <div className="group relative overflow-hidden rounded-xl bg-bg-card ring-1 ring-white/5 transition hover:ring-accent/60">
-      <Link href={`${watchBase}/${progress.shikimori_id}/${progress.episode}`}>
+      <Link href={watchHref}>
         <div className="relative aspect-video w-full overflow-hidden bg-bg-soft">
           {progress.poster_url ? (
             // Постер бывает с Shikimori (аниме) или Kodik/Кинопоиска (кино) —

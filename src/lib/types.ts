@@ -13,6 +13,8 @@ export interface WatchProgress {
   shikimori_id: number;
   anime_title: string;
   poster_url: string | null;
+  /** Сезон (для сериалов кино). Аниме/фильмы — всегда 1. */
+  season: number;
   episode: number;
   position_seconds: number;
   duration_seconds: number | null;
@@ -26,6 +28,7 @@ export interface WatchProgressInput {
   shikimori_id: number;
   anime_title: string;
   poster_url: string | null;
+  season: number;
   episode: number;
   position_seconds: number;
   duration_seconds: number | null;

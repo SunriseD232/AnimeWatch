@@ -12,6 +12,8 @@ export async function GET(request: NextRequest) {
   const shikimoriId = Number(shikimoriParam);
   const kinopoiskId = Number(kinopoiskParam);
   const episode = Number(searchParams.get('episode') ?? '1');
+  const seasonParam = searchParams.get('season');
+  const season = Number(seasonParam);
   const translationParam = searchParams.get('translationId');
   const startParam = searchParams.get('startFrom');
 
@@ -29,6 +31,10 @@ export async function GET(request: NextRequest) {
     const result = await source.getEmbedUrl({
       shikimoriId: hasKinopoisk ? undefined : shikimoriId,
       kinopoiskId: hasKinopoisk ? kinopoiskId : undefined,
+      season:
+        seasonParam !== null && Number.isFinite(season) && season > 0
+          ? season
+          : undefined,
       episode: Number.isFinite(episode) ? episode : 1,
       translationId: translationParam
         ? Number(translationParam)

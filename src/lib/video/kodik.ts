@@ -79,8 +79,14 @@ export class KodikVideoSource implements VideoSource {
   private async searchMode(
     params: GetEmbedParams,
   ): Promise<EmbedResult> {
-    const { shikimoriId, kinopoiskId, episode, translationId, startFrom } =
-      params;
+    const {
+      shikimoriId,
+      kinopoiskId,
+      season,
+      episode,
+      translationId,
+      startFrom,
+    } = params;
 
     const search = new URLSearchParams({
       token: this.token as string,
@@ -129,6 +135,8 @@ export class KodikVideoSource implements VideoSource {
       chosen.episodes_count ?? chosen.last_episode ?? null;
 
     const embedUrl = withParams(chosen.link, {
+      // Сезон передаём только для сериалов кино (season > 1 либо явно задан).
+      season: season && season > 0 ? season : undefined,
       episode,
       start_from: startFrom,
     });
@@ -143,12 +151,13 @@ export class KodikVideoSource implements VideoSource {
 
   /** Режим B: публичный find-player по внешнему id. */
   private fallbackMode(params: GetEmbedParams): EmbedResult {
-    const { shikimoriId, kinopoiskId, episode, startFrom } = params;
+    const { shikimoriId, kinopoiskId, season, episode, startFrom } = params;
     const embedUrl = withParams(
       '//kodik.info/find-player',
       {
         shikimoriID: kinopoiskId != null ? undefined : shikimoriId,
         kinopoiskID: kinopoiskId,
+        season: season && season > 0 ? season : undefined,
         episode,
         start_from: startFrom,
       },

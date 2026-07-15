@@ -27,6 +27,9 @@ export async function POST(request: NextRequest) {
 
   const shikimoriId = Number(body.shikimori_id);
   const episode = Number(body.episode);
+  // Сезон опционален: аниме/фильмы шлют 1 (или вовсе не шлют).
+  const seasonRaw = Number(body.season);
+  const season = Number.isFinite(seasonRaw) && seasonRaw >= 1 ? seasonRaw : 1;
   const position = Number(body.position_seconds);
   const contentType =
     body.content_type === 'cinema' ? 'cinema' : 'anime';
@@ -46,6 +49,7 @@ export async function POST(request: NextRequest) {
       shikimori_id: shikimoriId,
       anime_title: body.anime_title ?? 'Без названия',
       poster_url: body.poster_url ?? null,
+      season,
       episode,
       position_seconds: position,
       duration_seconds:

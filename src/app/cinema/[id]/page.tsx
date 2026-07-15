@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import EpisodeGrid from '@/components/EpisodeGrid';
+import CinemaEpisodes from '@/components/CinemaEpisodes';
 import ListButton from '@/components/ListButton';
-import { getCinemaById } from '@/lib/kodik-catalog';
+import { getCinemaById } from '@/lib/videoseed-catalog';
 import { createClient } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
@@ -49,6 +49,7 @@ export default async function CinemaPage({
     listItem = (l as UserListItem | null) ?? null;
   }
 
+  const resumeSeason = progress?.season ?? 1;
   const resumeEpisode = progress?.episode ?? 1;
   const resumePos = progress?.position_seconds ?? 0;
 
@@ -113,7 +114,7 @@ export default async function CinemaPage({
 
           <div className="mt-1 flex flex-wrap items-center gap-3">
             <Link
-              href={`/cinema/watch/${id}/${resumeEpisode}`}
+              href={`/cinema/watch/${id}/${resumeSeason}/${resumeEpisode}`}
               className="rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-hover"
             >
               {progress
@@ -147,14 +148,14 @@ export default async function CinemaPage({
       )}
 
       {/* Серии (только для сериалов) */}
-      {item.isSerial && total > 1 && (
+      {item.isSerial && total > 1 && item.seasons.length > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold">Серии</h2>
-          <EpisodeGrid
+          <CinemaEpisodes
             shikimoriId={id}
-            total={total}
+            seasons={item.seasons}
+            currentSeason={progress?.season ?? null}
             currentEpisode={progress?.episode ?? null}
-            basePath="/cinema/watch"
           />
         </section>
       )}

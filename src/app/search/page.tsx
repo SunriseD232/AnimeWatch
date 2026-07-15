@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 import AnimeCard from '@/components/AnimeCard';
 import CinemaCard from '@/components/CinemaCard';
 import { CardGridSkeleton } from '@/components/Skeletons';
-import { searchCinema } from '@/lib/kodik-catalog';
+import { searchCinema } from '@/lib/videoseed-catalog';
 import { searchAnime } from '@/lib/shikimori';
 
 export const metadata = { title: 'Поиск — AnimeWatch' };
