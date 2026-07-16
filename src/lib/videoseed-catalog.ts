@@ -38,6 +38,7 @@ interface VsRawItem {
   genre?: string; // жанры через запятую
   country?: string; // страны через запятую
   type?: string; // 'movie' | 'serial'
+  time?: string; // длительность «ЧЧ:ММ» (у сериала — суммарная по всем сериям)
   total_videos?: number | string; // всего видео (для сериалов)
   seasons?: Record<string, VsRawSeason>; // сезоны (в детальном ответе)
 }
@@ -73,6 +74,11 @@ export interface CinemaFull extends CinemaShort {
   episodesTotal: number;
   /** Сезоны сериала. Для фильма — пустой массив. */
   seasons: SeasonInfo[];
+  /**
+   * Длительность фильма в секундах (null для сериалов: у них поле time в API —
+   * суммарная длительность всех серий, а не одной).
+   */
+  durationSeconds: number | null;
   genres: string[];
   countries: string[];
 }
@@ -110,6 +116,17 @@ function splitList(value: string | undefined): string[] {
 
 function isSerialType(type: string | undefined): boolean {
   return type === 'serial';
+}
+
+/** Длительность «ЧЧ:ММ» (или «ЧЧ:ММ:СС») → секунды. */
+function parseDuration(value: string | undefined): number | null {
+  if (!value) return null;
+  const parts = value.split(':').map((p) => Number(p));
+  if (parts.length < 2 || parts.length > 3) return null;
+  if (parts.some((n) => !Number.isFinite(n) || n < 0)) return null;
+  const [h, m, s = 0] = parts;
+  const seconds = h * 3600 + m * 60 + s;
+  return seconds > 0 ? seconds : null;
 }
 
 /** Число серий в сезоне: приоритет total_videos, иначе размер videos. */
@@ -254,6 +271,7 @@ export async function getCinemaById(
     description: base.description ?? null,
     episodesTotal,
     seasons,
+    durationSeconds: isSerial ? null : parseDuration(base.time),
     genres: splitList(base.genre),
     countries: splitList(base.country),
   };

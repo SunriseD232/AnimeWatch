@@ -86,12 +86,16 @@ export default async function CinemaWatchPage({
     initialTranslationId ?? embed.translations[0]?.id ?? null;
 
   // Videoseed (основной) — embed_auto по kinopoisk_id, video=sСЕЗОНvСЕРИЯ.
+  // Стартуем на 15 сек раньше сохранённой позиции: позиция с Videoseed
+  // приблизительная (оценщик), а начать чуть раньше приятнее, чем позже.
+  const videoseedStart =
+    resumeFrom !== null ? Math.max(0, resumeFrom - 15) : 0;
   const videoseedUrl = buildVideoseedEmbedUrl({
     kinopoiskId,
     season,
     episode,
     isSerial: item.isSerial,
-    startFrom: resumeFrom ?? undefined,
+    startFrom: videoseedStart > 0 ? videoseedStart : undefined,
   });
 
   // Число серий в текущем сезоне (для «Серия X из Y»).
@@ -111,6 +115,8 @@ export default async function CinemaWatchPage({
       posterUrl={posterUrl}
       initialEmbedUrl={embed.embedUrl}
       videoseedUrl={videoseedUrl}
+      videoseedStart={videoseedStart}
+      durationSeconds={item.durationSeconds}
       translations={embed.translations}
       initialTranslationId={resolvedTranslationId}
       resumeFrom={resumeFrom}

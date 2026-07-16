@@ -13,6 +13,7 @@ import type { Translation } from '@/lib/video/types';
 import type { SeasonInfo } from '@/lib/videoseed-catalog';
 import type { ContentType, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
+import { useVideoseedEstimator } from '@/hooks/useVideoseedEstimator';
 
 interface Props {
   shikimoriId: number;
@@ -31,6 +32,10 @@ interface Props {
   initialEmbedUrl: string;
   /** Videoseed embed (основной плеер) или null, если токен не задан. */
   videoseedUrl: string | null;
+  /** Секунда, с которой реально стартует embed Videoseed (параметр start). */
+  videoseedStart: number;
+  /** Длительность контента в секундах (фильмы; для сериалов null). */
+  durationSeconds: number | null;
   translations: Translation[];
   initialTranslationId: number | null;
   /** Стартовая позиция для восстановления (сек) или null. */
@@ -89,6 +94,8 @@ export default function Player({
   posterUrl,
   initialEmbedUrl,
   videoseedUrl,
+  videoseedStart,
+  durationSeconds,
   translations,
   initialTranslationId,
   resumeFrom,
@@ -138,6 +145,8 @@ export default function Player({
   // Позиция/длительность держим в ref, чтобы не триггерить ререндеры.
   const currentTimeRef = useRef(0);
   const durationRef = useRef<number | null>(null);
+  // iframe Videoseed — нужен оценщику позиции (клики, fullscreen).
+  const vsIframeRef = useRef<HTMLIFrameElement>(null);
   const translationRef = useRef<number | null>(initialTranslationId);
   translationRef.current = translationId;
   const activeSeasonRef = useRef(activeSeason);
@@ -262,6 +271,27 @@ export default function Player({
     },
     [isAuthed, contentType, shikimoriId, animeTitle, posterUrl],
   );
+
+  // --- Оценка позиции на Videoseed (плеер не отдаёт события) -------------
+  // Пишет оценку в currentTimeRef и управляет `playing`, так что весь
+  // существующий конвейер сохранения (heartbeat, флаши) работает как с Kodik.
+  useVideoseedEstimator({
+    enabled: player === 'videoseed' && hasVideoseed && isCinema,
+    iframeRef: vsIframeRef,
+    anchor: videoseedStart,
+    durationSeconds,
+    srcKey: videoseedUrl,
+    onPlayingChange: (next) => {
+      setPlaying(next);
+      if (!next) saveProgress();
+    },
+    onTick: (pos) => {
+      currentTimeRef.current = pos;
+      if (durationSeconds && durationRef.current == null) {
+        durationRef.current = durationSeconds;
+      }
+    },
+  });
 
   // --- Переход к следующей серии по окончании ----------------------------
   const onEpisodeEnded = useCallback(() => {
@@ -532,6 +562,7 @@ export default function Player({
       <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black ring-1 ring-white/10">
         {player === 'videoseed' && videoseedUrl ? (
           <iframe
+            ref={vsIframeRef}
             key={`vs-${videoseedUrl}`}
             src={videoseedUrl}
             title={`${animeTitle} — серия ${activeEpisode}`}
