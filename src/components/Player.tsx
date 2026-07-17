@@ -10,10 +10,12 @@ import {
   type KodikMessage,
 } from '@/lib/video/kodik-events';
 import type { Translation } from '@/lib/video/types';
+import type { VibixEmbed } from '@/lib/video/vibix';
 import type { SeasonInfo } from '@/lib/videoseed-catalog';
 import type { ContentType, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
 import { useVideoseedEstimator } from '@/hooks/useVideoseedEstimator';
+import VibixPlayer from '@/components/VibixPlayer';
 
 interface Props {
   shikimoriId: number;
@@ -30,7 +32,9 @@ interface Props {
   posterUrl: string | null;
   /** Kodik embed (второстепенный плеер). */
   initialEmbedUrl: string;
-  /** Videoseed embed (основной плеер) или null, если токен не задан. */
+  /** Vibix embed (основной плеер: точный трекинг позиции) или null. */
+  vibixEmbed: VibixEmbed | null;
+  /** Videoseed embed или null, если токен не задан. */
   videoseedUrl: string | null;
   /** Секунда, с которой реально стартует embed Videoseed (параметр start). */
   videoseedStart: number;
@@ -50,6 +54,16 @@ interface Props {
 
 const SAVE_INTERVAL_MS = 10_000;
 const PLAYER_PREF_KEY = 'aw:cinemaPlayer';
+
+type PlayerKind = 'vibix' | 'videoseed' | 'kodik';
+
+/** Событие плеера Vibix (Playerjs с включённым postMessage-мостом). */
+interface VibixPlayerEvent {
+  type?: string;
+  event?: string;
+  time?: number;
+  duration?: number;
+}
 
 interface StepTarget {
   season: number;
@@ -93,6 +107,7 @@ export default function Player({
   animeTitle,
   posterUrl,
   initialEmbedUrl,
+  vibixEmbed,
   videoseedUrl,
   videoseedStart,
   durationSeconds,
@@ -118,11 +133,12 @@ export default function Player({
   );
   const multiSeason = seasonsList.length > 1;
 
-  // Плеер: Videoseed (основной) ↔ Kodik (второстепенный). Переключатель
-  // показываем только когда доступен Videoseed (задан токен).
+  // Плееры по приоритету: Vibix (точный трекинг позиции) → Videoseed → Kodik.
+  // Vibix/Videoseed доступны при наличии токенов и тайтла в их каталогах.
+  const hasVibix = vibixEmbed !== null;
   const hasVideoseed = videoseedUrl !== null;
-  const [player, setPlayer] = useState<'videoseed' | 'kodik'>(
-    hasVideoseed ? 'videoseed' : 'kodik',
+  const [player, setPlayer] = useState<PlayerKind>(
+    hasVibix ? 'vibix' : hasVideoseed ? 'videoseed' : 'kodik',
   );
 
   const [embedUrl, setEmbedUrl] = useState(initialEmbedUrl);
@@ -147,6 +163,8 @@ export default function Player({
   const durationRef = useRef<number | null>(null);
   // iframe Videoseed — нужен оценщику позиции (клики, fullscreen).
   const vsIframeRef = useRef<HTMLIFrameElement>(null);
+  // Ожидающее восстановление позиции в Vibix (команда seek после готовности).
+  const vibixSeekRef = useRef<number | null>(resumeFrom);
   const translationRef = useRef<number | null>(initialTranslationId);
   translationRef.current = translationId;
   const activeSeasonRef = useRef(activeSeason);
@@ -165,21 +183,31 @@ export default function Player({
     setActiveEpisode(episode);
   }, [episode]);
 
+  // Актуализируем ожидающий seek Vibix при смене серии/позиции с сервера.
+  useEffect(() => {
+    vibixSeekRef.current = resumeFrom;
+  }, [resumeFrom, season, episode]);
+
   // При навигации по маршруту сервер отдаёт новый embed — обновляем iframe.
   useEffect(() => {
     setEmbedUrl(initialEmbedUrl);
   }, [initialEmbedUrl]);
 
   // Применяем сохранённое предпочтение плеера после монтирования (чтобы не
-  // ловить рассинхрон гидрации). Только когда Videoseed доступен.
+  // ловить рассинхрон гидрации). Только если выбранный плеер доступен здесь.
   useEffect(() => {
-    if (!hasVideoseed) return;
     const pref = window.localStorage.getItem(PLAYER_PREF_KEY);
-    if (pref === 'kodik' || pref === 'videoseed') setPlayer(pref);
-  }, [hasVideoseed]);
+    if (
+      pref === 'kodik' ||
+      (pref === 'videoseed' && hasVideoseed) ||
+      (pref === 'vibix' && hasVibix)
+    ) {
+      setPlayer(pref);
+    }
+  }, [hasVideoseed, hasVibix]);
 
   // Переключение плеера с сохранением выбора.
-  const switchPlayer = useCallback((next: 'videoseed' | 'kodik') => {
+  const switchPlayer = useCallback((next: PlayerKind) => {
     setPlayer(next);
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(PLAYER_PREF_KEY, next);
@@ -381,6 +409,68 @@ export default function Player({
     return () => window.removeEventListener('message', handler);
   }, [saveProgress, onEpisodeEnded]);
 
+  // --- Подписка на события Vibix (playerEvent) ----------------------------
+  // Плеер Vibix шлёт точные time/duration и события воспроизведения, а также
+  // принимает команды playerCommand — используем для восстановления позиции.
+  useEffect(() => {
+    if (player !== 'vibix') return;
+    const handler = (e: MessageEvent) => {
+      const data = e.data as VibixPlayerEvent | undefined;
+      if (typeof data !== 'object' || data?.type !== 'playerEvent') return;
+
+      if (typeof data.time === 'number' && Number.isFinite(data.time)) {
+        currentTimeRef.current = data.time;
+      }
+      if (typeof data.duration === 'number' && data.duration > 0) {
+        durationRef.current = data.duration;
+      }
+
+      // Восстановление позиции: seek при готовности, повтор на первом play
+      // (на 'ready' медиа может быть ещё не загружено).
+      const isReadyEvent =
+        data.event === 'ready' || data.event === 'sync_ready';
+      const isStartEvent =
+        data.event === 'play' ||
+        data.event === 'start' ||
+        data.event === 'started';
+      if (
+        vibixSeekRef.current !== null &&
+        vibixSeekRef.current > 5 &&
+        (isReadyEvent || isStartEvent) &&
+        e.source
+      ) {
+        (e.source as Window).postMessage(
+          {
+            type: 'playerCommand',
+            command: 'seek',
+            value: Math.floor(vibixSeekRef.current),
+            timestamp: Date.now(),
+          },
+          '*',
+        );
+        if (isStartEvent) vibixSeekRef.current = null;
+      }
+
+      switch (data.event) {
+        case 'play':
+        case 'start':
+        case 'started':
+          setPlaying(true);
+          setEnded(false);
+          break;
+        case 'pause':
+          setPlaying(false);
+          saveProgress();
+          break;
+        case 'end':
+          onEpisodeEnded();
+          break;
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [player, saveProgress, onEpisodeEnded]);
+
   // --- Интервальное сохранение во время воспроизведения ------------------
   useEffect(() => {
     if (!playing) return;
@@ -525,42 +615,47 @@ export default function Player({
         </div>
       )}
 
-      {/* Переключатель плеера — когда доступен основной (Videoseed) */}
-      {hasVideoseed && (
+      {/* Переключатель плеера — когда есть альтернативы Kodik */}
+      {(hasVibix || hasVideoseed) && (
         <div className="flex items-center gap-2 text-sm">
           <span className="text-gray-400">Плеер:</span>
           <div className="inline-flex rounded-lg bg-bg-card p-0.5 ring-1 ring-white/5">
-            <button
-              type="button"
-              onClick={() => switchPlayer('videoseed')}
-              className={[
-                'rounded-md px-3 py-1.5 text-sm font-medium transition',
-                player === 'videoseed'
-                  ? 'bg-accent text-white'
-                  : 'text-gray-300 hover:text-white',
-              ].join(' ')}
-            >
-              Videoseed
-            </button>
-            <button
-              type="button"
-              onClick={() => switchPlayer('kodik')}
-              className={[
-                'rounded-md px-3 py-1.5 text-sm font-medium transition',
-                player === 'kodik'
-                  ? 'bg-accent text-white'
-                  : 'text-gray-300 hover:text-white',
-              ].join(' ')}
-            >
-              Kodik
-            </button>
+            {(
+              [
+                hasVibix ? (['vibix', 'Vibix'] as const) : null,
+                hasVideoseed ? (['videoseed', 'Videoseed'] as const) : null,
+                ['kodik', 'Kodik'] as const,
+              ].filter(Boolean) as ReadonlyArray<readonly [PlayerKind, string]>
+            ).map(([kind, label]) => (
+              <button
+                key={kind}
+                type="button"
+                onClick={() => switchPlayer(kind)}
+                className={[
+                  'rounded-md px-3 py-1.5 text-sm font-medium transition',
+                  player === kind
+                    ? 'bg-accent text-white'
+                    : 'text-gray-300 hover:text-white',
+                ].join(' ')}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </div>
       )}
 
       {/* Плеер 16:9 */}
       <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black ring-1 ring-white/10">
-        {player === 'videoseed' && videoseedUrl ? (
+        {player === 'vibix' && vibixEmbed ? (
+          <VibixPlayer
+            key={`vibix-${vibixEmbed.id}-${season}-${episode}`}
+            embed={vibixEmbed}
+            season={season}
+            episode={episode}
+            isSerial={seasons.length > 0}
+          />
+        ) : player === 'videoseed' && videoseedUrl ? (
           <iframe
             ref={vsIframeRef}
             key={`vs-${videoseedUrl}`}

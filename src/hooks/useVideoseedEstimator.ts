@@ -65,6 +65,9 @@ export function useVideoseedEstimator({
 
   useEffect(() => {
     if (!enabled) return;
+    // Аварийный выключатель для диагностики: localStorage 'aw:estimatorOff'='1'
+    // полностью отключает оценщик (никаких слушателей и el.blur()).
+    if (window.localStorage.getItem('aw:estimatorOff') === '1') return;
     const el = iframeRef.current;
     if (!el) return;
 

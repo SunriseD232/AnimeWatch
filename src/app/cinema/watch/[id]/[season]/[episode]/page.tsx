@@ -4,6 +4,7 @@ import { getCinemaById } from '@/lib/videoseed-catalog';
 import { createClient } from '@/lib/supabase/server';
 import { createVideoSource } from '@/lib/video/kodik';
 import { buildVideoseedEmbedUrl } from '@/lib/video/videoseed';
+import { getVibixEmbed } from '@/lib/video/vibix';
 import type { WatchProgress } from '@/lib/types';
 
 export const metadata = { title: 'Просмотр — AnimeWatch' };
@@ -72,15 +73,18 @@ export default async function CinemaWatchPage({
 
   const initialTranslationId = progress?.translation_id ?? null;
 
-  // Kodik (второстепенный) — поиск по kinopoisk_id с учётом сезона/серии.
+  // Kodik (второстепенный) и Vibix (основной, точный трекинг) — параллельно.
   const source = createVideoSource();
-  const embed = await source.getEmbedUrl({
-    kinopoiskId,
-    season,
-    episode,
-    translationId: initialTranslationId ?? undefined,
-    startFrom: resumeFrom ?? undefined,
-  });
+  const [embed, vibixEmbed] = await Promise.all([
+    source.getEmbedUrl({
+      kinopoiskId,
+      season,
+      episode,
+      translationId: initialTranslationId ?? undefined,
+      startFrom: resumeFrom ?? undefined,
+    }),
+    getVibixEmbed(kinopoiskId),
+  ]);
 
   const resolvedTranslationId =
     initialTranslationId ?? embed.translations[0]?.id ?? null;
@@ -114,6 +118,7 @@ export default async function CinemaWatchPage({
       animeTitle={title}
       posterUrl={posterUrl}
       initialEmbedUrl={embed.embedUrl}
+      vibixEmbed={vibixEmbed}
       videoseedUrl={videoseedUrl}
       videoseedStart={videoseedStart}
       durationSeconds={item.durationSeconds}
