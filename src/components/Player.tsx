@@ -57,12 +57,16 @@ const PLAYER_PREF_KEY = 'aw:cinemaPlayer';
 
 type PlayerKind = 'vibix' | 'videoseed' | 'kodik';
 
-/** Событие плеера Vibix (Playerjs с включённым postMessage-мостом). */
+/**
+ * Событие плеера Vibix — ПЛОСКИЙ нативный формат Playerjs (выяснено
+ * эмпирически по логу): {event: 'time'|'play'|..., time, data, duration}.
+ * Обёртка {type:'playerEvent'} из их sync-библиотеки в реальности не приходит.
+ */
 interface VibixPlayerEvent {
-  type?: string;
   event?: string;
   time?: number;
   duration?: number;
+  data?: unknown;
 }
 
 interface StepTarget {
@@ -409,14 +413,15 @@ export default function Player({
     return () => window.removeEventListener('message', handler);
   }, [saveProgress, onEpisodeEnded]);
 
-  // --- Подписка на события Vibix (playerEvent) ----------------------------
-  // Плеер Vibix шлёт точные time/duration и события воспроизведения, а также
-  // принимает команды playerCommand — используем для восстановления позиции.
+  // --- Подписка на события Vibix ------------------------------------------
+  // Плеер шлёт точное время ~4 раза/сек и события воспроизведения; принимает
+  // команды. Сообщения Kodik имеют поле `key`, а не `event` — коллизий нет.
   useEffect(() => {
     if (player !== 'vibix') return;
     const handler = (e: MessageEvent) => {
       const data = e.data as VibixPlayerEvent | undefined;
-      if (typeof data !== 'object' || data?.type !== 'playerEvent') return;
+      if (typeof data !== 'object' || data === null) return;
+      if (typeof data.event !== 'string') return;
 
       if (typeof data.time === 'number' && Number.isFinite(data.time)) {
         currentTimeRef.current = data.time;
@@ -425,44 +430,54 @@ export default function Player({
         durationRef.current = data.duration;
       }
 
-      // Восстановление позиции: seek при готовности, повтор на первом play
-      // (на 'ready' медиа может быть ещё не загружено).
-      const isReadyEvent =
-        data.event === 'ready' || data.event === 'sync_ready';
+      // Восстановление позиции из БД. Шлём на started/play — ПОСЛЕ того, как
+      // плеер применил свой локальный резюм (его внутренний seek идёт до
+      // 'started'), иначе он перебил бы нашу позицию своей.
       const isStartEvent =
-        data.event === 'play' ||
+        data.event === 'started' ||
         data.event === 'start' ||
-        data.event === 'started';
+        data.event === 'play' ||
+        data.event === 'userplay';
       if (
         vibixSeekRef.current !== null &&
         vibixSeekRef.current > 5 &&
-        (isReadyEvent || isStartEvent) &&
+        isStartEvent &&
         e.source
       ) {
-        (e.source as Window).postMessage(
+        const target = Math.floor(vibixSeekRef.current);
+        vibixSeekRef.current = null;
+        const w = e.source as Window;
+        // Нативная команда Playerjs; вторая — формат их sync-моста (запасной).
+        w.postMessage({ api: 'seek', set: target }, '*');
+        w.postMessage(
           {
             type: 'playerCommand',
             command: 'seek',
-            value: Math.floor(vibixSeekRef.current),
+            value: target,
             timestamp: Date.now(),
           },
           '*',
         );
-        if (isStartEvent) vibixSeekRef.current = null;
       }
 
       switch (data.event) {
         case 'play':
+        case 'userplay':
+        case 'resumed':
         case 'start':
         case 'started':
           setPlaying(true);
           setEnded(false);
           break;
         case 'pause':
+        case 'userpause':
+        case 'paused':
+        case 'stop':
           setPlaying(false);
           saveProgress();
           break;
         case 'end':
+        case 'finish':
           onEpisodeEnded();
           break;
       }

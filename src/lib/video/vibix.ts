@@ -45,7 +45,10 @@ export async function getVibixEmbed(
   kinopoiskId: number,
 ): Promise<VibixEmbed | null> {
   const token = process.env.VIBIX_TOKEN;
-  if (!token) return null;
+  if (!token) {
+    console.warn('[vibix] VIBIX_TOKEN не задан — плеер Vibix отключён');
+    return null;
+  }
   try {
     const res = await fetch(
       `${VIBIX_API}/publisher/videos/kp/${kinopoiskId}`,
@@ -57,10 +60,24 @@ export async function getVibixEmbed(
         next: { revalidate: 600 },
       },
     );
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // 404 — тайтла нет в каталоге (норма); остальное — проблемы токена/API.
+      if (res.status !== 404) {
+        console.warn(`[vibix] API ${res.status} для kp=${kinopoiskId}`);
+      }
+      return null;
+    }
     const data = (await res.json()) as { embed_code?: string };
-    return parseEmbedCode(data.embed_code);
-  } catch {
+    const embed = parseEmbedCode(data.embed_code);
+    if (!embed) {
+      console.warn(
+        `[vibix] не удалось разобрать embed_code для kp=${kinopoiskId}:`,
+        data.embed_code,
+      );
+    }
+    return embed;
+  } catch (err) {
+    console.warn('[vibix] ошибка запроса:', err);
     return null;
   }
 }
