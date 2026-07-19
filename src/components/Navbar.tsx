@@ -18,7 +18,7 @@ export default async function Navbar() {
           <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent text-white">
             ▶
           </span>
-          <span className="hidden sm:inline">AnimeWatch</span>
+          <span className="hidden sm:inline">MediaWatch</span>
         </Link>
 
         <div className="flex-1">

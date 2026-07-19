@@ -7,7 +7,7 @@ import { buildVideoseedEmbedUrl } from '@/lib/video/videoseed';
 import { getVibixEmbed } from '@/lib/video/vibix';
 import type { WatchProgress } from '@/lib/types';
 
-export const metadata = { title: 'Просмотр — AnimeWatch' };
+export const metadata = { title: 'Просмотр — MediaWatch' };
 
 export default async function CinemaWatchPage({
   params,

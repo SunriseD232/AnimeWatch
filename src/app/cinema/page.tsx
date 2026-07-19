@@ -8,7 +8,7 @@ import { getPopularCinema } from '@/lib/videoseed-catalog';
 import { createClient } from '@/lib/supabase/server';
 import type { WatchProgress } from '@/lib/types';
 
-export const metadata = { title: 'Фильмы и сериалы — AnimeWatch' };
+export const metadata = { title: 'Фильмы и сериалы — MediaWatch' };
 
 async function ContinueWatching() {
   const supabase = createClient();

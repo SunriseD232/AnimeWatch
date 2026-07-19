@@ -6,7 +6,7 @@
 
 const BASE_URL = 'https://shikimori.one';
 const API_URL = `${BASE_URL}/api`;
-const USER_AGENT = 'AnimeWatch MVP';
+const USER_AGENT = 'MediaWatch MVP';
 
 /** Краткая карточка аниме (списки, поиск, популярное). */
 export interface ShikimoriAnimeShort {
@@ -96,17 +96,70 @@ export async function getPopular(
   );
 }
 
-/** Поиск по строке запроса. */
+/** Разбивает название на слова (латиница/кириллица/цифры). */
+function titleWords(title: string): string[] {
+  return title
+    .toLowerCase()
+    .split(/[^a-zа-яё0-9]+/)
+    .filter(Boolean);
+}
+
+/** Вес типа тайтла для ранжирования поиска: сериалы и фильмы важнее спешлов. */
+const KIND_WEIGHT: Record<string, number> = {
+  tv: 3,
+  movie: 2,
+  ona: 1,
+  ova: 1,
+  special: 0,
+  tv_special: 0,
+  music: -1,
+};
+
+/**
+ * Поиск по строке запроса с точным пословным совпадением.
+ *
+ * Shikimori ищет нечётко и возвращает ложные результаты («Sword Art Offline»
+ * по запросу «art online»), а параметр order при поиске игнорирует. Поэтому:
+ * 1) фильтруем сами — каждое слово запроса должно совпадать с началом
+ *    какого-то слова в одном из названий (ru/en) тайтла:
+ *    «art online» → Sword Art Online (без Offline); «art» → всё со словом art;
+ * 2) анонсы отсекаем (смотреть там нечего);
+ * 3) ранжируем локально: сериалы/фильмы выше спешлов, внутри — по рейтингу.
+ */
 export async function searchAnime(
   query: string,
   limit = 20,
 ): Promise<ShikimoriAnimeShort[]> {
-  const q = encodeURIComponent(query.trim());
+  const q = query.trim();
   if (!q) return [];
-  return shikimoriFetch<ShikimoriAnimeShort[]>(
-    `/animes?search=${q}&limit=${limit}`,
+  // Берём с запасом: часть выдачи отсеется пословным фильтром.
+  const raw = await shikimoriFetch<ShikimoriAnimeShort[]>(
+    `/animes?search=${encodeURIComponent(q)}&limit=45`,
     300,
   );
+
+  const words = q
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const matches = raw.filter((anime) => {
+    if (anime.status === 'anons') return false;
+    const titles = [anime.russian, anime.name].filter(Boolean) as string[];
+    return titles.some((title) => {
+      const tw = titleWords(title);
+      return words.every((w) => tw.some((word) => word.startsWith(w)));
+    });
+  });
+
+  matches.sort((a, b) => {
+    const kindDiff =
+      (KIND_WEIGHT[b.kind ?? ''] ?? 0) - (KIND_WEIGHT[a.kind ?? ''] ?? 0);
+    if (kindDiff !== 0) return kindDiff;
+    return Number(b.score) - Number(a.score);
+  });
+
+  return matches.slice(0, limit);
 }
 
 /** Полная карточка тайтла по id. */

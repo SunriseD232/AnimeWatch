@@ -5,7 +5,7 @@ import { CardGridSkeleton } from '@/components/Skeletons';
 import { searchCinema } from '@/lib/videoseed-catalog';
 import { searchAnime } from '@/lib/shikimori';
 
-export const metadata = { title: 'Поиск — AnimeWatch' };
+export const metadata = { title: 'Поиск — MediaWatch' };
 
 async function AnimeResults({ query }: { query: string }) {
   try {

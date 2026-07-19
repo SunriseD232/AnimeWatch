@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 import AuthForm from '@/components/AuthForm';
 
-export const metadata = { title: 'Вход — AnimeWatch' };
+export const metadata = { title: 'Вход — MediaWatch' };
 
 export default function LoginPage() {
   return (

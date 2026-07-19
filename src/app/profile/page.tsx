@@ -3,7 +3,7 @@ import UserListView from '@/components/UserListView';
 import { createClient } from '@/lib/supabase/server';
 import type { UserListItem } from '@/lib/types';
 
-export const metadata = { title: 'Профиль — AnimeWatch' };
+export const metadata = { title: 'Профиль — MediaWatch' };
 
 export default async function ProfilePage() {
   const supabase = createClient();

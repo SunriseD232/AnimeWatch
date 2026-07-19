@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createVideoSource } from '@/lib/video/kodik';
 import type { WatchProgress } from '@/lib/types';
 
-export const metadata = { title: 'Просмотр — AnimeWatch' };
+export const metadata = { title: 'Просмотр — MediaWatch' };
 
 export default async function WatchPage({
   params,

@@ -43,13 +43,15 @@ export default function SearchBox() {
       className="relative"
       role="search"
     >
+      {/* text-base (16px) обязателен: при меньшем шрифте iOS/Android
+          автоматически зумят страницу при фокусе на инпуте. */}
       <input
         type="search"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder={isCinema ? 'Поиск фильмов и сериалов…' : 'Поиск аниме…'}
         aria-label={isCinema ? 'Поиск фильмов и сериалов' : 'Поиск аниме'}
-        className="w-full rounded-lg border border-white/10 bg-bg-card px-4 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+        className="w-full rounded-lg border border-white/10 bg-bg-card px-4 py-2 text-base text-gray-100 placeholder:text-gray-500 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
       />
     </form>
   );

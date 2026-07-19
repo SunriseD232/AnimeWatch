@@ -5,9 +5,9 @@ import Navbar from '@/components/Navbar';
 import { ToastProvider } from '@/components/ToastProvider';
 
 export const metadata: Metadata = {
-  title: 'AnimeWatch — трекер просмотра аниме',
+  title: 'MediaWatch — аниме, фильмы и сериалы',
   description:
-    'Смотрите аниме и продолжайте с того же места на любом устройстве.',
+    'Смотрите аниме, фильмы и сериалы и продолжайте с того же места на любом устройстве.',
 };
 
 export const viewport: Viewport = {

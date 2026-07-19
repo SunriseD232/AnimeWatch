@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
 import type { WatchProgress } from '@/lib/types';
@@ -18,6 +18,15 @@ export default function ContinueCard({
   const { toast } = useToast();
   const [hidden, setHidden] = useState(false);
   const [removing, setRemoving] = useState(false);
+  // Двухшаговое удаление: первый клик по ✕ показывает подтверждение.
+  const [confirming, setConfirming] = useState(false);
+
+  // Авто-сброс подтверждения, если пользователь передумал и ничего не нажал.
+  useEffect(() => {
+    if (!confirming) return;
+    const t = setTimeout(() => setConfirming(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirming]);
 
   const percent = watchPercent(
     progress.position_seconds,
@@ -91,17 +100,36 @@ export default function ContinueCard({
         </div>
       </Link>
 
-      {/* Крестик: убрать из «Продолжить просмотр» */}
-      <button
-        type="button"
-        onClick={remove}
-        disabled={removing}
-        aria-label="Убрать из просмотра"
-        title="Убрать из просмотра"
-        className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full bg-black/70 text-sm text-white opacity-0 transition hover:bg-red-600 focus:opacity-100 group-hover:opacity-100 disabled:opacity-50"
-      >
-        ✕
-      </button>
+      {/* Убрать из «Продолжить просмотр» — с подтверждением */}
+      {confirming ? (
+        <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-black/85 p-1">
+          <button
+            type="button"
+            onClick={remove}
+            disabled={removing}
+            className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+          >
+            {removing ? 'Убираем…' : 'Убрать'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirming(false)}
+            className="rounded-md px-2 py-1 text-xs text-gray-300 hover:text-white"
+          >
+            Отмена
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          aria-label="Убрать из просмотра"
+          title="Убрать из просмотра"
+          className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full bg-black/70 text-sm text-white opacity-0 transition hover:bg-red-600 focus:opacity-100 group-hover:opacity-100"
+        >
+          ✕
+        </button>
+      )}
     </div>
   );
 }
