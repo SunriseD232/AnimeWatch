@@ -29,9 +29,10 @@ export default async function CinemaPage({
 
   let progress: WatchProgress | null = null;
   let listItem: UserListItem | null = null;
+  let watched: { season: number; episode: number }[] = [];
 
   if (user) {
-    const [{ data: p }, { data: l }] = await Promise.all([
+    const [{ data: p }, { data: l }, { data: w }] = await Promise.all([
       supabase
         .from('watch_progress')
         .select('*')
@@ -44,9 +45,15 @@ export default async function CinemaPage({
         .eq('content_type', 'cinema')
         .eq('shikimori_id', id)
         .maybeSingle(),
+      supabase
+        .from('watched_episodes')
+        .select('season, episode')
+        .eq('content_type', 'cinema')
+        .eq('shikimori_id', id),
     ]);
     progress = (p as WatchProgress | null) ?? null;
     listItem = (l as UserListItem | null) ?? null;
+    watched = (w ?? []) as { season: number; episode: number }[];
   }
 
   const resumeSeason = progress?.season ?? 1;
@@ -156,6 +163,7 @@ export default async function CinemaPage({
             seasons={item.seasons}
             currentSeason={progress?.season ?? null}
             currentEpisode={progress?.episode ?? null}
+            watched={watched}
           />
         </section>
       )}

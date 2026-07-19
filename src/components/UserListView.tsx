@@ -1,9 +1,17 @@
 'use client';
 
-import Image from 'next/image';
 import Link from 'next/link';
 import { useState } from 'react';
-import type { UserListItem, UserListStatus } from '@/lib/types';
+import type {
+  ContentType,
+  UserListItem,
+  UserListStatus,
+} from '@/lib/types';
+
+const TYPE_TABS: { value: ContentType; label: string }[] = [
+  { value: 'anime', label: 'Аниме' },
+  { value: 'cinema', label: 'Фильмы и сериалы' },
+];
 
 const FILTERS: { value: UserListStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'Все' },
@@ -25,21 +33,46 @@ export default function UserListView({
 }: {
   items: UserListItem[];
 }) {
+  const [type, setType] = useState<ContentType>('anime');
   const [filter, setFilter] = useState<UserListStatus | 'all'>('all');
 
+  // Аниме и кино — раздельные вкладки, чтобы списки не перемешивались.
+  const ofType = items.filter((i) => i.content_type === type);
   const visible =
-    filter === 'all'
-      ? items
-      : items.filter((i) => i.status === filter);
+    filter === 'all' ? ofType : ofType.filter((i) => i.status === filter);
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap gap-2">
+        {TYPE_TABS.map((t) => {
+          const count = items.filter(
+            (i) => i.content_type === t.value,
+          ).length;
+          return (
+            <button
+              key={t.value}
+              type="button"
+              onClick={() => setType(t.value)}
+              className={[
+                'rounded-lg px-4 py-2 text-sm font-semibold transition',
+                type === t.value
+                  ? 'bg-accent text-white'
+                  : 'bg-bg-card text-gray-300 hover:bg-bg-soft',
+              ].join(' ')}
+            >
+              {t.label}
+              <span className="ml-1.5 text-xs opacity-70">{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
         {FILTERS.map((f) => {
           const count =
             f.value === 'all'
-              ? items.length
-              : items.filter((i) => i.status === f.value).length;
+              ? ofType.length
+              : ofType.filter((i) => i.status === f.value).length;
           return (
             <button
               key={f.value}
@@ -48,7 +81,7 @@ export default function UserListView({
               className={[
                 'rounded-lg px-3 py-1.5 text-sm font-medium transition',
                 filter === f.value
-                  ? 'bg-accent text-white'
+                  ? 'bg-accent/20 text-accent ring-1 ring-accent/40'
                   : 'bg-bg-card text-gray-300 hover:bg-bg-soft',
               ].join(' ')}
             >
@@ -71,12 +104,15 @@ export default function UserListView({
             >
               <div className="relative aspect-[2/3] w-full overflow-hidden bg-bg-soft">
                 {item.poster_url ? (
-                  <Image
+                  // <img> + no-referrer: хотлинк-защита Shikimori/Кинопоиска
+                  // (next/image через серверный прокси терял картинки).
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
                     src={item.poster_url}
                     alt={item.anime_title}
-                    fill
-                    sizes="(max-width: 640px) 45vw, 200px"
-                    className="object-cover transition duration-300 group-hover:scale-105"
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                    className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105"
                   />
                 ) : (
                   <div className="grid h-full w-full place-items-center text-gray-600">

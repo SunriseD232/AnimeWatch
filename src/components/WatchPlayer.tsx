@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
@@ -40,6 +41,8 @@ interface Props {
 type Source = 'hls' | 'kodik';
 
 const PREF_KEY = 'aw:preferredSource';
+/** Задержка автоперехода на следующую серию после окончания текущей. */
+const AUTO_NEXT_DELAY_MS = 3_000;
 
 /**
  * Оркестратор просмотра: пытается воспроизвести тайтл через AniLibria (1080p,
@@ -64,6 +67,7 @@ export default function WatchPlayer({
   kodikInitialTranslationId,
   kodikFallback,
 }: Props) {
+  const router = useRouter();
   const { toast } = useToast();
 
   const [resolving, setResolving] = useState(true);
@@ -73,6 +77,9 @@ export default function WatchPlayer({
   const [kodikEmbed, setKodikEmbed] = useState(kodikEmbedUrl);
   const [switching, setSwitching] = useState(false);
   const [ended, setEnded] = useState(false);
+  // Автопереход на следующую серию (null — неактивен/отменён).
+  const [autoNext, setAutoNext] = useState<number | null>(null);
+  const autoNextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showOtherBanner, setShowOtherBanner] = useState(otherEpisode !== null);
   // Активная серия: может измениться из самого плеера Kodik (внутренняя навигация).
   const [activeEpisode, setActiveEpisode] = useState(episode);
@@ -88,6 +95,8 @@ export default function WatchPlayer({
   }, [kodikEmbedUrl]);
 
   const isCinema = contentType === 'cinema';
+  const watchBase = isCinema ? '/cinema/watch' : '/watch';
+  const detailHref = `${isCinema ? '/cinema' : '/anime'}/${shikimoriId}`;
 
   const playingRef = useRef(false);
   // Актуальная позиция активного плеера — для переноса при смене источника.
@@ -183,10 +192,14 @@ export default function WatchPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // --- Окончание серии: пометить следующую и показать кнопку ---
+  // --- Окончание серии: пометки, автопереход ---
   const onEnded = useCallback(() => {
     setEnded(true);
-    if (isAuthed && hasNext) {
+    const finishedEpisode = activeEpisode;
+    const nextEpisode = hasNext ? finishedEpisode + 1 : null;
+
+    if (isAuthed) {
+      // Серия досмотрена; последняя серия — тайтл в «Просмотрено».
       fetch('/api/progress', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -195,13 +208,40 @@ export default function WatchPlayer({
           shikimori_id: shikimoriId,
           anime_title: animeTitle,
           poster_url: posterUrl,
-          episode: activeEpisode + 1,
+          season: 1,
+          episode: finishedEpisode,
+          watched_episode: true,
+          completed: nextEpisode === null,
+        }),
+        keepalive: true,
+      }).catch(() => {});
+    }
+
+    if (isAuthed && nextEpisode !== null) {
+      fetch('/api/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content_type: contentType,
+          shikimori_id: shikimoriId,
+          anime_title: animeTitle,
+          poster_url: posterUrl,
+          episode: nextEpisode,
           position_seconds: 5,
           duration_seconds: null,
           translation_id: null,
         }),
         keepalive: true,
       }).catch(() => {});
+    }
+
+    // Автопереход с возможностью отмены в плашке.
+    if (nextEpisode !== null) {
+      setAutoNext(nextEpisode);
+      if (autoNextTimerRef.current) clearTimeout(autoNextTimerRef.current);
+      autoNextTimerRef.current = setTimeout(() => {
+        router.push(`${watchBase}/${shikimoriId}/${nextEpisode}`);
+      }, AUTO_NEXT_DELAY_MS);
     }
   }, [
     isAuthed,
@@ -211,7 +251,27 @@ export default function WatchPlayer({
     animeTitle,
     posterUrl,
     activeEpisode,
+    router,
+    watchBase,
   ]);
+
+  // Отмена автоперехода.
+  const cancelAutoNext = useCallback(() => {
+    if (autoNextTimerRef.current) {
+      clearTimeout(autoNextTimerRef.current);
+      autoNextTimerRef.current = null;
+    }
+    setAutoNext(null);
+  }, []);
+
+  // Сброс автоперехода при смене серии/размонтировании.
+  useEffect(() => {
+    setAutoNext(null);
+    setEnded(false);
+    return () => {
+      if (autoNextTimerRef.current) clearTimeout(autoNextTimerRef.current);
+    };
+  }, [episode]);
 
   // --- Смена серии внутри плеера Kodik → обновляем номер/навигацию ---
   const onEpisodeChange = useCallback((ep: number) => {
@@ -246,9 +306,6 @@ export default function WatchPlayer({
       supabase.removeChannel(channel);
     };
   }, [isAuthed, shikimoriId, episode, toast]);
-
-  const watchBase = isCinema ? '/cinema/watch' : '/watch';
-  const detailHref = `${isCinema ? '/cinema' : '/anime'}/${shikimoriId}`;
 
   return (
     <div className="flex flex-col gap-4">
@@ -395,14 +452,33 @@ export default function WatchPlayer({
 
       {/* Плашка окончания серии */}
       {ended && hasNext && (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-bg-card px-4 py-3 text-sm">
-          <span>Серия {activeEpisode} просмотрена.</span>
-          <Link
-            href={`${watchBase}/${shikimoriId}/${activeEpisode + 1}`}
-            className="rounded-md bg-accent px-4 py-1.5 font-medium text-white hover:bg-accent-hover"
-          >
-            Следующая серия →
-          </Link>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-bg-card px-4 py-3 text-sm">
+          <span>
+            Серия {activeEpisode} просмотрена.
+            {autoNext !== null && (
+              <span className="text-gray-400">
+                {' '}
+                Следующая включится через пару секунд…
+              </span>
+            )}
+          </span>
+          <div className="flex items-center gap-2">
+            {autoNext !== null && (
+              <button
+                type="button"
+                onClick={cancelAutoNext}
+                className="rounded-md px-3 py-1.5 font-medium text-gray-300 ring-1 ring-white/10 hover:text-white"
+              >
+                Отмена
+              </button>
+            )}
+            <Link
+              href={`${watchBase}/${shikimoriId}/${activeEpisode + 1}`}
+              className="rounded-md bg-accent px-4 py-1.5 font-medium text-white hover:bg-accent-hover"
+            >
+              Следующая серия →
+            </Link>
+          </div>
         </div>
       )}
 

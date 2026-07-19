@@ -11,6 +11,8 @@ interface Props {
   currentSeason: number | null;
   /** Серия внутри currentSeason (или null). */
   currentEpisode: number | null;
+  /** Досмотренные серии из watched_episodes (точная подсветка). */
+  watched?: { season: number; episode: number }[];
 }
 
 /**
@@ -23,6 +25,7 @@ export default function CinemaEpisodes({
   seasons,
   currentSeason,
   currentEpisode,
+  watched = [],
 }: Props) {
   const [selected, setSelected] = useState<number>(
     currentSeason ?? seasons[0]?.season ?? 1,
@@ -33,6 +36,7 @@ export default function CinemaEpisodes({
 
   const multiSeason = seasons.length > 1;
   const episodes = Array.from({ length: active.episodes }, (_, i) => i + 1);
+  const watchedSet = new Set(watched.map((w) => `${w.season}:${w.episode}`));
 
   return (
     <div className="flex flex-col gap-3">
@@ -58,13 +62,15 @@ export default function CinemaEpisodes({
 
       <div className="grid grid-cols-5 gap-2 sm:grid-cols-8 md:grid-cols-10">
         {episodes.map((ep) => {
-          // Просмотрено: весь сезон раньше текущего, либо серия до текущей в нём.
+          // Просмотрено: точная пометка из watched_episodes, либо эвристика
+          // (весь сезон раньше текущего / серия до текущей в нём).
           const isWatched =
-            currentSeason !== null &&
-            (selected < currentSeason ||
-              (selected === currentSeason &&
-                currentEpisode !== null &&
-                ep < currentEpisode));
+            watchedSet.has(`${selected}:${ep}`) ||
+            (currentSeason !== null &&
+              (selected < currentSeason ||
+                (selected === currentSeason &&
+                  currentEpisode !== null &&
+                  ep < currentEpisode)));
           const isCurrent =
             currentSeason === selected && currentEpisode === ep;
           return (

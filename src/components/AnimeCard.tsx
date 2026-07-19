@@ -1,4 +1,3 @@
-import Image from 'next/image';
 import Link from 'next/link';
 import { imageUrl, type ShikimoriAnimeShort } from '@/lib/shikimori';
 
@@ -28,12 +27,16 @@ export default function AnimeCard({
     >
       <div className="relative aspect-[2/3] w-full overflow-hidden bg-bg-soft">
         {poster ? (
-          <Image
+          // Обычный <img> с no-referrer: Shikimori режет хотлинк по Referer,
+          // а прокси next/image с серверных IP рейт-лимитится — картинки
+          // пропадали. Прямая загрузка из браузера стабильна.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
             src={poster}
             alt={title}
-            fill
-            sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 200px"
-            className="object-cover transition duration-300 group-hover:scale-105"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105"
           />
         ) : (
           <div className="grid h-full w-full place-items-center text-gray-600">

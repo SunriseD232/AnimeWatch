@@ -63,6 +63,7 @@ export default function ContinueCard({
               src={progress.poster_url}
               alt={progress.anime_title}
               loading="lazy"
+              referrerPolicy="no-referrer"
               className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
             />
           ) : (

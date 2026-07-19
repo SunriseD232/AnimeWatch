@@ -1,4 +1,3 @@
-import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import EpisodeGrid from '@/components/EpisodeGrid';
@@ -57,22 +56,33 @@ export default async function AnimePage({
 
   let progress: WatchProgress | null = null;
   let listItem: UserListItem | null = null;
+  let watchedEpisodes: number[] = [];
 
   if (user) {
-    const [{ data: p }, { data: l }] = await Promise.all([
+    const [{ data: p }, { data: l }, { data: w }] = await Promise.all([
       supabase
         .from('watch_progress')
         .select('*')
+        .eq('content_type', 'anime')
         .eq('shikimori_id', id)
         .maybeSingle(),
       supabase
         .from('user_list')
         .select('*')
+        .eq('content_type', 'anime')
         .eq('shikimori_id', id)
         .maybeSingle(),
+      supabase
+        .from('watched_episodes')
+        .select('episode')
+        .eq('content_type', 'anime')
+        .eq('shikimori_id', id),
     ]);
     progress = (p as WatchProgress | null) ?? null;
     listItem = (l as UserListItem | null) ?? null;
+    watchedEpisodes = ((w ?? []) as { episode: number }[]).map(
+      (row) => row.episode,
+    );
   }
 
   const resumeEpisode = progress?.episode ?? 1;
@@ -84,13 +94,13 @@ export default async function AnimePage({
       <div className="flex flex-col gap-5 sm:flex-row">
         <div className="relative mx-auto aspect-[2/3] w-40 shrink-0 overflow-hidden rounded-xl bg-bg-card ring-1 ring-white/5 sm:mx-0 sm:w-48">
           {poster ? (
-            <Image
+            // <img> + no-referrer: хотлинк-защита Shikimori (см. AnimeCard).
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
               src={poster}
               alt={title}
-              fill
-              sizes="192px"
-              className="object-cover"
-              priority
+              referrerPolicy="no-referrer"
+              className="absolute inset-0 h-full w-full object-cover"
             />
           ) : (
             <div className="grid h-full w-full place-items-center text-gray-600">
@@ -170,6 +180,7 @@ export default async function AnimePage({
           shikimoriId={id}
           total={total}
           currentEpisode={progress?.episode ?? null}
+          watchedEpisodes={watchedEpisodes}
         />
       </section>
     </div>

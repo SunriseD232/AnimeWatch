@@ -35,10 +35,51 @@ export async function POST(request: NextRequest) {
     body.content_type === 'cinema' ? 'cinema' : 'anime';
   // Режим «отметить открытую серию»: нужен для Videoseed, который не сообщает
   // странице позицию воспроизведения. Пишем прогресс на уровне сезон/серия.
-  const isMark = (body as { mark?: boolean }).mark === true;
+  const isMark = body.mark === true;
 
   if (!Number.isFinite(shikimoriId) || !Number.isFinite(episode)) {
     return NextResponse.json({ error: 'bad payload' }, { status: 400 });
+  }
+
+  // --- Пометки о завершении (могут прийти вместе или по отдельности) ------
+  // watched_episode: серия season/episode досмотрена — для подсветки в сетках.
+  // completed: тайтл целиком просмотрен — в списке ставится «Просмотрено».
+  if (body.watched_episode === true || body.completed === true) {
+    if (body.watched_episode === true) {
+      const { error } = await supabase.from('watched_episodes').upsert(
+        {
+          user_id: user.id,
+          content_type: contentType,
+          shikimori_id: shikimoriId,
+          season,
+          episode,
+        },
+        {
+          onConflict: 'user_id,content_type,shikimori_id,season,episode',
+          ignoreDuplicates: true,
+        },
+      );
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+    }
+    if (body.completed === true) {
+      const { error } = await supabase.from('user_list').upsert(
+        {
+          user_id: user.id,
+          content_type: contentType,
+          shikimori_id: shikimoriId,
+          anime_title: body.anime_title ?? 'Без названия',
+          poster_url: body.poster_url ?? null,
+          status: 'completed',
+        },
+        { onConflict: 'user_id,content_type,shikimori_id' },
+      );
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+    }
+    return NextResponse.json({ ok: true });
   }
 
   if (isMark) {

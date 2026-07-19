@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
@@ -54,6 +55,8 @@ interface Props {
 
 const SAVE_INTERVAL_MS = 10_000;
 const PLAYER_PREF_KEY = 'aw:cinemaPlayer';
+/** Задержка автоперехода на следующую серию после окончания текущей. */
+const AUTO_NEXT_DELAY_MS = 3_000;
 
 type PlayerKind = 'vibix' | 'videoseed' | 'kodik';
 
@@ -123,6 +126,7 @@ export default function Player({
   fallback,
   isAuthed,
 }: Props) {
+  const router = useRouter();
   const { toast } = useToast();
 
   // Раздел кино живёт под /cinema, аниме — под /anime и /watch.
@@ -151,6 +155,9 @@ export default function Player({
   );
   const [playing, setPlaying] = useState(false);
   const [ended, setEnded] = useState(false);
+  // Автопереход на следующую серию: цель и таймер (null — отменён/неактивен).
+  const [autoNext, setAutoNext] = useState<StepTarget | null>(null);
+  const autoNextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showOtherBanner, setShowOtherBanner] = useState(
     otherEpisode !== null,
   );
@@ -329,14 +336,32 @@ export default function Player({
   const onEpisodeEnded = useCallback(() => {
     setEnded(true);
     setPlaying(false);
-    // Автопометка следующей серии как начатой (позиция > порога).
-    const step = computeStep(
-      seasonsList,
-      activeSeasonRef.current,
-      activeEpisodeRef.current,
-      1,
-    );
+    const finishedSeason = activeSeasonRef.current;
+    const finishedEpisode = activeEpisodeRef.current;
+    const step = computeStep(seasonsList, finishedSeason, finishedEpisode, 1);
+
+    if (isAuthed) {
+      // Серия досмотрена — для подсветки в сетке; если это была последняя,
+      // тайтл целиком уходит в «Просмотрено».
+      fetch('/api/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content_type: contentType,
+          shikimori_id: shikimoriId,
+          anime_title: animeTitle,
+          poster_url: posterUrl,
+          season: finishedSeason,
+          episode: finishedEpisode,
+          watched_episode: true,
+          completed: step === null,
+        }),
+        keepalive: true,
+      }).catch(() => {});
+    }
+
     if (isAuthed && step) {
+      // Автопометка следующей серии как начатой (позиция > порога).
       fetch('/api/progress', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -354,6 +379,15 @@ export default function Player({
         keepalive: true,
       }).catch(() => {});
     }
+
+    // Автопереход на следующую серию (с возможностью отмены в плашке).
+    if (step) {
+      setAutoNext(step);
+      if (autoNextTimerRef.current) clearTimeout(autoNextTimerRef.current);
+      autoNextTimerRef.current = setTimeout(() => {
+        router.push(`${watchBase}/${shikimoriId}/${step.season}/${step.episode}`);
+      }, AUTO_NEXT_DELAY_MS);
+    }
   }, [
     isAuthed,
     seasonsList,
@@ -361,7 +395,27 @@ export default function Player({
     shikimoriId,
     animeTitle,
     posterUrl,
+    router,
+    watchBase,
   ]);
+
+  // Отмена автоперехода (кнопка в плашке).
+  const cancelAutoNext = useCallback(() => {
+    if (autoNextTimerRef.current) {
+      clearTimeout(autoNextTimerRef.current);
+      autoNextTimerRef.current = null;
+    }
+    setAutoNext(null);
+  }, []);
+
+  // Сброс автоперехода при смене серии/размонтировании.
+  useEffect(() => {
+    setAutoNext(null);
+    setEnded(false);
+    return () => {
+      if (autoNextTimerRef.current) clearTimeout(autoNextTimerRef.current);
+    };
+  }, [season, episode]);
 
   // --- Подписка на события Kodik через postMessage -----------------------
   useEffect(() => {
@@ -779,16 +833,35 @@ export default function Player({
 
       {/* Плашка окончания серии */}
       {ended && hasNext && next && (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-bg-card px-4 py-3 text-sm">
-          <span>Серия {activeEpisode} просмотрена.</span>
-          <Link
-            href={linkFor(next)}
-            className="rounded-md bg-accent px-4 py-1.5 font-medium text-white hover:bg-accent-hover"
-          >
-            {next.season !== activeSeason
-              ? `Сезон ${next.season} →`
-              : 'Следующая серия →'}
-          </Link>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-bg-card px-4 py-3 text-sm">
+          <span>
+            Серия {activeEpisode} просмотрена.
+            {autoNext && (
+              <span className="text-gray-400">
+                {' '}
+                Следующая включится через пару секунд…
+              </span>
+            )}
+          </span>
+          <div className="flex items-center gap-2">
+            {autoNext && (
+              <button
+                type="button"
+                onClick={cancelAutoNext}
+                className="rounded-md px-3 py-1.5 font-medium text-gray-300 ring-1 ring-white/10 hover:text-white"
+              >
+                Отмена
+              </button>
+            )}
+            <Link
+              href={linkFor(next)}
+              className="rounded-md bg-accent px-4 py-1.5 font-medium text-white hover:bg-accent-hover"
+            >
+              {next.season !== activeSeason
+                ? `Сезон ${next.season} →`
+                : 'Следующая серия →'}
+            </Link>
+          </div>
         </div>
       )}
 

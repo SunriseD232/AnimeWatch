@@ -4,28 +4,33 @@ interface Props {
   shikimoriId: number;
   total: number;
   currentEpisode: number | null;
+  /** Досмотренные серии из watched_episodes (точная подсветка). */
+  watchedEpisodes?: number[];
   /** База ссылки просмотра: /watch (аниме) или /cinema/watch (кино). */
   basePath?: string;
 }
 
 /**
- * Сетка кнопок серий. Серии ≤ текущей подсвечены как просмотренные,
+ * Сетка кнопок серий. Досмотренные серии (и серии до текущей) подсвечены,
  * текущая — акцентом.
  */
 export default function EpisodeGrid({
   shikimoriId,
   total,
   currentEpisode,
+  watchedEpisodes = [],
   basePath = '/watch',
 }: Props) {
   const episodes = Array.from({ length: total }, (_, i) => i + 1);
+  const watchedSet = new Set(watchedEpisodes);
 
   return (
     <div className="grid grid-cols-5 gap-2 sm:grid-cols-8 md:grid-cols-10">
       {episodes.map((ep) => {
         const isCurrent = currentEpisode === ep;
         const isWatched =
-          currentEpisode !== null && ep < currentEpisode;
+          watchedSet.has(ep) ||
+          (currentEpisode !== null && ep < currentEpisode);
         return (
           <Link
             key={ep}

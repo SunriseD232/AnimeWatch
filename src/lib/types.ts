@@ -33,6 +33,12 @@ export interface WatchProgressInput {
   position_seconds: number;
   duration_seconds: number | null;
   translation_id: number | null;
+  /** Режим «отметить открытую серию» без позиции (Videoseed). */
+  mark?: boolean;
+  /** Пометить серию season/episode полностью просмотренной. */
+  watched_episode?: boolean;
+  /** Перевести тайтл в user_list со статусом completed. */
+  completed?: boolean;
 }
 
 export type UserListStatus =

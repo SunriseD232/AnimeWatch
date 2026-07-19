@@ -36,10 +36,13 @@ async function ContinueWatching() {
     );
   }
 
+  // Горизонтальная карусель: последние просмотренные листаются вбок.
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4">
+    <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2">
       {progress.map((p) => (
-        <ContinueCard key={p.id} progress={p} />
+        <div key={p.id} className="w-56 shrink-0 snap-start sm:w-72">
+          <ContinueCard progress={p} />
+        </div>
       ))}
     </div>
   );
