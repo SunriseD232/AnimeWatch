@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
 import type { WatchProgress } from '@/lib/types';
-import { formatTime, watchPercent } from '@/lib/format';
+import { fixPosterUrl, formatTime, watchPercent } from '@/lib/format';
 
 /** Карточка блока «Продолжить просмотр» с кнопкой убрать из списка. */
 export default function ContinueCard({
@@ -61,7 +61,7 @@ export default function ContinueCard({
   if (hidden) return null;
 
   return (
-    <div className="group relative overflow-hidden rounded-xl bg-bg-card ring-1 ring-white/5 transition hover:ring-accent/60">
+    <div className="card-lift group relative overflow-hidden rounded-xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60">
       <Link href={watchHref}>
         <div className="relative aspect-video w-full overflow-hidden bg-bg-soft">
           {progress.poster_url ? (
@@ -69,7 +69,7 @@ export default function ContinueCard({
             // обычный <img>, чтобы не заводить allowlist доменов next/image.
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={progress.poster_url}
+              src={fixPosterUrl(progress.poster_url)!}
               alt={progress.anime_title}
               loading="lazy"
               referrerPolicy="no-referrer"

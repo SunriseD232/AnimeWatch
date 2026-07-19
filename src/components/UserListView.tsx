@@ -7,6 +7,7 @@ import type {
   UserListItem,
   UserListStatus,
 } from '@/lib/types';
+import { fixPosterUrl } from '@/lib/format';
 
 const TYPE_TABS: { value: ContentType; label: string }[] = [
   { value: 'anime', label: 'Аниме' },
@@ -100,7 +101,7 @@ export default function UserListView({
             <Link
               key={item.id}
               href={`/${item.content_type === 'cinema' ? 'cinema' : 'anime'}/${item.shikimori_id}`}
-              className="group flex flex-col overflow-hidden rounded-xl bg-bg-card ring-1 ring-white/5 transition hover:ring-accent/60"
+              className="card-lift group flex flex-col overflow-hidden rounded-xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60"
             >
               <div className="relative aspect-[2/3] w-full overflow-hidden bg-bg-soft">
                 {item.poster_url ? (
@@ -108,7 +109,7 @@ export default function UserListView({
                   // (next/image через серверный прокси терял картинки).
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={item.poster_url}
+                    src={fixPosterUrl(item.poster_url)!}
                     alt={item.anime_title}
                     loading="lazy"
                     referrerPolicy="no-referrer"

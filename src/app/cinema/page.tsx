@@ -83,14 +83,17 @@ export default function CinemaHomePage() {
     <div className="flex flex-col gap-10">
       <ModeSwitch active="cinema" />
 
-      <section className="flex flex-col gap-4">
+      <section className="animate-rise flex flex-col gap-4">
         <h1 className="text-xl font-bold">Продолжить просмотр</h1>
         <Suspense fallback={<CardGridSkeleton count={4} />}>
           <ContinueWatching />
         </Suspense>
       </section>
 
-      <section className="flex flex-col gap-4">
+      <section
+        className="animate-rise flex flex-col gap-4"
+        style={{ animationDelay: '80ms' }}
+      >
         <h2 className="text-xl font-bold">Новинки</h2>
         <Suspense fallback={<CardGridSkeleton count={18} />}>
           <Popular />

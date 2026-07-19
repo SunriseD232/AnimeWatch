@@ -10,7 +10,7 @@ export default function CinemaCard({ item }: { item: CinemaShort }) {
   return (
     <Link
       href={`/cinema/${item.id}`}
-      className="group flex flex-col overflow-hidden rounded-xl bg-bg-card ring-1 ring-white/5 transition hover:ring-accent/60"
+      className="card-lift group flex flex-col overflow-hidden rounded-xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60"
     >
       <div className="relative aspect-[2/3] w-full overflow-hidden bg-bg-soft">
         {item.poster ? (

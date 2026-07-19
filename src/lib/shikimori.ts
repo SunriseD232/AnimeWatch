@@ -4,7 +4,9 @@
  * с обязательным User-Agent и щадящим rate limit (5 rps / 90 rpm).
  */
 
-const BASE_URL = 'https://shikimori.one';
+// ВАЖНО: Shikimori переехал с shikimori.one на shikimori.io. Старый домен
+// отвечает редиректами, из-за чего картинки показывали плейсхолдер.
+const BASE_URL = 'https://shikimori.io';
 const API_URL = `${BASE_URL}/api`;
 const USER_AGENT = 'MediaWatch MVP';
 
@@ -92,6 +94,45 @@ export async function getPopular(
 ): Promise<ShikimoriAnimeShort[]> {
   return shikimoriFetch<ShikimoriAnimeShort[]>(
     `/animes?order=popularity&limit=${limit}&status=ongoing`,
+    3600,
+  );
+}
+
+/** Жанры для чипов фильтра на главной (id — как в API Shikimori). */
+export const GENRE_CHIPS: { id: number; label: string }[] = [
+  { id: 1, label: 'Экшен' },
+  { id: 2, label: 'Приключения' },
+  { id: 4, label: 'Комедия' },
+  { id: 8, label: 'Драма' },
+  { id: 10, label: 'Фэнтези' },
+  { id: 22, label: 'Романтика' },
+  { id: 24, label: 'Фантастика' },
+  { id: 37, label: 'Сверхъестественное' },
+  { id: 41, label: 'Триллер' },
+  { id: 36, label: 'Повседневность' },
+  { id: 23, label: 'Школа' },
+  { id: 30, label: 'Спорт' },
+];
+
+/**
+ * Самые рейтинговые из недавно вышедших (последние два аниме-года),
+ * с необязательным фильтром по жанру. Для главной страницы.
+ */
+export async function getTopRecent(
+  genreId?: number,
+  limit = 18,
+): Promise<ShikimoriAnimeShort[]> {
+  const year = new Date().getFullYear();
+  const season = `${year - 1}_${year}`;
+  const params = new URLSearchParams({
+    order: 'ranked',
+    season,
+    kind: 'tv,movie,ona',
+    limit: String(limit),
+  });
+  if (genreId) params.set('genre', String(genreId));
+  return shikimoriFetch<ShikimoriAnimeShort[]>(
+    `/animes?${params.toString()}`,
     3600,
   );
 }

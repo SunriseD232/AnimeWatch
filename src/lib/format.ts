@@ -11,6 +11,15 @@ export function formatTime(totalSeconds: number): string {
   return `${minutes}:${pad(seconds)}`;
 }
 
+/**
+ * Чинит сохранённые в БД URL постеров: Shikimori переехал с .one на .io,
+ * старый домен отдаёт редиректы/заглушки вместо картинок.
+ */
+export function fixPosterUrl(url: string | null): string | null {
+  if (!url) return null;
+  return url.replace('//shikimori.one', '//shikimori.io');
+}
+
 /** Процент просмотра серии (0..100), null если длительность неизвестна. */
 export function watchPercent(
   position: number,
