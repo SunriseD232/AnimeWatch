@@ -58,3 +58,17 @@ export interface UserListItem {
   status: UserListStatus;
   created_at: string;
 }
+
+/** Уведомление о новых сериях (таблица episode_notifications). */
+export interface EpisodeNotification {
+  id: string;
+  user_id: string;
+  content_type: ContentType;
+  shikimori_id: number;
+  title: string;
+  poster_url: string | null;
+  /** Новое общее число серий на момент уведомления. */
+  episode: number;
+  created_at: string;
+  read_at: string | null;
+}

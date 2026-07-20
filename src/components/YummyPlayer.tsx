@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useProgressSaver } from '@/hooks/useProgressSaver';
+import { KODIK_EVENTS, type KodikMessage } from '@/lib/video/kodik-events';
 import type { YummyTranslation } from '@/lib/video/yummy';
 
 interface Props {
@@ -10,16 +12,27 @@ interface Props {
   posterUrl: string | null;
   isAuthed: boolean;
   translations: YummyTranslation[];
+  onEnded?: () => void;
 }
 
 /**
- * Резервный плеер Yummy (iframe на Kodik/Alloha/Sibnet — конкретный балансер
- * определяется выбранным вариантом озвучки). Протокол postMessage у чужого
- * плеера заранее неизвестен (зависит от того, кто именно отдал эту серию),
- * поэтому точного трекинга секунды здесь нет — только отметка «открыл эту
- * серию» (как для Videoseed в разделе кино), чтобы она попала в
- * «Продолжить просмотр». Список переводов и их embed-адреса уже готовы (со
- * стороны сервера), поэтому смена озвучки — мгновенная, без запроса.
+ * Часть переводов Yummy — обычные embed'ы Kodik (`kodikplayer.com`), для
+ * которых протокол postMessage уже известен и используется в KodikPlayer.tsx.
+ * Для Alloha/Sibnet/Aksor протокола нет (проверено: в их JS-бандлах нет ни
+ * одного упоминания postMessage/MessageEvent) — там точный трекинг невозможен.
+ */
+function isKodikEmbed(url: string): boolean {
+  return url.includes('kodikplayer.com');
+}
+
+/**
+ * Резервный плеер Yummy (iframe на Kodik/Alloha/Sibnet/Aksor — конкретный
+ * балансер определяется выбранным вариантом озвучки). Когда выбранный
+ * перевод оказывается Kodik-эмбедом — включаем точный трекинг позиции (те же
+ * события, что и в KodikPlayer.tsx). Для остальных балансеров протокол
+ * неизвестен — только отметка «открыл эту серию» без точной позиции.
+ * Список переводов и их embed-адреса уже готовы (со стороны сервера),
+ * поэтому смена озвучки — мгновенная, без запроса.
  */
 export default function YummyPlayer({
   shikimoriId,
@@ -28,21 +41,89 @@ export default function YummyPlayer({
   posterUrl,
   isAuthed,
   translations,
+  onEnded,
 }: Props) {
   const [translationId, setTranslationId] = useState<number | null>(
     translations[0]?.id ?? null,
   );
   const active =
     translations.find((t) => t.id === translationId) ?? translations[0] ?? null;
+  const trackable = active ? isKodikEmbed(active.embedUrl) : false;
 
-  // Смена серии — список переводов другой, сбрасываем на первый вариант.
+  const currentTimeRef = useRef(0);
+  const durationRef = useRef<number | null>(null);
+  const playingRef = useRef(false);
+
+  const getState = useCallback(
+    () => ({
+      position: currentTimeRef.current,
+      duration: durationRef.current,
+      translationId: null,
+      episode,
+    }),
+    [episode],
+  );
+
+  const save = useProgressSaver({
+    contentType: 'anime',
+    shikimoriId,
+    animeTitle,
+    posterUrl,
+    isAuthed,
+    getState,
+    playingRef,
+  });
+
+  // Смена серии/перевода — сброс на первый вариант и обнуление трекинга
+  // (иначе позиция от прошлой серии могла бы утечь в новую).
   useEffect(() => {
     setTranslationId(translations[0]?.id ?? null);
+    currentTimeRef.current = 0;
+    durationRef.current = null;
+    playingRef.current = false;
   }, [translations]);
 
-  // Отметка открытой серии — без точной позиции просмотра.
+  // Точный трекинг — только когда выбранный перевод оказался Kodik-эмбедом.
   useEffect(() => {
-    if (!isAuthed) return;
+    if (!trackable) return;
+    const handler = (e: MessageEvent) => {
+      const data = e.data as KodikMessage | undefined;
+      if (typeof data !== 'object' || !data?.key) return;
+      switch (data.key) {
+        case KODIK_EVENTS.TIME_UPDATE:
+          if (typeof data.value === 'number') {
+            currentTimeRef.current = data.value;
+          }
+          break;
+        case KODIK_EVENTS.DURATION_UPDATE:
+          if (typeof data.value === 'number') {
+            durationRef.current = data.value;
+          }
+          break;
+        case KODIK_EVENTS.VIDEO_STARTED:
+        case KODIK_EVENTS.PLAY:
+          playingRef.current = true;
+          break;
+        case KODIK_EVENTS.PAUSE:
+          playingRef.current = false;
+          save();
+          break;
+        case KODIK_EVENTS.VIDEO_ENDED:
+          playingRef.current = false;
+          save();
+          onEnded?.();
+          break;
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [trackable, save, onEnded]);
+
+  // Отметка открытой серии — только для нетрекаемых источников (Alloha/
+  // Sibnet/Aksor), без точной позиции. Для Kodik-эмбедов это не нужно:
+  // реальные события сами наполнят прогресс, как только начнётся показ.
+  useEffect(() => {
+    if (!isAuthed || trackable) return;
     fetch('/api/progress', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -57,7 +138,7 @@ export default function YummyPlayer({
       }),
       keepalive: true,
     }).catch(() => {});
-  }, [isAuthed, shikimoriId, episode, animeTitle, posterUrl]);
+  }, [isAuthed, trackable, shikimoriId, episode, animeTitle, posterUrl]);
 
   if (!active) return null;
 
@@ -78,6 +159,11 @@ export default function YummyPlayer({
         <span className="rounded-md bg-white/5 px-2.5 py-1 text-xs font-medium text-gray-300">
           Источник: Yummy
         </span>
+        {trackable && (
+          <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-300">
+            Точная позиция
+          </span>
+        )}
         {translations.length > 1 && (
           <>
             <span className="ml-1 text-gray-400">Озвучка:</span>
@@ -96,9 +182,11 @@ export default function YummyPlayer({
         )}
       </div>
 
-      <p className="text-xs text-gray-500">
-        Резервный источник: точная позиция просмотра не сохраняется.
-      </p>
+      {!trackable && (
+        <p className="text-xs text-gray-500">
+          Резервный источник: точная позиция просмотра не сохраняется.
+        </p>
+      )}
     </div>
   );
 }

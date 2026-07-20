@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
+import ExpandTitleButton from '@/components/ExpandTitleButton';
 import type { WatchProgress } from '@/lib/types';
 import { fixPosterUrl, formatTime, watchPercent } from '@/lib/format';
 
@@ -20,6 +21,7 @@ export default function ContinueCard({
   const [removing, setRemoving] = useState(false);
   // Двухшаговое удаление: первый клик по ✕ показывает подтверждение.
   const [confirming, setConfirming] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   // Авто-сброс подтверждения, если пользователь передумал и ничего не нажал.
   useEffect(() => {
@@ -94,13 +96,24 @@ export default function ContinueCard({
           )}
         </div>
         <div className="p-2.5">
-          <h3 className="line-clamp-2 text-sm font-medium leading-snug text-gray-100">
+          <h3
+            className={[
+              'text-sm font-medium leading-snug text-gray-100',
+              expanded ? '' : 'line-clamp-2',
+            ].join(' ')}
+          >
             {progress.anime_title}
           </h3>
         </div>
       </Link>
 
-      {/* Убрать из «Продолжить просмотр» — с подтверждением */}
+      <ExpandTitleButton
+        expanded={expanded}
+        onToggle={() => setExpanded((v) => !v)}
+      />
+
+      {/* Убрать из «Продолжить просмотр» — с подтверждением. Кнопка всегда
+          видима (не по hover): на тач-устройствах hover не срабатывает. */}
       {confirming ? (
         <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-black/85 p-1">
           <button
@@ -125,7 +138,7 @@ export default function ContinueCard({
           onClick={() => setConfirming(true)}
           aria-label="Убрать из просмотра"
           title="Убрать из просмотра"
-          className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full bg-black/70 text-sm text-white opacity-0 transition hover:bg-red-600 focus:opacity-100 group-hover:opacity-100"
+          className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full bg-black/70 text-sm text-white transition hover:bg-red-600"
         >
           ✕
         </button>

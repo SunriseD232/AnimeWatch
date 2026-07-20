@@ -109,15 +109,43 @@ async function withYummyPosters<T extends ShikimoriAnimeShort>(
   });
 }
 
-/** Популярные онгоинги для главной. */
-export async function getPopular(
-  limit = 18,
-): Promise<ShikimoriAnimeShort[]> {
+/** Одна страница «Популярного»: сами тайтлы + есть ли следующая страница. */
+export interface PopularPage {
+  items: ShikimoriAnimeShort[];
+  hasMore: boolean;
+}
+
+/**
+ * Популярное — топ по рейтингу среди тайтлов текущего аниме-года
+ * (`order=ranked`, а не `order=popularity`, который у Shikimori вообще не
+ * про рейтинг, а про метрику охвата). Полная пагинация — используется и на
+ * превью-ряде главной, и на отдельной странице /popular.
+ *
+ * Лимит на страницу ограничен самим Shikimori 50 записями — если запросят
+ * больше, API молча обрежет.
+ */
+export async function getPopularRanked(
+  page = 1,
+  limit = 24,
+): Promise<PopularPage> {
+  const year = new Date().getFullYear();
+  const params = new URLSearchParams({
+    order: 'ranked',
+    season: String(year),
+    kind: 'tv,movie,ona',
+    limit: String(limit),
+    page: String(page),
+  });
   const items = await shikimoriFetch<ShikimoriAnimeShort[]>(
-    `/animes?order=popularity&limit=${limit}&status=ongoing`,
-    3600,
+    `/animes?${params.toString()}`,
+    1800,
   );
-  return withYummyPosters(items);
+  return {
+    items: await withYummyPosters(items),
+    // Shikimori не отдаёт общее число страниц — эвристика: неполная
+    // страница означает, что дальше пусто.
+    hasMore: items.length === limit,
+  };
 }
 
 /** Жанры для чипов фильтра на главной (id — как в API Shikimori). */

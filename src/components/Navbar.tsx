@@ -1,12 +1,24 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
+import NotificationBell from './NotificationBell';
 import SearchBox from './SearchBox';
+import type { EpisodeNotification } from '@/lib/types';
 
 export default async function Navbar() {
   const supabase = createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  let notifications: EpisodeNotification[] = [];
+  if (user) {
+    const { data } = await supabase
+      .from('episode_notifications')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(30);
+    notifications = (data ?? []) as EpisodeNotification[];
+  }
 
   return (
     <header className="glass sticky top-0 z-40 border-b border-white/[0.06]">
@@ -26,12 +38,15 @@ export default async function Navbar() {
         </div>
 
         {user ? (
-          <Link
-            href="/profile"
-            className="press shrink-0 rounded-full px-3 py-2 text-sm text-gray-300 transition hover:bg-white/5 hover:text-white"
-          >
-            Профиль
-          </Link>
+          <div className="flex shrink-0 items-center gap-1">
+            <NotificationBell initial={notifications} />
+            <Link
+              href="/profile"
+              className="press rounded-full px-3 py-2 text-sm text-gray-300 transition hover:bg-white/5 hover:text-white"
+            >
+              Профиль
+            </Link>
+          </div>
         ) : (
           <div className="flex shrink-0 items-center gap-1">
             <Link

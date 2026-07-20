@@ -8,6 +8,7 @@ import type {
   UserListStatus,
 } from '@/lib/types';
 import { fixPosterUrl } from '@/lib/format';
+import ExpandTitleButton from '@/components/ExpandTitleButton';
 
 const TYPE_TABS: { value: ContentType; label: string }[] = [
   { value: 'anime', label: 'Аниме' },
@@ -28,6 +29,56 @@ const STATUS_LABELS: Record<UserListStatus, string> = {
   completed: 'Просмотрено',
   dropped: 'Брошено',
 };
+
+/** Карточка тайтла в списке — своё состояние раскрытия названия на каждую. */
+function ListCard({ item }: { item: UserListItem }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="card-lift group relative flex flex-col overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60">
+      <Link
+        href={`/${item.content_type === 'cinema' ? 'cinema' : 'anime'}/${item.shikimori_id}`}
+        className="flex flex-1 flex-col"
+      >
+        <div className="relative aspect-[2/3] w-full overflow-hidden bg-bg-soft">
+          {item.poster_url ? (
+            // <img> + no-referrer: хотлинк-защита Shikimori/Кинопоиска
+            // (next/image через серверный прокси терял картинки).
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={fixPosterUrl(item.poster_url)!}
+              alt={item.anime_title}
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105"
+            />
+          ) : (
+            <div className="grid h-full w-full place-items-center text-gray-600">
+              нет постера
+            </div>
+          )}
+          <span className="absolute left-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+            {STATUS_LABELS[item.status]}
+          </span>
+        </div>
+        <div className="p-2.5">
+          <h3
+            className={[
+              'text-sm font-medium leading-snug',
+              expanded ? '' : 'line-clamp-2',
+            ].join(' ')}
+          >
+            {item.anime_title}
+          </h3>
+        </div>
+      </Link>
+      <ExpandTitleButton
+        expanded={expanded}
+        onToggle={() => setExpanded((v) => !v)}
+      />
+    </div>
+  );
+}
 
 export default function UserListView({
   items,
@@ -98,38 +149,7 @@ export default function UserListView({
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
           {visible.map((item) => (
-            <Link
-              key={item.id}
-              href={`/${item.content_type === 'cinema' ? 'cinema' : 'anime'}/${item.shikimori_id}`}
-              className="card-lift group flex flex-col overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60"
-            >
-              <div className="relative aspect-[2/3] w-full overflow-hidden bg-bg-soft">
-                {item.poster_url ? (
-                  // <img> + no-referrer: хотлинк-защита Shikimori/Кинопоиска
-                  // (next/image через серверный прокси терял картинки).
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={fixPosterUrl(item.poster_url)!}
-                    alt={item.anime_title}
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                    className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105"
-                  />
-                ) : (
-                  <div className="grid h-full w-full place-items-center text-gray-600">
-                    нет постера
-                  </div>
-                )}
-                <span className="absolute left-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-accent">
-                  {STATUS_LABELS[item.status]}
-                </span>
-              </div>
-              <div className="p-2.5">
-                <h3 className="line-clamp-2 text-sm font-medium leading-snug">
-                  {item.anime_title}
-                </h3>
-              </div>
-            </Link>
+            <ListCard key={item.id} item={item} />
           ))}
         </div>
       )}

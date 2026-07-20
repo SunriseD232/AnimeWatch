@@ -50,6 +50,9 @@ export default async function AnimePage({
   const total = episodeCount(anime);
   const description = stripBbCode(anime.description);
   const year = anime.aired_on ? anime.aired_on.slice(0, 4) : null;
+  // Анонс — тайтл ещё не вышел нигде: смотреть нечего, серий тоже нет
+  // (episodeCount() всё равно вернёт 1 как заглушку — здесь её не показываем).
+  const isAnons = anime.status === 'anons';
 
   // Прогресс и статус списка для этого тайтла (если пользователь вошёл).
   const supabase = createClient();
@@ -143,20 +146,28 @@ export default async function AnimePage({
                 {year}
               </span>
             )}
-            <span className="rounded-md bg-bg-card px-2 py-1 text-gray-300">
-              {total} эп.
-            </span>
+            {!isAnons && (
+              <span className="rounded-md bg-bg-card px-2 py-1 text-gray-300">
+                {total} эп.
+              </span>
+            )}
           </div>
 
           <div className="mt-1 flex flex-wrap items-center gap-3">
-            <Link
-              href={`/watch/${id}/${resumeEpisode}`}
-              className="rounded-full press bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-hover"
-            >
-              {progress
-                ? `Продолжить: серия ${resumeEpisode} (${formatTime(resumePos)})`
-                : 'Начать просмотр'}
-            </Link>
+            {isAnons ? (
+              <span className="rounded-full bg-bg-card px-5 py-2.5 text-sm font-medium text-gray-400 ring-1 ring-white/10">
+                Ещё не вышло — дата выхода не объявлена
+              </span>
+            ) : (
+              <Link
+                href={`/watch/${id}/${resumeEpisode}`}
+                className="rounded-full press bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-hover"
+              >
+                {progress
+                  ? `Продолжить: серия ${resumeEpisode} (${formatTime(resumePos)})`
+                  : 'Начать просмотр'}
+              </Link>
+            )}
             <ListButton
               shikimoriId={id}
               animeTitle={title}
@@ -178,16 +189,18 @@ export default async function AnimePage({
         </section>
       )}
 
-      {/* Серии */}
-      <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold">Серии</h2>
-        <EpisodeGrid
-          shikimoriId={id}
-          total={total}
-          currentEpisode={progress?.episode ?? null}
-          watchedEpisodes={watchedEpisodes}
-        />
-      </section>
+      {/* Серии — только если тайтл уже вышел */}
+      {!isAnons && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold">Серии</h2>
+          <EpisodeGrid
+            shikimoriId={id}
+            total={total}
+            currentEpisode={progress?.episode ?? null}
+            watchedEpisodes={watchedEpisodes}
+          />
+        </section>
+      )}
 
       {/* Продолжение (сиквел франшизы) */}
       {sequels.length > 0 && (

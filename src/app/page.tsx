@@ -5,7 +5,7 @@ import ContinueCard from '@/components/ContinueCard';
 import LoginBanner from '@/components/LoginBanner';
 import ModeSwitch from '@/components/ModeSwitch';
 import { CardGridSkeleton } from '@/components/Skeletons';
-import { GENRE_CHIPS, getPopular, getTopRecent } from '@/lib/shikimori';
+import { GENRE_CHIPS, getPopularRanked, getTopRecent } from '@/lib/shikimori';
 import { createClient } from '@/lib/supabase/server';
 import type { WatchProgress } from '@/lib/types';
 
@@ -79,12 +79,20 @@ async function TopRecent({ genreId }: { genreId?: number }) {
   }
 }
 
+/** Компактный превью-ряд «Популярного» — полный список и пагинация на /popular. */
 async function Popular() {
   try {
-    const animes = await getPopular(18);
+    const { items } = await getPopularRanked(1, 12);
+    if (items.length === 0) {
+      return (
+        <p className="text-sm text-gray-400">
+          В этом году пока нет тайтлов с рейтингом.
+        </p>
+      );
+    }
     return (
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-        {animes.map((a) => (
+        {items.map((a) => (
           <AnimeCard key={a.id} anime={a} />
         ))}
       </div>
@@ -162,8 +170,16 @@ export default function HomePage({
       </section>
 
       <section className="animate-rise flex flex-col gap-4" style={{ animationDelay: '160ms' }}>
-        <h2 className="text-xl font-bold">Популярное сейчас</h2>
-        <Suspense fallback={<CardGridSkeleton count={18} />}>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold">Популярное</h2>
+          <Link
+            href="/popular"
+            className="press text-sm font-medium text-accent hover:text-accent-hover"
+          >
+            Смотреть всё →
+          </Link>
+        </div>
+        <Suspense fallback={<CardGridSkeleton count={12} />}>
           <Popular />
         </Suspense>
       </section>
