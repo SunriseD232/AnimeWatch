@@ -31,7 +31,7 @@ async function ContinueWatching() {
 
   if (progress.length === 0) {
     return (
-      <div className="rounded-xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
+      <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
         Здесь появятся фильмы и сериалы, которые вы смотрите. Начните с
         популярного ниже.
       </div>
@@ -55,7 +55,7 @@ async function Popular() {
     const items = await getPopularCinema(18);
     if (items.length === 0) {
       return (
-        <div className="rounded-xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
+        <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
           Каталог кино недоступен. Убедитесь, что задан{' '}
           <code className="rounded bg-black/30 px-1">VIDEOSEED_API_TOKEN</code>{' '}
           — по нему подтягиваются фильмы и сериалы из Videoseed.
@@ -71,7 +71,7 @@ async function Popular() {
     );
   } catch {
     return (
-      <div className="rounded-xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
+      <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
         Не удалось загрузить каталог Videoseed. Попробуйте обновить страницу позже.
       </div>
     );

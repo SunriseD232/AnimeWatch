@@ -61,7 +61,7 @@ export default function ContinueCard({
   if (hidden) return null;
 
   return (
-    <div className="card-lift group relative overflow-hidden rounded-xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60">
+    <div className="card-lift group relative overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60">
       <Link href={watchHref}>
         <div className="relative aspect-video w-full overflow-hidden bg-bg-soft">
           {progress.poster_url ? (

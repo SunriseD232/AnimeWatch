@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
+import AnimeCard from '@/components/AnimeCard';
 import HlsPlayer from '@/components/HlsPlayer';
 import KodikPlayer from '@/components/KodikPlayer';
+import YummyPlayer from '@/components/YummyPlayer';
 import {
   episodeQualities,
   getRelease,
@@ -15,6 +17,8 @@ import {
   type HlsQuality,
 } from '@/lib/anilibria';
 import type { Translation } from '@/lib/video/types';
+import type { YummyTranslation } from '@/lib/video/yummy';
+import type { ShikimoriAnimeShort } from '@/lib/shikimori';
 import type { ContentType, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
 
@@ -36,9 +40,16 @@ interface Props {
   kodikTranslations: Translation[];
   kodikInitialTranslationId: number | null;
   kodikFallback: boolean;
+  // Данные Yummy (резервный источник) и тайминги пропуска для AniLibria.
+  yummyTranslations: YummyTranslation[];
+  skipOpening: { time: number; length: number } | null;
+  skipEnding: { time: number; length: number } | null;
+  // Подсказки под плеером: прямое продолжение франшизы и похожие тайтлы.
+  sequels: ShikimoriAnimeShort[];
+  similar: ShikimoriAnimeShort[];
 }
 
-type Source = 'hls' | 'kodik';
+type Source = 'hls' | 'kodik' | 'yummy';
 
 const PREF_KEY = 'aw:preferredSource';
 /** Задержка автоперехода на следующую серию после окончания текущей. */
@@ -66,6 +77,11 @@ export default function WatchPlayer({
   kodikTranslations,
   kodikInitialTranslationId,
   kodikFallback,
+  yummyTranslations,
+  skipOpening,
+  skipEnding,
+  sequels,
+  similar,
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
@@ -97,6 +113,7 @@ export default function WatchPlayer({
   const isCinema = contentType === 'cinema';
   const watchBase = isCinema ? '/cinema/watch' : '/watch';
   const detailHref = `${isCinema ? '/cinema' : '/anime'}/${shikimoriId}`;
+  const hasYummy = yummyTranslations.length > 0;
 
   const playingRef = useRef(false);
   // Актуальная позиция активного плеера — для переноса при смене источника.
@@ -136,18 +153,26 @@ export default function WatchPlayer({
       }
       if (cancelled) return;
       setAniQualities(q);
-      // Учитываем сохранённое предпочтение пользователя.
-      const pref =
+      // Учитываем сохранённое предпочтение пользователя — но только если
+      // этот источник реально доступен для данной серии.
+      const pref = (
         typeof window !== 'undefined'
           ? window.localStorage.getItem(PREF_KEY)
-          : null;
-      setSource(q ? (pref === 'kodik' ? 'kodik' : 'hls') : 'kodik');
+          : null
+      ) as Source | null;
+      const available: Source[] = [
+        ...(q ? (['hls'] as const) : []),
+        'kodik',
+        ...(hasYummy ? (['yummy'] as const) : []),
+      ];
+      const fallback: Source = q ? 'hls' : 'kodik';
+      setSource(pref && available.includes(pref) ? pref : fallback);
       setResolving(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [isCinema, animeRomaji, animeRussian, animeYear, episode]);
+  }, [isCinema, animeRomaji, animeRussian, animeYear, episode, hasYummy]);
 
   // --- Ручное переключение источника с переносом позиции ---
   const switchTo = useCallback(
@@ -346,28 +371,30 @@ export default function WatchPlayer({
         </div>
       )}
 
-      {/* Переключатель источника — когда AniLibria доступна как альтернатива */}
-      {!resolving && aniQualities && (
+      {/* Переключатель источника — когда есть альтернатива Kodik */}
+      {!resolving && (aniQualities || hasYummy) && (
         <div className="flex items-center gap-2 text-sm">
           <span className="text-gray-400">Плеер:</span>
-          <div className="inline-flex rounded-lg bg-bg-card p-0.5 ring-1 ring-white/5">
-            <button
-              type="button"
-              onClick={() => switchTo('hls')}
-              className={[
-                'rounded-md px-3 py-1.5 text-sm font-medium transition',
-                source === 'hls'
-                  ? 'bg-accent text-white'
-                  : 'text-gray-300 hover:text-white',
-              ].join(' ')}
-            >
-              AniLibria · {aniQualities[0]?.label ?? '720'}p
-            </button>
+          <div className="inline-flex rounded-full bg-bg-card p-0.5 ring-1 ring-white/5">
+            {aniQualities && (
+              <button
+                type="button"
+                onClick={() => switchTo('hls')}
+                className={[
+                  'rounded-full px-3 py-1.5 text-sm font-medium transition',
+                  source === 'hls'
+                    ? 'bg-accent text-white'
+                    : 'text-gray-300 hover:text-white',
+                ].join(' ')}
+              >
+                AniLibria · {aniQualities[0]?.label ?? '720'}p
+              </button>
+            )}
             <button
               type="button"
               onClick={() => switchTo('kodik')}
               className={[
-                'rounded-md px-3 py-1.5 text-sm font-medium transition',
+                'rounded-full px-3 py-1.5 text-sm font-medium transition',
                 source === 'kodik'
                   ? 'bg-accent text-white'
                   : 'text-gray-300 hover:text-white',
@@ -375,6 +402,20 @@ export default function WatchPlayer({
             >
               Kodik
             </button>
+            {hasYummy && (
+              <button
+                type="button"
+                onClick={() => switchTo('yummy')}
+                className={[
+                  'rounded-full px-3 py-1.5 text-sm font-medium transition',
+                  source === 'yummy'
+                    ? 'bg-accent text-white'
+                    : 'text-gray-300 hover:text-white',
+                ].join(' ')}
+              >
+                Yummy
+              </button>
+            )}
           </div>
           {switching && (
             <span className="text-xs text-gray-500">переключаем…</span>
@@ -400,8 +441,19 @@ export default function WatchPlayer({
               ? Math.floor(livePositionRef.current)
               : resumeFrom
           }
+          skipOpening={skipOpening}
+          skipEnding={skipEnding}
           onEnded={onEnded}
           onTimeUpdate={bumpPosition}
+        />
+      ) : source === 'yummy' && hasYummy ? (
+        <YummyPlayer
+          shikimoriId={shikimoriId}
+          episode={episode}
+          animeTitle={animeTitle}
+          posterUrl={posterUrl}
+          isAuthed={isAuthed}
+          translations={yummyTranslations}
         />
       ) : (
         <KodikPlayer
@@ -490,6 +542,30 @@ export default function WatchPlayer({
           </Link>
           , чтобы синхронизировать позицию между устройствами.
         </p>
+      )}
+
+      {/* Продолжение франшизы — компактно, под плеером */}
+      {sequels.length > 0 && (
+        <section className="flex flex-col gap-3 border-t border-white/5 pt-4">
+          <h2 className="text-base font-semibold">Продолжение</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {sequels.map((a) => (
+              <AnimeCard key={a.id} anime={a} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Похожее — компактно, под плеером */}
+      {similar.length > 0 && (
+        <section className="flex flex-col gap-3 border-t border-white/5 pt-4">
+          <h2 className="text-base font-semibold">Похожее</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {similar.map((a) => (
+              <AnimeCard key={a.id} anime={a} />
+            ))}
+          </div>
+        </section>
       )}
     </div>
   );

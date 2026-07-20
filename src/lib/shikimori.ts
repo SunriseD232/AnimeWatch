@@ -4,6 +4,8 @@
  * с обязательным User-Agent и щадящим rate limit (5 rps / 90 rpm).
  */
 
+import { getYummyPostersMap } from './video/yummy';
+
 // ВАЖНО: Shikimori переехал с shikimori.one на shikimori.io. Старый домен
 // отвечает редиректами, из-за чего картинки показывали плейсхолдер.
 const BASE_URL = 'https://shikimori.io';
@@ -88,14 +90,34 @@ export function imageUrl(path: string | undefined | null): string | null {
   return `${BASE_URL}${path}`;
 }
 
+/**
+ * Подменяет постеры на Yummy (api.yani.tv) там, где для тайтла есть точное
+ * совпадение по shikimori_id — у Shikimori часто отдаёт плейсхолдер вместо
+ * реального постера, у Yummy покрытие лучше. Один батч-запрос на весь список.
+ * Тайтлы без совпадения остаются с оригинальным постером Shikimori.
+ */
+async function withYummyPosters<T extends ShikimoriAnimeShort>(
+  items: T[],
+): Promise<T[]> {
+  if (items.length === 0) return items;
+  const posters = await getYummyPostersMap(items.map((i) => i.id));
+  if (posters.size === 0) return items;
+  return items.map((item) => {
+    const override = posters.get(item.id);
+    if (!override) return item;
+    return { ...item, image: { ...item.image, original: override } };
+  });
+}
+
 /** Популярные онгоинги для главной. */
 export async function getPopular(
   limit = 18,
 ): Promise<ShikimoriAnimeShort[]> {
-  return shikimoriFetch<ShikimoriAnimeShort[]>(
+  const items = await shikimoriFetch<ShikimoriAnimeShort[]>(
     `/animes?order=popularity&limit=${limit}&status=ongoing`,
     3600,
   );
+  return withYummyPosters(items);
 }
 
 /** Жанры для чипов фильтра на главной (id — как в API Shikimori). */
@@ -131,10 +153,11 @@ export async function getTopRecent(
     limit: String(limit),
   });
   if (genreId) params.set('genre', String(genreId));
-  return shikimoriFetch<ShikimoriAnimeShort[]>(
+  const items = await shikimoriFetch<ShikimoriAnimeShort[]>(
     `/animes?${params.toString()}`,
     3600,
   );
+  return withYummyPosters(items);
 }
 
 /** Разбивает название на слова (латиница/кириллица/цифры). */
@@ -200,14 +223,64 @@ export async function searchAnime(
     return Number(b.score) - Number(a.score);
   });
 
-  return matches.slice(0, limit);
+  return withYummyPosters(matches.slice(0, limit));
 }
 
-/** Полная карточка тайтла по id. */
+/**
+ * Полная карточка тайтла по id. Подмена постера на Yummy применяется и
+ * здесь — от неё зависит и страница тайтла, и постер, сохраняемый в
+ * прогресс просмотра (watch-страница берёт его из этой же функции).
+ */
 export async function getAnime(
   id: number,
 ): Promise<ShikimoriAnimeFull> {
-  return shikimoriFetch<ShikimoriAnimeFull>(`/animes/${id}`, 3600);
+  const anime = await shikimoriFetch<ShikimoriAnimeFull>(
+    `/animes/${id}`,
+    3600,
+  );
+  const [withPoster] = await withYummyPosters([anime]);
+  return withPoster;
+}
+
+interface ShikimoriRelatedEntry {
+  relation: string;
+  anime: ShikimoriAnimeShort | null;
+}
+
+/**
+ * Прямые продолжения тайтла (сиквелы франшизы, не приквелы/спин-оффы).
+ * Обычно один элемент, но у некоторых франшиз ветвится на несколько.
+ * Резилентно: любая ошибка API → пустой список, страница не падает.
+ */
+export async function getSequels(id: number): Promise<ShikimoriAnimeShort[]> {
+  try {
+    const related = await shikimoriFetch<ShikimoriRelatedEntry[]>(
+      `/animes/${id}/related`,
+      3600,
+    );
+    const sequels = related
+      .filter((r) => r.relation === 'Sequel' && r.anime !== null)
+      .map((r) => r.anime as ShikimoriAnimeShort);
+    return withYummyPosters(sequels);
+  } catch {
+    return [];
+  }
+}
+
+/** Похожие тайтлы (рекомендации Shikimori), для карточки/страницы просмотра. */
+export async function getSimilarAnime(
+  id: number,
+  limit = 12,
+): Promise<ShikimoriAnimeShort[]> {
+  try {
+    const similar = await shikimoriFetch<ShikimoriAnimeShort[]>(
+      `/animes/${id}/similar`,
+      3600,
+    );
+    return withYummyPosters(similar.slice(0, limit));
+  } catch {
+    return [];
+  }
 }
 
 /**

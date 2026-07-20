@@ -688,7 +688,7 @@ export default function Player({
       {(hasVibix || hasVideoseed) && (
         <div className="flex items-center gap-2 text-sm">
           <span className="text-gray-400">Плеер:</span>
-          <div className="inline-flex rounded-lg bg-bg-card p-0.5 ring-1 ring-white/5">
+          <div className="inline-flex rounded-full bg-bg-card p-0.5 ring-1 ring-white/5">
             {(
               [
                 hasVibix ? (['vibix', 'Vibix'] as const) : null,
@@ -701,7 +701,7 @@ export default function Player({
                 type="button"
                 onClick={() => switchPlayer(kind)}
                 className={[
-                  'rounded-md px-3 py-1.5 text-sm font-medium transition',
+                  'rounded-full px-3 py-1.5 text-sm font-medium transition',
                   player === kind
                     ? 'bg-accent text-white'
                     : 'text-gray-300 hover:text-white',
@@ -715,7 +715,7 @@ export default function Player({
       )}
 
       {/* Плеер 16:9 */}
-      <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black ring-1 ring-white/10">
+      <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10">
         {player === 'vibix' && vibixEmbed ? (
           <VibixPlayer
             key={`vibix-${vibixEmbed.id}-${season}-${episode}`}

@@ -30,7 +30,7 @@ async function ContinueWatching() {
 
   if (progress.length === 0) {
     return (
-      <div className="rounded-xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
+      <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
         Здесь появятся тайтлы, которые вы смотрите. Начните с популярного
         ниже.
       </div>
@@ -71,7 +71,7 @@ async function TopRecent({ genreId }: { genreId?: number }) {
     );
   } catch {
     return (
-      <div className="rounded-xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
+      <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
         Не удалось загрузить каталог Shikimori. Попробуйте обновить страницу
         позже.
       </div>
@@ -91,7 +91,7 @@ async function Popular() {
     );
   } catch {
     return (
-      <div className="rounded-xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
+      <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
         Не удалось загрузить каталог Shikimori. Попробуйте обновить страницу
         позже.
       </div>

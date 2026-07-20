@@ -9,15 +9,36 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Тёмная палитра в духе Apple TV / apple.com: истинно чёрный холст,
+        // фирменный тёмный уголь (#1d1d1f) для приподнятых поверхностей —
+        // тот самый оттенок, что на apple.com в тёмных секциях.
         bg: {
-          DEFAULT: '#0d0d12',
-          soft: '#16161e',
-          card: '#1c1c26',
+          DEFAULT: '#000000',
+          soft: '#151517',
+          card: '#1d1d1f',
         },
+        // Синий Apple для тёмного режима (тот же, что ссылки на apple.com
+        // в dark mode), а не нейтральный «дефолт дизайн-системы».
         accent: {
-          DEFAULT: '#7c5cff',
-          hover: '#6a49f2',
+          DEFAULT: '#2997ff',
+          hover: '#47a9ff',
         },
+      },
+      fontFamily: {
+        // Inter — ближайшее веб-приближение SF Pro на не-Apple платформах;
+        // -apple-system подхватит настоящий SF Pro на самих устройствах Apple.
+        sans: [
+          'var(--font-inter)',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'ui-sans-serif',
+          'system-ui',
+          'Segoe UI',
+          'Roboto',
+          'Helvetica Neue',
+          'Arial',
+          'sans-serif',
+        ],
       },
     },
   },

@@ -36,20 +36,20 @@ body {
   animation: shimmer 1.4s infinite linear;
 }
 
-/* Кастомный скроллбар */
+/* Кастомный скроллбар — оттенки под новую палитру (systemGray) */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: #0d0d12;
+  background: #000000;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2a2a38;
+  background: #2c2c2e;
   border-radius: 5px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #3a3a4a;
+  background: #3a3a3c;
 }
 
 /* Появление секций/карточек: мягкий подъём с растворением */
@@ -68,7 +68,7 @@ body {
   animation: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* Ховер-лифт карточек: подъём + свечение акцентом */
+/* Ховер-лифт карточек: подъём + свечение акцентом (Apple-синий) */
 .card-lift {
   transition:
     transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
@@ -78,7 +78,7 @@ body {
   transform: translateY(-4px);
   box-shadow:
     0 12px 32px -8px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(124, 92, 255, 0.25);
+    0 0 0 1px rgba(41, 151, 255, 0.25);
 }
 
 /* Тонкий скроллбар для горизонтальных каруселей */
@@ -86,14 +86,27 @@ body {
   height: 6px;
 }
 .overflow-x-auto::-webkit-scrollbar-thumb {
-  background: #2a2a38;
+  background: #2c2c2e;
   border-radius: 3px;
 }
 
-/* Плавное нажатие кнопок */
-button:active,
-a:active {
-  transition-duration: 0.1s;
+/* Тактильное нажатие для pill-кнопок (иконка UIKit: лёгкое сжатие на тап) */
+.press {
+  transition:
+    transform 0.15s cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 0.2s ease,
+    opacity 0.2s ease;
+}
+.press:active {
+  transform: scale(0.96);
+}
+
+/* Матовое стекло для панелей поверх контента (тулбар, меню, тосты) —
+   в духе macOS/iOS vibrancy. */
+.glass {
+  background: rgba(29, 29, 31, 0.72);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
 }
 
 .line-clamp-2 {

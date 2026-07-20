@@ -3,7 +3,7 @@ export default function Loading() {
   return (
     <div className="flex flex-col gap-8" aria-busy="true">
       <div className="flex flex-col gap-5 sm:flex-row">
-        <div className="skeleton mx-auto aspect-[2/3] w-40 shrink-0 rounded-xl sm:mx-0 sm:w-48" />
+        <div className="skeleton mx-auto aspect-[2/3] w-40 shrink-0 rounded-2xl sm:mx-0 sm:w-48" />
         <div className="flex flex-1 flex-col gap-3">
           <div className="skeleton h-7 w-2/3" />
           <div className="flex gap-2">

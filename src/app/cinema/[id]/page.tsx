@@ -64,7 +64,7 @@ export default async function CinemaPage({
     <div className="flex flex-col gap-8">
       {/* Шапка */}
       <div className="flex flex-col gap-5 sm:flex-row">
-        <div className="relative mx-auto aspect-[2/3] w-40 shrink-0 overflow-hidden rounded-xl bg-bg-card ring-1 ring-white/5 sm:mx-0 sm:w-48">
+        <div className="relative mx-auto aspect-[2/3] w-40 shrink-0 overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 sm:mx-0 sm:w-48">
           {item.poster ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -122,7 +122,7 @@ export default async function CinemaPage({
           <div className="mt-1 flex flex-wrap items-center gap-3">
             <Link
               href={`/cinema/watch/${id}/${resumeSeason}/${resumeEpisode}`}
-              className="rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-hover"
+              className="rounded-full press bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-hover"
             >
               {progress
                 ? item.isSerial

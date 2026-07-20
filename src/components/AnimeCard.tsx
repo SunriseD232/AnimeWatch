@@ -23,7 +23,7 @@ export default function AnimeCard({
   return (
     <Link
       href={`/anime/${anime.id}`}
-      className="card-lift group flex flex-col overflow-hidden rounded-xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60"
+      className="card-lift group flex flex-col overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60"
     >
       <div className="relative aspect-[2/3] w-full overflow-hidden bg-bg-soft">
         {poster ? (

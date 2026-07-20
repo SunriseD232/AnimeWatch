@@ -1,10 +1,13 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import AnimeCard from '@/components/AnimeCard';
 import EpisodeGrid from '@/components/EpisodeGrid';
 import ListButton from '@/components/ListButton';
 import {
   episodeCount,
   getAnime,
+  getSequels,
+  getSimilarAnime,
   imageUrl,
   stripBbCode,
 } from '@/lib/shikimori';
@@ -50,9 +53,11 @@ export default async function AnimePage({
 
   // Прогресс и статус списка для этого тайтла (если пользователь вошёл).
   const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const [{ data: { user } }, sequels, similar] = await Promise.all([
+    supabase.auth.getUser(),
+    getSequels(id),
+    getSimilarAnime(id),
+  ]);
 
   let progress: WatchProgress | null = null;
   let listItem: UserListItem | null = null;
@@ -92,7 +97,7 @@ export default async function AnimePage({
     <div className="flex flex-col gap-8">
       {/* Шапка */}
       <div className="flex flex-col gap-5 sm:flex-row">
-        <div className="relative mx-auto aspect-[2/3] w-40 shrink-0 overflow-hidden rounded-xl bg-bg-card ring-1 ring-white/5 sm:mx-0 sm:w-48">
+        <div className="relative mx-auto aspect-[2/3] w-40 shrink-0 overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 sm:mx-0 sm:w-48">
           {poster ? (
             // <img> + no-referrer: хотлинк-защита Shikimori (см. AnimeCard).
             // eslint-disable-next-line @next/next/no-img-element
@@ -146,7 +151,7 @@ export default async function AnimePage({
           <div className="mt-1 flex flex-wrap items-center gap-3">
             <Link
               href={`/watch/${id}/${resumeEpisode}`}
-              className="rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-hover"
+              className="rounded-full press bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-hover"
             >
               {progress
                 ? `Продолжить: серия ${resumeEpisode} (${formatTime(resumePos)})`
@@ -183,6 +188,30 @@ export default async function AnimePage({
           watchedEpisodes={watchedEpisodes}
         />
       </section>
+
+      {/* Продолжение (сиквел франшизы) */}
+      {sequels.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold">Продолжение</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {sequels.map((a) => (
+              <AnimeCard key={a.id} anime={a} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Похожее */}
+      {similar.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold">Похожее</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {similar.map((a) => (
+              <AnimeCard key={a.id} anime={a} />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

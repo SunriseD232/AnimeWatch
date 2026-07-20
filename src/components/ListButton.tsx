@@ -90,21 +90,21 @@ export default function ListButton({
         type="button"
         disabled={saving}
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 rounded-lg border border-white/10 bg-bg-card px-4 py-2.5 text-sm font-medium text-gray-100 transition hover:bg-bg-soft disabled:opacity-60"
+        className="press flex items-center gap-2 rounded-full border border-white/10 bg-bg-card px-4 py-2.5 text-sm font-medium text-gray-100 hover:bg-bg-soft disabled:opacity-60"
       >
         <span>{current ? current.label : '+ В список'}</span>
         <span className="text-gray-500">▾</span>
       </button>
 
       {open && (
-        <div className="absolute z-20 mt-1 w-48 overflow-hidden rounded-lg border border-white/10 bg-bg-card shadow-xl">
+        <div className="glass absolute z-20 mt-2 w-48 overflow-hidden rounded-2xl border border-white/10 shadow-2xl">
           {STATUS_OPTIONS.map((o) => (
             <button
               key={o.value}
               type="button"
               onClick={() => choose(o.value)}
               className={[
-                'block w-full px-4 py-2.5 text-left text-sm transition hover:bg-bg-soft',
+                'block w-full px-4 py-2.5 text-left text-sm transition hover:bg-white/5',
                 status === o.value ? 'text-accent' : 'text-gray-200',
               ].join(' ')}
             >
@@ -115,7 +115,7 @@ export default function ListButton({
             <button
               type="button"
               onClick={() => choose(null)}
-              className="block w-full border-t border-white/10 px-4 py-2.5 text-left text-sm text-red-300 transition hover:bg-bg-soft"
+              className="block w-full border-t border-white/10 px-4 py-2.5 text-left text-sm text-red-300 transition hover:bg-white/5"
             >
               Убрать из списка
             </button>

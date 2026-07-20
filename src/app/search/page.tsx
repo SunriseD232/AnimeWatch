@@ -26,7 +26,7 @@ async function AnimeResults({ query }: { query: string }) {
     );
   } catch {
     return (
-      <p className="rounded-xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
+      <p className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
         Ошибка поиска. Попробуйте ещё раз.
       </p>
     );
@@ -52,7 +52,7 @@ async function CinemaResults({ query }: { query: string }) {
     );
   } catch {
     return (
-      <p className="rounded-xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
+      <p className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
         Ошибка поиска. Попробуйте ещё раз.
       </p>
     );

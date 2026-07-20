@@ -9,7 +9,7 @@ export default function Loading() {
         <div className="skeleton h-6 w-2/3 max-w-sm" />
         <div className="skeleton h-4 w-32" />
       </div>
-      <div className="skeleton flex aspect-video w-full items-center justify-center rounded-xl">
+      <div className="skeleton flex aspect-video w-full items-center justify-center rounded-2xl">
         <span className="animate-pulse text-sm text-gray-400">
           Загружаем плеер…
         </span>

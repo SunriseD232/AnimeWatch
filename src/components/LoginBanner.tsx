@@ -3,7 +3,7 @@ import Link from 'next/link';
 /** Ненавязчивый баннер с призывом войти для синхронизации прогресса. */
 export default function LoginBanner() {
   return (
-    <div className="flex flex-col items-start justify-between gap-3 rounded-xl border border-accent/20 bg-gradient-to-r from-accent/10 to-transparent p-5 sm:flex-row sm:items-center">
+    <div className="flex flex-col items-start justify-between gap-3 rounded-2xl border border-accent/20 bg-gradient-to-r from-accent/10 to-transparent p-5 sm:flex-row sm:items-center">
       <div>
         <h2 className="text-base font-semibold text-white">
           Войдите, чтобы синхронизировать прогресс
@@ -22,7 +22,7 @@ export default function LoginBanner() {
         </Link>
         <Link
           href="/signup"
-          className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-hover"
+          className="rounded-full press bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-hover"
         >
           Регистрация
         </Link>

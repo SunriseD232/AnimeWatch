@@ -4,6 +4,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useProgressSaver } from '@/hooks/useProgressSaver';
 import type { HlsQuality, QualityLabel } from '@/lib/anilibria';
 
+interface SkipSegment {
+  time: number;
+  length: number;
+}
+
 interface Props {
   shikimoriId: number;
   episode: number;
@@ -13,6 +18,9 @@ interface Props {
   qualities: HlsQuality[];
   /** Стартовая позиция для восстановления (сек) или null. */
   resumeFrom: number | null;
+  /** Тайминги опенинга/эндинга (Yummy) — для кнопки «Пропустить». */
+  skipOpening?: SkipSegment | null;
+  skipEnding?: SkipSegment | null;
   onEnded: () => void;
   /** Сообщает текущую позицию наверх (для переноса при смене источника). */
   onTimeUpdate?: (seconds: number) => void;
@@ -30,6 +38,8 @@ export default function HlsPlayer({
   isAuthed,
   qualities,
   resumeFrom,
+  skipOpening,
+  skipEnding,
   onEnded,
   onTimeUpdate,
 }: Props) {
@@ -40,9 +50,19 @@ export default function HlsPlayer({
   const seekTargetRef = useRef<number | null>(resumeFrom);
   const onTimeUpdateRef = useRef(onTimeUpdate);
   onTimeUpdateRef.current = onTimeUpdate;
+  const skipOpeningRef = useRef(skipOpening);
+  skipOpeningRef.current = skipOpening;
+  const skipEndingRef = useRef(skipEnding);
+  skipEndingRef.current = skipEnding;
 
   const [quality, setQuality] = useState<QualityLabel>(
     qualities[0]?.label ?? '720',
+  );
+  // Какой сегмент сейчас можно пропустить (null — ни один). React сам не
+  // перерендерит при повторной установке того же значения, так что можно
+  // безопасно обновлять на каждый timeupdate.
+  const [activeSkip, setActiveSkip] = useState<'opening' | 'ending' | null>(
+    null,
   );
 
   const currentSrc = qualities.find((q) => q.label === quality)?.url ?? null;
@@ -129,7 +149,19 @@ export default function HlsPlayer({
       save();
       onEnded();
     };
-    const onTime = () => onTimeUpdateRef.current?.(video.currentTime);
+    const onTime = () => {
+      const t = video.currentTime;
+      onTimeUpdateRef.current?.(t);
+      const op = skipOpeningRef.current;
+      const end = skipEndingRef.current;
+      if (op && t >= op.time && t < op.time + op.length) {
+        setActiveSkip('opening');
+      } else if (end && t >= end.time && t < end.time + end.length) {
+        setActiveSkip('ending');
+      } else {
+        setActiveSkip(null);
+      }
+    };
 
     video.addEventListener('play', onPlay);
     video.addEventListener('pause', onPause);
@@ -151,9 +183,17 @@ export default function HlsPlayer({
     setQuality(next);
   }
 
+  function skipCurrent() {
+    const v = videoRef.current;
+    const segment = activeSkip === 'opening' ? skipOpening : skipEnding;
+    if (!v || !segment) return;
+    v.currentTime = segment.time + segment.length;
+    setActiveSkip(null);
+  }
+
   return (
     <div className="flex flex-col gap-3">
-      <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black ring-1 ring-white/10">
+      <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10">
         <video
           ref={videoRef}
           controls
@@ -162,6 +202,16 @@ export default function HlsPlayer({
           poster={posterUrl ?? undefined}
           className="absolute inset-0 h-full w-full"
         />
+        {activeSkip && (
+          <button
+            type="button"
+            onClick={skipCurrent}
+            // bottom-16: запас над полосой нативных контролов <video controls>.
+            className="absolute bottom-16 right-3 z-10 rounded-lg bg-black/80 px-4 py-2 text-sm font-medium text-white ring-1 ring-white/20 backdrop-blur transition hover:bg-black/95"
+          >
+            {activeSkip === 'opening' ? 'Пропустить опенинг' : 'Пропустить эндинг'} →
+          </button>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-sm">

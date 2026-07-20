@@ -1,8 +1,15 @@
 import { notFound } from 'next/navigation';
 import WatchPlayer from '@/components/WatchPlayer';
-import { episodeCount, getAnime, imageUrl } from '@/lib/shikimori';
+import {
+  episodeCount,
+  getAnime,
+  getSequels,
+  getSimilarAnime,
+  imageUrl,
+} from '@/lib/shikimori';
 import { createClient } from '@/lib/supabase/server';
 import { createVideoSource } from '@/lib/video/kodik';
+import { getYummyEpisode } from '@/lib/video/yummy';
 import type { WatchProgress } from '@/lib/types';
 
 export const metadata = { title: 'Просмотр — MediaWatch' };
@@ -68,14 +75,21 @@ export default async function WatchPage({
 
   const initialTranslationId = progress?.translation_id ?? null;
 
-  // Готовим Kodik как fallback (AniLibria подбирается на клиенте).
+  // Готовим Kodik как fallback (AniLibria подбирается на клиенте), Yummy
+  // (второй резервный источник + тайминги пропуска опенинга/эндинга) и
+  // подсказки «продолжение»/«похожее» под плеером — параллельно.
   const source = createVideoSource();
-  const embed = await source.getEmbedUrl({
-    shikimoriId,
-    episode,
-    translationId: initialTranslationId ?? undefined,
-    startFrom: resumeFrom ?? undefined,
-  });
+  const [embed, yummy, sequels, similar] = await Promise.all([
+    source.getEmbedUrl({
+      shikimoriId,
+      episode,
+      translationId: initialTranslationId ?? undefined,
+      startFrom: resumeFrom ?? undefined,
+    }),
+    getYummyEpisode(shikimoriId, episode),
+    getSequels(shikimoriId),
+    getSimilarAnime(shikimoriId, 6),
+  ]);
 
   const total = embed.episodesTotal ?? episodeCount(anime);
   const resolvedTranslationId =
@@ -102,6 +116,11 @@ export default async function WatchPage({
       kodikTranslations={embed.translations}
       kodikInitialTranslationId={resolvedTranslationId}
       kodikFallback={embed.fallback}
+      yummyTranslations={yummy?.translations ?? []}
+      skipOpening={yummy?.skipOpening ?? null}
+      skipEnding={yummy?.skipEnding ?? null}
+      sequels={sequels}
+      similar={similar}
     />
   );
 }
