@@ -12,6 +12,9 @@ interface Props {
   posterUrl: string | null;
   isAuthed: boolean;
   translations: YummyTranslation[];
+  /** Стартовая позиция для восстановления (сек) или null. Работает только
+   *  для Kodik-эмбедов — их плеер поддерживает параметр start_from. */
+  resumeFrom: number | null;
   onEnded?: () => void;
 }
 
@@ -23,6 +26,26 @@ interface Props {
  */
 function isKodikEmbed(url: string): boolean {
   return url.includes('kodikplayer.com');
+}
+
+/**
+ * Добавляет start_from к Kodik-эмбеду — их сервер сам подставляет позицию
+ * при рендере страницы плеера (проверено вживую: разница в HTML при разных
+ * значениях параметра, включая инлайновый parseStartfrom(...) в разметке —
+ * это НЕ клиентский JS, поэтому его не видно в бандле плеера при статическом
+ * анализе, но параметр реально работает).
+ */
+function withStartFrom(embedUrl: string, resumeFrom: number | null): string {
+  if (!resumeFrom || resumeFrom < 5) return embedUrl;
+  try {
+    const url = new URL(
+      embedUrl.startsWith('//') ? `https:${embedUrl}` : embedUrl,
+    );
+    url.searchParams.set('start_from', String(Math.floor(resumeFrom)));
+    return url.toString();
+  } catch {
+    return embedUrl;
+  }
 }
 
 /**
@@ -41,6 +64,7 @@ export default function YummyPlayer({
   posterUrl,
   isAuthed,
   translations,
+  resumeFrom,
   onEnded,
 }: Props) {
   const [translationId, setTranslationId] = useState<number | null>(
@@ -49,6 +73,15 @@ export default function YummyPlayer({
   const active =
     translations.find((t) => t.id === translationId) ?? translations[0] ?? null;
   const trackable = active ? isKodikEmbed(active.embedUrl) : false;
+  // Возобновление позиции — только для Kodik-эмбедов (см. withStartFrom) и
+  // только при первом показе серии (ниже: сбрасывается при смене перевода
+  // внутри той же серии, чтобы не мотать заново после ручного переключения).
+  const [seedResume, setSeedResume] = useState(true);
+  const embedUrl = active
+    ? seedResume && trackable
+      ? withStartFrom(active.embedUrl, resumeFrom)
+      : active.embedUrl
+    : null;
 
   const currentTimeRef = useRef(0);
   const durationRef = useRef<number | null>(null);
@@ -74,14 +107,24 @@ export default function YummyPlayer({
     playingRef,
   });
 
-  // Смена серии/перевода — сброс на первый вариант и обнуление трекинга
-  // (иначе позиция от прошлой серии могла бы утечь в новую).
+  // Смена серии — сброс на первый вариант, обнуление трекинга (иначе позиция
+  // от прошлой серии могла бы утечь в новую) и повторное разрешение
+  // возобновления (resumeFrom теперь относится к новой серии).
   useEffect(() => {
     setTranslationId(translations[0]?.id ?? null);
     currentTimeRef.current = 0;
     durationRef.current = null;
     playingRef.current = false;
+    setSeedResume(true);
   }, [translations]);
+
+  // Ручная смена озвучки внутри той же серии — позицию из resumeFrom (она с
+  // момента загрузки страницы) больше не подставляем: реальная позиция могла
+  // уйти вперёд, а между нетрекаемыми источниками мы её не переносим.
+  function changeTranslation(nextId: number) {
+    setSeedResume(false);
+    setTranslationId(nextId);
+  }
 
   // Точный трекинг — только когда выбранный перевод оказался Kodik-эмбедом.
   useEffect(() => {
@@ -140,14 +183,14 @@ export default function YummyPlayer({
     }).catch(() => {});
   }, [isAuthed, trackable, shikimoriId, episode, animeTitle, posterUrl]);
 
-  if (!active) return null;
+  if (!active || !embedUrl) return null;
 
   return (
     <div className="flex flex-col gap-3">
       <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10">
         <iframe
-          key={active.embedUrl}
-          src={active.embedUrl}
+          key={embedUrl}
+          src={embedUrl}
           title={`${animeTitle} — серия ${episode}`}
           allowFullScreen
           allow="autoplay *; fullscreen *"
@@ -169,7 +212,7 @@ export default function YummyPlayer({
             <span className="ml-1 text-gray-400">Озвучка:</span>
             <select
               value={translationId ?? ''}
-              onChange={(e) => setTranslationId(Number(e.target.value))}
+              onChange={(e) => changeTranslation(Number(e.target.value))}
               className="rounded-lg border border-white/10 bg-bg-card px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none"
             >
               {translations.map((t) => (

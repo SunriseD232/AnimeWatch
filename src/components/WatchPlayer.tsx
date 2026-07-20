@@ -454,6 +454,7 @@ export default function WatchPlayer({
           posterUrl={posterUrl}
           isAuthed={isAuthed}
           translations={yummyTranslations}
+          resumeFrom={resumeFrom}
           onEnded={onEnded}
         />
       ) : (
