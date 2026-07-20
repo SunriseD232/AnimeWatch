@@ -42,6 +42,10 @@ export default function ModeSwitch({ active }: { active: ContentType }) {
             // Кука ставится ДО навигации: иначе middleware вернул бы
             // пользователя обратно в прошлый раздел.
             onClick={() => setModeCookie(tab.value)}
+            // Без префетча: клик по вкладке должен вести ровно туда, куда
+            // указывает подпись, а не в закэшированный редирект по cookie,
+            // взятой на момент фонового префетча (см. middleware.ts).
+            prefetch={false}
             className={[
               'rounded-lg px-4 py-2 text-sm font-medium transition',
               isActive
