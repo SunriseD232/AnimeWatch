@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect } from 'react';
 import type { ContentType } from '@/lib/types';
 
@@ -35,17 +34,20 @@ export default function ModeSwitch({ active }: { active: ContentType }) {
       {TABS.map((tab) => {
         const isActive = tab.value === active;
         return (
-          <Link
+          <a
             key={tab.value}
             href={tab.href}
             aria-current={isActive ? 'page' : undefined}
             // Кука ставится ДО навигации: иначе middleware вернул бы
             // пользователя обратно в прошлый раздел.
             onClick={() => setModeCookie(tab.value)}
-            // Без префетча: клик по вкладке должен вести ровно туда, куда
-            // указывает подпись, а не в закэшированный редирект по cookie,
-            // взятой на момент фонового префетча (см. middleware.ts).
-            prefetch={false}
+            // ОБЫЧНАЯ ссылка, не next/link: клиентский Router Cache Next.js
+            // запоминает результат редиректа '/' → '/cinema' (middleware.ts)
+            // и при клике по «Аниме» повторно использует его в обход
+            // свежей проверки cookie — переключение зацикливалось обратно
+            // на /cinema (воспроизведено вживую, баг возвращался несмотря
+            // на prefetch={false}). Полная навигация браузером обходит
+            // клиентский кэш роутера и гарантирует свежий проход middleware.
             className={[
               'press rounded-full px-4 py-2 text-sm font-medium transition',
               isActive
@@ -54,7 +56,7 @@ export default function ModeSwitch({ active }: { active: ContentType }) {
             ].join(' ')}
           >
             {tab.label}
-          </Link>
+          </a>
         );
       })}
     </div>

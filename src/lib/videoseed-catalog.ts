@@ -17,6 +17,8 @@
  * Модуль исполняется ТОЛЬКО на сервере (токен не должен утекать в браузер).
  */
 
+import { getTmdbRatingByImdbId } from './tmdb';
+
 const VIDEOSEED_API = 'https://api.videoseed.tv/apiv2.php';
 
 interface VsRawSeason {
@@ -174,18 +176,49 @@ function toShort(item: VsRawItem): CinemaShort | null {
 /**
  * Дедуп по kinopoisk_id (одна единица контента может встретиться в нескольких
  * ответах). Берём первый валидный вариант, сохраняя исходный порядок.
+ * `ratings` (id_imdb → vote_average) — опциональное обогащение рейтингом
+ * TMDB для категорий с rankByRating, см. getCinemaByCategory.
  */
-function dedupe(items: VsRawItem[], limit: number): CinemaShort[] {
+function dedupe(
+  items: VsRawItem[],
+  limit: number,
+  ratings?: Map<string, number>,
+): CinemaShort[] {
   const seen = new Set<number>();
   const out: CinemaShort[] = [];
   for (const item of items) {
     const short = toShort(item);
     if (!short || seen.has(short.id)) continue;
+    if (ratings && item.id_imdb) {
+      const rating = ratings.get(item.id_imdb);
+      if (rating !== undefined) short.rating = rating;
+    }
     seen.add(short.id);
     out.push(short);
     if (out.length >= limit) break;
   }
   return out;
+}
+
+/**
+ * Подтягивает рейтинг TMDB по id_imdb для набора записей (параллельно,
+ * дедуп по id_imdb — франшизы/переиздания не дублируют запросы). Каждый
+ * запрос кэшируется на сутки внутри getTmdbRatingByImdbId.
+ */
+async function enrichRatings(items: VsRawItem[]): Promise<Map<string, number>> {
+  const imdbIds = [
+    ...new Set(
+      items.map((i) => i.id_imdb).filter((v): v is string => Boolean(v)),
+    ),
+  ];
+  const pairs = await Promise.all(
+    imdbIds.map(async (id) => [id, await getTmdbRatingByImdbId(id)] as const),
+  );
+  const map = new Map<string, number>();
+  for (const [id, rating] of pairs) {
+    if (rating !== null) map.set(id, rating);
+  }
+  return map;
 }
 
 /**
@@ -216,12 +249,35 @@ export interface CinemaCategoryDef {
   genreExclude?: string;
   /** 'ru' — Россия/СССР в country, 'foreign' — всё остальное. */
   countryMatch?: 'ru' | 'foreign';
+  /** Только вышедшие в текущем или прошлом году (по полю year). */
+  recentOnly?: boolean;
+  /**
+   * Сортировать по рейтингу TMDB (vote_average, по id_imdb) вместо порядка
+   * Videoseed. У Videoseed своего рейтинга нет и сортировка `sort_by` у него
+   * не работает (тот же паттерн, что и у genre/country — см. комментарий
+   * выше), поэтому и сортировка тоже целиком на нашей стороне.
+   */
+  rankByRating?: boolean;
 }
 
 export const CINEMA_CATEGORIES: CinemaCategoryDef[] = [
   { id: 'movies', label: 'Фильмы', type: 'movie', genreExclude: 'мультфильм' },
-  { id: 'foreign-series', label: 'Зарубежные сериалы', type: 'serial', countryMatch: 'foreign' },
-  { id: 'ru-series', label: 'Русские сериалы', type: 'serial', countryMatch: 'ru' },
+  {
+    id: 'foreign-series',
+    label: 'Зарубежные сериалы',
+    type: 'serial',
+    countryMatch: 'foreign',
+    recentOnly: true,
+    rankByRating: true,
+  },
+  {
+    id: 'ru-series',
+    label: 'Русские сериалы',
+    type: 'serial',
+    countryMatch: 'ru',
+    recentOnly: true,
+    rankByRating: true,
+  },
   { id: 'cartoons', label: 'Мультфильмы', type: 'movie', genreMatch: 'мультфильм' },
   { id: 'cartoon-series', label: 'Многосерийные мультфильмы', type: 'serial', genreMatch: 'мультфильм' },
   { id: 'drama', label: 'Драма', type: 'both', genreMatch: 'драма' },
@@ -243,6 +299,11 @@ function matchesCategory(item: VsRawItem, def: CinemaCategoryDef): boolean {
   }
   if (def.countryMatch === 'foreign' && (country.includes('росс') || country.includes('ссср'))) {
     return false;
+  }
+  if (def.recentOnly) {
+    const year = Number(item.year);
+    const minYear = new Date().getFullYear() - 1;
+    if (!Number.isFinite(year) || year < minYear) return false;
   }
   return true;
 }
@@ -287,6 +348,12 @@ export interface CinemaCategoryPage {
   hasMore: boolean;
 }
 
+// Для категорий с rankByRating собираем пул кандидатов пошире, чем нужно на
+// первую страницу — иначе «сортировка по рейтингу» просто переставит те же
+// 24-25 первых попавшихся записей вместо того, чтобы выбрать лучшие среди
+// сколько-нибудь широкой выборки.
+const RATING_CANDIDATE_POOL = 120;
+
 /**
  * Тайтлы категории (вкладка) с постраничной навигацией. Смотри комментарий
  * у CINEMA_CATEGORIES — фильтрация целиком на нашей стороне, поверх обычных
@@ -301,7 +368,10 @@ export async function getCinemaByCategory(
   const def = CINEMA_CATEGORIES.find((c) => c.id === categoryId);
   if (!def) return null;
 
-  const need = page * pageSize + 1; // +1 — узнать, есть ли следующая страница
+  const baseNeed = page * pageSize + 1; // +1 — узнать, есть ли следующая страница
+  const need = def.rankByRating
+    ? Math.max(baseNeed, RATING_CANDIDATE_POOL)
+    : baseNeed;
   const types: ('movie' | 'serial')[] =
     def.type === 'both' ? ['movie', 'serial'] : [def.type];
 
@@ -316,7 +386,19 @@ export async function getCinemaByCategory(
     for (const r of results) if (r.items[i]) merged.push(r.items[i]);
   }
 
-  const deduped = dedupe(merged, need);
+  const ratings = def.rankByRating ? await enrichRatings(merged) : undefined;
+  let deduped = dedupe(merged, merged.length, ratings);
+  if (def.rankByRating) {
+    // Без TMDB_API_KEY у всех rating === null — сортировка становится
+    // no-op и порядок остаётся как есть, ничего не ломается.
+    deduped = [...deduped].sort((a, b) => {
+      const ra = a.rating ?? -1;
+      const rb = b.rating ?? -1;
+      if (rb !== ra) return rb - ra;
+      return (b.year ?? 0) - (a.year ?? 0);
+    });
+  }
+
   const start = (page - 1) * pageSize;
   const windowed = deduped.slice(start, start + pageSize);
 
