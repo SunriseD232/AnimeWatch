@@ -1,10 +1,15 @@
+import Link from 'next/link';
 import { Suspense } from 'react';
 import CinemaCard from '@/components/CinemaCard';
 import ContinueCard from '@/components/ContinueCard';
 import LoginBanner from '@/components/LoginBanner';
 import ModeSwitch from '@/components/ModeSwitch';
 import { CardGridSkeleton } from '@/components/Skeletons';
-import { getPopularCinema } from '@/lib/videoseed-catalog';
+import {
+  CINEMA_CATEGORIES,
+  getCinemaByCategory,
+  getPopularCinema,
+} from '@/lib/videoseed-catalog';
 import { createClient } from '@/lib/supabase/server';
 import type { WatchProgress } from '@/lib/types';
 
@@ -50,6 +55,31 @@ async function ContinueWatching() {
   );
 }
 
+/** Превью-ряд категории (12 карточек) — полный список и пагинация на /cinema/category/[id]. */
+async function CategoryPreview({ categoryId }: { categoryId: string }) {
+  try {
+    const data = await getCinemaByCategory(categoryId, 1, 12);
+    if (!data || data.items.length === 0) {
+      return (
+        <p className="text-sm text-gray-400">В этой категории пока нет тайтлов.</p>
+      );
+    }
+    return (
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+        {data.items.map((item) => (
+          <CinemaCard key={item.id} item={item} />
+        ))}
+      </div>
+    );
+  } catch {
+    return (
+      <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
+        Не удалось загрузить каталог Videoseed. Попробуйте обновить страницу позже.
+      </div>
+    );
+  }
+}
+
 async function Popular() {
   try {
     const items = await getPopularCinema(18);
@@ -78,7 +108,15 @@ async function Popular() {
   }
 }
 
-export default function CinemaHomePage() {
+export default function CinemaHomePage({
+  searchParams,
+}: {
+  searchParams: { category?: string };
+}) {
+  const categoryId =
+    CINEMA_CATEGORIES.find((c) => c.id === searchParams.category)?.id ??
+    CINEMA_CATEGORIES[0].id;
+
   return (
     <div className="flex flex-col gap-10">
       <ModeSwitch active="cinema" />
@@ -93,6 +131,44 @@ export default function CinemaHomePage() {
       <section
         className="animate-rise flex flex-col gap-4"
         style={{ animationDelay: '80ms' }}
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold">Категории</h2>
+          <Link
+            href={`/cinema/category/${categoryId}`}
+            className="press text-sm font-medium text-accent hover:text-accent-hover"
+          >
+            Смотреть всё →
+          </Link>
+        </div>
+
+        {/* Чипы категорий */}
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
+          {CINEMA_CATEGORIES.map((c) => (
+            <Link
+              key={c.id}
+              href={`/cinema?category=${c.id}`}
+              scroll={false}
+              className={[
+                'shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-all',
+                categoryId === c.id
+                  ? 'bg-accent text-white shadow-lg shadow-accent/25'
+                  : 'bg-bg-card text-gray-300 ring-1 ring-white/5 hover:bg-bg-soft hover:text-white',
+              ].join(' ')}
+            >
+              {c.label}
+            </Link>
+          ))}
+        </div>
+
+        <Suspense key={categoryId} fallback={<CardGridSkeleton count={12} />}>
+          <CategoryPreview categoryId={categoryId} />
+        </Suspense>
+      </section>
+
+      <section
+        className="animate-rise flex flex-col gap-4"
+        style={{ animationDelay: '160ms' }}
       >
         <h2 className="text-xl font-bold">Новинки</h2>
         <Suspense fallback={<CardGridSkeleton count={18} />}>

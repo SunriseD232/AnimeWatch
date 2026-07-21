@@ -121,7 +121,7 @@ export default function NotificationBell({
       </button>
 
       {open && (
-        <div className="glass absolute right-0 z-30 mt-2 w-80 max-w-[90vw] overflow-hidden rounded-2xl border border-white/10 shadow-2xl">
+        <div className="absolute right-0 z-30 mt-2 w-80 max-w-[90vw] overflow-hidden rounded-2xl border border-white/10 bg-bg-card shadow-2xl">
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
             <span className="text-sm font-semibold">Уведомления</span>
             {unread > 0 && (

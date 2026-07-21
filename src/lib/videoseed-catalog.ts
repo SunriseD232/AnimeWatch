@@ -189,6 +189,145 @@ function dedupe(items: VsRawItem[], limit: number): CinemaShort[] {
 }
 
 /**
+ * Категории раздела кино (вкладки-подсказки на главной).
+ *
+ * У Videoseed нет РАБОЧЕЙ серверной фильтрации по жанру/стране — параметры
+ * `categories`/`category`/`genre`/`country`/`genre_id`/`country_id` либо
+ * отдают 500, либо принимаются, но реально ничего не фильтруют (проверено
+ * вживую: total и содержимое ответа совпадают с запросом без фильтра).
+ * Поэтому фильтруем САМИ — по текстовым полям `genre`/`country`, которые
+ * есть в каждой записи обычного списка (`list=movie`/`list=serial`).
+ *
+ * Значения genre — реальные названия из `list=category` Videoseed (id для
+ * справки, используются только имена): 1 Биография, 2 Боевик, 3 Военный,
+ * 4 Вестерн, 5 Документальный, 6 Детектив, 7 Детский, 8 Драма, 9 История,
+ * 10 Комедия, 11 Криминал, 12 Мелодрама, 13 Приключения, 14 Семейный,
+ * 15 Спорт, 16 Триллер, 17 Ужасы, 18 Фантастика, 19 Фэнтези, 21 Мультфильмы,
+ * 7570 Мюзиклы, 7569 Короткометражки.
+ */
+export interface CinemaCategoryDef {
+  /** Slug для URL (?category=, /cinema/category/[id]). */
+  id: string;
+  label: string;
+  type: 'movie' | 'serial' | 'both';
+  /** Подстрока, которую должно содержать поле genre (без учёта регистра). */
+  genreMatch?: string;
+  /** Подстрока, которой НЕ должно быть в genre (без учёта регистра). */
+  genreExclude?: string;
+  /** 'ru' — Россия/СССР в country, 'foreign' — всё остальное. */
+  countryMatch?: 'ru' | 'foreign';
+}
+
+export const CINEMA_CATEGORIES: CinemaCategoryDef[] = [
+  { id: 'movies', label: 'Фильмы', type: 'movie', genreExclude: 'мультфильм' },
+  { id: 'foreign-series', label: 'Зарубежные сериалы', type: 'serial', countryMatch: 'foreign' },
+  { id: 'ru-series', label: 'Русские сериалы', type: 'serial', countryMatch: 'ru' },
+  { id: 'cartoons', label: 'Мультфильмы', type: 'movie', genreMatch: 'мультфильм' },
+  { id: 'cartoon-series', label: 'Многосерийные мультфильмы', type: 'serial', genreMatch: 'мультфильм' },
+  { id: 'drama', label: 'Драма', type: 'both', genreMatch: 'драма' },
+  { id: 'comedy', label: 'Комедия', type: 'both', genreMatch: 'комедия' },
+  { id: 'action', label: 'Боевик', type: 'both', genreMatch: 'боевик' },
+  { id: 'thriller', label: 'Триллер', type: 'both', genreMatch: 'триллер' },
+  { id: 'horror', label: 'Ужасы', type: 'both', genreMatch: 'ужасы' },
+  { id: 'fantasy', label: 'Фантастика', type: 'both', genreMatch: 'фантастика' },
+  { id: 'melodrama', label: 'Мелодрама', type: 'both', genreMatch: 'мелодрама' },
+];
+
+function matchesCategory(item: VsRawItem, def: CinemaCategoryDef): boolean {
+  const genre = (item.genre ?? '').toLowerCase();
+  const country = (item.country ?? '').toLowerCase();
+  if (def.genreMatch && !genre.includes(def.genreMatch)) return false;
+  if (def.genreExclude && genre.includes(def.genreExclude)) return false;
+  if (def.countryMatch === 'ru' && !(country.includes('росс') || country.includes('ссср'))) {
+    return false;
+  }
+  if (def.countryMatch === 'foreign' && (country.includes('росс') || country.includes('ссср'))) {
+    return false;
+  }
+  return true;
+}
+
+// Жёсткий потолок «вышестоящих» страниц Videoseed на один запрос категории —
+// защита от того, что редкий жанр в глубокой странице пагинации устроит
+// лавину запросов к их квотируемому API за один клик. Каждая такая страница
+// кэшируется (revalidate) — стоимость платится один раз, а не на каждый визит.
+const MAX_UPSTREAM_PAGES = 30;
+const UPSTREAM_PAGE_SIZE = 50;
+
+/** Копит подходящие под фильтр записи, дозапрашивая страницы, пока не хватит. */
+async function collectMatching(
+  type: 'movie' | 'serial',
+  def: CinemaCategoryDef,
+  need: number,
+): Promise<{ items: VsRawItem[]; exhausted: boolean }> {
+  const collected: VsRawItem[] = [];
+  for (let page = 1; page <= MAX_UPSTREAM_PAGES; page++) {
+    const batch = await vsFetch(
+      {
+        list: type,
+        sort_by: 'post_date desc',
+        items: String(UPSTREAM_PAGE_SIZE),
+        from: String(page),
+      },
+      3600,
+    );
+    if (batch.length === 0) return { items: collected, exhausted: true };
+    for (const item of batch) {
+      if (matchesCategory(item, def)) collected.push(item);
+    }
+    if (collected.length >= need) return { items: collected, exhausted: false };
+  }
+  return { items: collected, exhausted: false };
+}
+
+/** Страница категории: сами карточки + есть ли ещё (для «Показать ещё»/пагинации). */
+export interface CinemaCategoryPage {
+  category: CinemaCategoryDef;
+  items: CinemaShort[];
+  hasMore: boolean;
+}
+
+/**
+ * Тайтлы категории (вкладка) с постраничной навигацией. Смотри комментарий
+ * у CINEMA_CATEGORIES — фильтрация целиком на нашей стороне, поверх обычных
+ * list=movie/list=serial, поэтому глубокая пагинация редкой категории может
+ * дозапросить несколько вышестоящих страниц (см. MAX_UPSTREAM_PAGES).
+ */
+export async function getCinemaByCategory(
+  categoryId: string,
+  page = 1,
+  pageSize = 24,
+): Promise<CinemaCategoryPage | null> {
+  const def = CINEMA_CATEGORIES.find((c) => c.id === categoryId);
+  if (!def) return null;
+
+  const need = page * pageSize + 1; // +1 — узнать, есть ли следующая страница
+  const types: ('movie' | 'serial')[] =
+    def.type === 'both' ? ['movie', 'serial'] : [def.type];
+
+  const results = await Promise.all(
+    types.map((t) => collectMatching(t, def, need)),
+  );
+
+  // Для 'both' чередуем фильмы/сериалы, чтобы подборка не была однобокой.
+  const merged: VsRawItem[] = [];
+  const max = Math.max(...results.map((r) => r.items.length));
+  for (let i = 0; i < max; i++) {
+    for (const r of results) if (r.items[i]) merged.push(r.items[i]);
+  }
+
+  const deduped = dedupe(merged, need);
+  const start = (page - 1) * pageSize;
+  const windowed = deduped.slice(start, start + pageSize);
+
+  return {
+    category: def,
+    items: windowed,
+    hasMore: deduped.length > start + pageSize,
+  };
+}
+
+/**
  * Главная раздела кино. У Videoseed нет сортировки по популярности/рейтингу,
  * поэтому показываем новинки (последние добавленные) — миксом фильмов и сериалов.
  */

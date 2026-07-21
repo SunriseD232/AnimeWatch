@@ -35,6 +35,8 @@ interface Props {
   resumeFrom: number | null;
   otherEpisode: number | null;
   isAuthed: boolean;
+  /** Онгоинг Shikimori — вышли не все серии, рано переводить в «Просмотрено». */
+  isOngoing: boolean;
   // Данные Kodik (fallback), подготовленные на сервере.
   kodikEmbedUrl: string;
   kodikTranslations: Translation[];
@@ -45,6 +47,7 @@ interface Props {
   skipOpening: { time: number; length: number } | null;
   skipEnding: { time: number; length: number } | null;
   // Подсказки под плеером: прямое продолжение франшизы и похожие тайтлы.
+  prequels: ShikimoriAnimeShort[];
   sequels: ShikimoriAnimeShort[];
   similar: ShikimoriAnimeShort[];
 }
@@ -73,6 +76,7 @@ export default function WatchPlayer({
   resumeFrom,
   otherEpisode,
   isAuthed,
+  isOngoing,
   kodikEmbedUrl,
   kodikTranslations,
   kodikInitialTranslationId,
@@ -80,6 +84,7 @@ export default function WatchPlayer({
   yummyTranslations,
   skipOpening,
   skipEnding,
+  prequels,
   sequels,
   similar,
 }: Props) {
@@ -224,7 +229,9 @@ export default function WatchPlayer({
     const nextEpisode = hasNext ? finishedEpisode + 1 : null;
 
     if (isAuthed) {
-      // Серия досмотрена; последняя серия — тайтл в «Просмотрено».
+      // Серия досмотрена; тайтл — в «Просмотрено», только если это
+      // действительно последняя серия ЦЕЛИКОМ (а не просто последняя из
+      // ВЫШЕДШИХ у онгоинга — там дальше ещё будут серии, рано закрывать).
       fetch('/api/progress', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -236,7 +243,7 @@ export default function WatchPlayer({
           season: 1,
           episode: finishedEpisode,
           watched_episode: true,
-          completed: nextEpisode === null,
+          completed: nextEpisode === null && !isOngoing,
         }),
         keepalive: true,
       }).catch(() => {});
@@ -271,6 +278,7 @@ export default function WatchPlayer({
   }, [
     isAuthed,
     hasNext,
+    isOngoing,
     contentType,
     shikimoriId,
     animeTitle,
@@ -544,6 +552,18 @@ export default function WatchPlayer({
           </Link>
           , чтобы синхронизировать позицию между устройствами.
         </p>
+      )}
+
+      {/* Предыдущий сезон франшизы — компактно, под плеером */}
+      {prequels.length > 0 && (
+        <section className="flex flex-col gap-3 border-t border-white/5 pt-4">
+          <h2 className="text-base font-semibold">Предыдущий сезон</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {prequels.map((a) => (
+              <AnimeCard key={a.id} anime={a} />
+            ))}
+          </div>
+        </section>
       )}
 
       {/* Продолжение франшизы — компактно, под плеером */}

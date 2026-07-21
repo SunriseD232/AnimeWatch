@@ -3,6 +3,7 @@ import WatchPlayer from '@/components/WatchPlayer';
 import {
   episodeCount,
   getAnime,
+  getPrequels,
   getSequels,
   getSimilarAnime,
   imageUrl,
@@ -79,7 +80,7 @@ export default async function WatchPage({
   // (второй резервный источник + тайминги пропуска опенинга/эндинга) и
   // подсказки «продолжение»/«похожее» под плеером — параллельно.
   const source = createVideoSource();
-  const [embed, yummy, sequels, similar] = await Promise.all([
+  const [embed, yummy, prequels, sequels, similar] = await Promise.all([
     source.getEmbedUrl({
       shikimoriId,
       episode,
@@ -87,6 +88,7 @@ export default async function WatchPage({
       startFrom: resumeFrom ?? undefined,
     }),
     getYummyEpisode(shikimoriId, episode),
+    getPrequels(shikimoriId),
     getSequels(shikimoriId),
     getSimilarAnime(shikimoriId, 6),
   ]);
@@ -112,6 +114,7 @@ export default async function WatchPage({
       resumeFrom={resumeFrom}
       otherEpisode={otherEpisode}
       isAuthed={!!user}
+      isOngoing={anime.status === 'ongoing'}
       kodikEmbedUrl={embed.embedUrl}
       kodikTranslations={embed.translations}
       kodikInitialTranslationId={resolvedTranslationId}
@@ -119,6 +122,7 @@ export default async function WatchPage({
       yummyTranslations={yummy?.translations ?? []}
       skipOpening={yummy?.skipOpening ?? null}
       skipEnding={yummy?.skipEnding ?? null}
+      prequels={prequels}
       sequels={sequels}
       similar={similar}
     />

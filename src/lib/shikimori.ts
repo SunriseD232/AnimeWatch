@@ -295,6 +295,25 @@ export async function getSequels(id: number): Promise<ShikimoriAnimeShort[]> {
   }
 }
 
+/**
+ * Прямые предыдущие сезоны тайтла (приквелы франшизы) — зеркало getSequels,
+ * тот же эндпоинт /related, фильтр по relation==='Prequel'. Резилентно так же.
+ */
+export async function getPrequels(id: number): Promise<ShikimoriAnimeShort[]> {
+  try {
+    const related = await shikimoriFetch<ShikimoriRelatedEntry[]>(
+      `/animes/${id}/related`,
+      3600,
+    );
+    const prequels = related
+      .filter((r) => r.relation === 'Prequel' && r.anime !== null)
+      .map((r) => r.anime as ShikimoriAnimeShort);
+    return withYummyPosters(prequels);
+  } catch {
+    return [];
+  }
+}
+
 /** Похожие тайтлы (рекомендации Shikimori), для карточки/страницы просмотра. */
 export async function getSimilarAnime(
   id: number,

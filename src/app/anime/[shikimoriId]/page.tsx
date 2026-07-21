@@ -6,6 +6,7 @@ import ListButton from '@/components/ListButton';
 import {
   episodeCount,
   getAnime,
+  getPrequels,
   getSequels,
   getSimilarAnime,
   imageUrl,
@@ -56,8 +57,9 @@ export default async function AnimePage({
 
   // Прогресс и статус списка для этого тайтла (если пользователь вошёл).
   const supabase = createClient();
-  const [{ data: { user } }, sequels, similar] = await Promise.all([
+  const [{ data: { user } }, prequels, sequels, similar] = await Promise.all([
     supabase.auth.getUser(),
+    getPrequels(id),
     getSequels(id),
     getSimilarAnime(id),
   ]);
@@ -199,6 +201,18 @@ export default async function AnimePage({
             currentEpisode={progress?.episode ?? null}
             watchedEpisodes={watchedEpisodes}
           />
+        </section>
+      )}
+
+      {/* Предыдущий сезон (приквел франшизы) */}
+      {prequels.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold">Предыдущий сезон</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {prequels.map((a) => (
+              <AnimeCard key={a.id} anime={a} />
+            ))}
+          </div>
         </section>
       )}
 
