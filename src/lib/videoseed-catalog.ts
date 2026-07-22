@@ -83,6 +83,8 @@ export interface CinemaFull extends CinemaShort {
   durationSeconds: number | null;
   genres: string[];
   countries: string[];
+  /** IMDb id — единственный способ найти трейлер/рейтинг в TMDB (см. lib/tmdb.ts). */
+  idImdb: string | null;
 }
 
 function token(): string | undefined {
@@ -495,5 +497,6 @@ export async function getCinemaById(
     durationSeconds: isSerial ? null : parseDuration(base.time),
     genres: splitList(base.genre),
     countries: splitList(base.country),
+    idImdb: base.id_imdb ?? null,
   };
 }

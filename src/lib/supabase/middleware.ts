@@ -38,13 +38,17 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  // Приватные маршруты — только для авторизованных.
-  const protectedRoutes = ['/profile'];
-  const isProtected = protectedRoutes.some((route) =>
-    pathname.startsWith(route),
-  );
+  // Публичные страницы — единственное, что доступно без входа. Всё
+  // остальное (включая главную, каталоги, просмотр, /code) требует сессию:
+  // сайт закрыт для незарегистрированных полностью, по требованию продукта.
+  // API-роуты не редиректим — они сами возвращают 401/403 в JSON (редирект
+  // на HTML-страницу входа сломал бы fetch-клиентов) и /api/signup,
+  // /api/login обязаны быть доступны анониму по своей природе.
+  const PUBLIC_PAGES = new Set(['/login', '/signup']);
+  const isApiRoute = pathname.startsWith('/api/');
+  const isPublicPage = PUBLIC_PAGES.has(pathname);
 
-  if (isProtected && !user) {
+  if (!user && !isPublicPage && !isApiRoute) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     url.searchParams.set('redirect', pathname);
@@ -52,7 +56,7 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Авторизованного не пускаем на страницы входа/регистрации.
-  if (user && (pathname === '/login' || pathname === '/signup')) {
+  if (user && isPublicPage) {
     const url = request.nextUrl.clone();
     url.pathname = '/';
     return NextResponse.redirect(url);

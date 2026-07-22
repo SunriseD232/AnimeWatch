@@ -33,6 +33,13 @@ export interface ShikimoriAnimeShort {
   released_on: string | null;
 }
 
+interface ShikimoriVideo {
+  url: string;
+  player_url: string;
+  kind: string;
+  hosting: string;
+}
+
 /** Полная карточка аниме (страница тайтла). */
 export interface ShikimoriAnimeFull extends ShikimoriAnimeShort {
   rating: string;
@@ -40,6 +47,18 @@ export interface ShikimoriAnimeFull extends ShikimoriAnimeShort {
   description: string | null;
   description_html: string | null;
   genres: { id: number; name: string; russian: string }[];
+  videos: ShikimoriVideo[];
+}
+
+/**
+ * Embed-URL трейлера (kind === 'pv' — promotional video) с YouTube, если есть.
+ * Shikimori отдаёt его в полной карточке — доп. запрос не нужен.
+ */
+export function trailerEmbedUrl(anime: ShikimoriAnimeFull): string | null {
+  const trailer = anime.videos?.find(
+    (v) => v.kind === 'pv' && v.hosting === 'youtube',
+  );
+  return trailer ? trailer.player_url.replace('http://', 'https://') : null;
 }
 
 // --- Простой троттлер: не более N запросов в скользящем окне 1 сек ---

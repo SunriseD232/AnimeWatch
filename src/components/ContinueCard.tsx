@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
 import ExpandTitleButton from '@/components/ExpandTitleButton';
@@ -22,6 +22,7 @@ export default function ContinueCard({
   // Двухшаговое удаление: первый клик по ✕ показывает подтверждение.
   const [confirming, setConfirming] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const titleRef = useRef<HTMLHeadingElement>(null);
 
   // Авто-сброс подтверждения, если пользователь передумал и ничего не нажал.
   useEffect(() => {
@@ -97,6 +98,7 @@ export default function ContinueCard({
         </div>
         <div className="p-2.5">
           <h3
+            ref={titleRef}
             className={[
               'text-sm font-medium leading-snug text-gray-100',
               expanded ? '' : 'line-clamp-2',
@@ -110,6 +112,7 @@ export default function ContinueCard({
       <ExpandTitleButton
         expanded={expanded}
         onToggle={() => setExpanded((v) => !v)}
+        titleRef={titleRef}
       />
 
       {/* Убрать из «Продолжить просмотр» — с подтверждением. Кнопка всегда

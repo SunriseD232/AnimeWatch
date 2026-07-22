@@ -67,16 +67,33 @@ npm run dev                  # http://localhost:3000
 ```
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...   # нужен для /api/signup (см. §6), не только для крона
 KODIK_TOKEN=            # опционально
+SIGNUP_CODE_SECRET=...  # обязательно, см. §6 — без него регистрация закрыта для всех
 ```
 
 ## 5. Деплой на Vercel
 
 1. Импортируйте репозиторий в Vercel.
-2. В **Settings → Environment Variables** добавьте те же три переменные.
+2. В **Settings → Environment Variables** добавьте переменные из `.env.example`.
 3. Deploy. Сборка (`next build`) не требует дополнительной настройки.
 4. В Supabase **Authentication → URL Configuration** добавьте домен Vercel в
    `Site URL` / `Redirect URLs`.
+
+## 6. Код регистрации (обязательно)
+
+Сайт закрыт для незарегистрированных полностью — вся регистрация идёт
+через один код на сутки, без учётной записи ничего не открыть.
+
+1. Сгенерируйте случайную строку для `SIGNUP_CODE_SECRET`, например:
+   `openssl rand -hex 32`.
+2. Код на сегодня смотрится на `/code` — доступно ТОЛЬКО аккаунту
+   `2000gva@gmail.com` (см. `src/app/code/page.tsx`, если email нужно
+   сменить — правьте константу там).
+3. **Обязательный ручной шаг в Supabase**: Dashboard → Authentication →
+   Settings → отключите «Allow new users to sign up». Без этого обычная
+   публичная регистрация Supabase всё ещё доступна напрямую через anon key
+   в обход кода приглашения — подробности в `ARCHITECTURE.md` §13.2.
 
 ## Структура
 

@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import AnimeCard from '@/components/AnimeCard';
 import EpisodeGrid from '@/components/EpisodeGrid';
 import ListButton from '@/components/ListButton';
+import TrailerButton from '@/components/TrailerButton';
 import {
   episodeCount,
   getAnime,
@@ -11,6 +12,7 @@ import {
   getSimilarAnime,
   imageUrl,
   stripBbCode,
+  trailerEmbedUrl,
 } from '@/lib/shikimori';
 import { createClient } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
@@ -54,6 +56,7 @@ export default async function AnimePage({
   // Анонс — тайтл ещё не вышел нигде: смотреть нечего, серий тоже нет
   // (episodeCount() всё равно вернёт 1 как заглушку — здесь её не показываем).
   const isAnons = anime.status === 'anons';
+  const trailerUrl = trailerEmbedUrl(anime);
 
   // Прогресс и статус списка для этого тайтла (если пользователь вошёл).
   const supabase = createClient();
@@ -177,6 +180,7 @@ export default async function AnimePage({
               initialStatus={listItem?.status ?? null}
               isAuthed={!!user}
             />
+            {trailerUrl && <TrailerButton embedUrl={trailerUrl} />}
           </div>
         </div>
       </div>

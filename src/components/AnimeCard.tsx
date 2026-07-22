@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { imageUrl, type ShikimoriAnimeShort } from '@/lib/shikimori';
 import ExpandTitleButton from '@/components/ExpandTitleButton';
 
@@ -20,6 +20,7 @@ export default function AnimeCard({
   anime: ShikimoriAnimeShort;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const titleRef = useRef<HTMLHeadingElement>(null);
   const poster = imageUrl(anime.image?.original);
   const title = anime.russian || anime.name;
   const year = anime.aired_on ? anime.aired_on.slice(0, 4) : null;
@@ -61,6 +62,7 @@ export default function AnimeCard({
         </div>
         <div className="flex flex-col gap-1 p-2.5">
           <h3
+            ref={titleRef}
             className={[
               'text-sm font-medium leading-snug text-gray-100',
               expanded ? '' : 'line-clamp-2',
@@ -76,6 +78,7 @@ export default function AnimeCard({
       <ExpandTitleButton
         expanded={expanded}
         onToggle={() => setExpanded((v) => !v)}
+        titleRef={titleRef}
       />
     </div>
   );

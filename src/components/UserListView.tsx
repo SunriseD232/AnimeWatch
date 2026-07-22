@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type {
   ContentType,
   UserListItem,
@@ -33,6 +33,7 @@ const STATUS_LABELS: Record<UserListStatus, string> = {
 /** Карточка тайтла в списке — своё состояние раскрытия названия на каждую. */
 function ListCard({ item }: { item: UserListItem }) {
   const [expanded, setExpanded] = useState(false);
+  const titleRef = useRef<HTMLHeadingElement>(null);
 
   return (
     <div className="card-lift group relative flex flex-col overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60">
@@ -63,6 +64,7 @@ function ListCard({ item }: { item: UserListItem }) {
         </div>
         <div className="p-2.5">
           <h3
+            ref={titleRef}
             className={[
               'text-sm font-medium leading-snug',
               expanded ? '' : 'line-clamp-2',
@@ -75,6 +77,7 @@ function ListCard({ item }: { item: UserListItem }) {
       <ExpandTitleButton
         expanded={expanded}
         onToggle={() => setExpanded((v) => !v)}
+        titleRef={titleRef}
       />
     </div>
   );

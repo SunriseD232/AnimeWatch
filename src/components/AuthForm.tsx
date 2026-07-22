@@ -3,62 +3,58 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
 
 type Mode = 'login' | 'signup';
+
+const ERROR_MESSAGES: Record<string, string> = {
+  rate_limited: 'Слишком много попыток. Подождите минуту и попробуйте снова.',
+  invalid_code: 'Неверный код приглашения.',
+  bad_payload: 'Проверьте email и пароль.',
+};
 
 export default function AuthForm({ mode }: { mode: Mode }) {
   const router = useRouter();
   const params = useSearchParams();
   const redirect = params.get('redirect') || '/';
+  const isLogin = mode === 'login';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
+  const [remaining, setRemaining] = useState<number | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setInfo(null);
     setLoading(true);
-    const supabase = createClient();
 
     try {
-      if (mode === 'signup') {
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-        });
-        if (error) throw error;
-        // Если подтверждение email включено — сессии ещё нет.
-        if (!data.session) {
-          setInfo(
-            'Аккаунт создан. Проверьте почту для подтверждения, затем войдите.',
-          );
-          setLoading(false);
-          return;
-        }
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (error) throw error;
+      const res = await fetch(isLogin ? '/api/login' : '/api/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          isLogin ? { email, password } : { email, password, code },
+        ),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(ERROR_MESSAGES[data.error] ?? data.error ?? 'Что-то пошло не так');
+        setRemaining(typeof data.remaining === 'number' ? data.remaining : null);
+        setLoading(false);
+        return;
       }
-      // Обновляем серверные компоненты и уходим на redirect.
+
+      // Обновляем серверные компоненты (в т.ч. middleware-редиректы) и уходим.
       router.push(redirect);
       router.refresh();
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Что-то пошло не так';
-      setError(message);
+    } catch {
+      setError('Сетевая ошибка');
       setLoading(false);
     }
   }
-
-  const isLogin = mode === 'login';
 
   return (
     <div className="mx-auto mt-8 w-full max-w-sm">
@@ -97,14 +93,30 @@ export default function AuthForm({ mode }: { mode: Mode }) {
           />
         </label>
 
+        {!isLogin && (
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-gray-300">Код приглашения</span>
+            <input
+              type="text"
+              required
+              autoComplete="off"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              className="rounded-lg border border-white/10 bg-bg-card px-3 py-2.5 font-mono text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+          </label>
+        )}
+
         {error && (
           <p className="rounded-lg bg-red-950/60 px-3 py-2 text-sm text-red-200">
             {error}
-          </p>
-        )}
-        {info && (
-          <p className="rounded-lg bg-emerald-950/60 px-3 py-2 text-sm text-emerald-200">
-            {info}
+            {remaining !== null && (
+              <span className="mt-1 block text-xs text-red-300/80">
+                {remaining > 0
+                  ? `Осталось попыток: ${remaining}`
+                  : 'Попыток больше нет — подождите минуту.'}
+              </span>
+            )}
           </p>
         )}
 

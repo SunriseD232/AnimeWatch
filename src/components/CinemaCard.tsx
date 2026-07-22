@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { CinemaShort } from '@/lib/videoseed-catalog';
 import ExpandTitleButton from '@/components/ExpandTitleButton';
 
@@ -12,6 +12,7 @@ import ExpandTitleButton from '@/components/ExpandTitleButton';
  */
 export default function CinemaCard({ item }: { item: CinemaShort }) {
   const [expanded, setExpanded] = useState(false);
+  const titleRef = useRef<HTMLHeadingElement>(null);
 
   return (
     <div className="card-lift group relative flex flex-col overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60">
@@ -38,6 +39,7 @@ export default function CinemaCard({ item }: { item: CinemaShort }) {
         </div>
         <div className="flex flex-col gap-1 p-2.5">
           <h3
+            ref={titleRef}
             className={[
               'text-sm font-medium leading-snug text-gray-100',
               expanded ? '' : 'line-clamp-2',
@@ -53,6 +55,7 @@ export default function CinemaCard({ item }: { item: CinemaShort }) {
       <ExpandTitleButton
         expanded={expanded}
         onToggle={() => setExpanded((v) => !v)}
+        titleRef={titleRef}
       />
     </div>
   );

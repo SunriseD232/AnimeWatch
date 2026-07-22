@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import CinemaEpisodes from '@/components/CinemaEpisodes';
 import ListButton from '@/components/ListButton';
+import TrailerButton from '@/components/TrailerButton';
 import { getCinemaById } from '@/lib/videoseed-catalog';
 import { createClient } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
@@ -140,6 +141,10 @@ export default async function CinemaPage({
               initialStatus={listItem?.status ?? null}
               isAuthed={!!user}
             />
+            {/* Для сериалов трейлер — внутри CinemaEpisodes, по сезонам */}
+            {!item.isSerial && item.idImdb && (
+              <TrailerButton fetchUrl={`/api/trailer?imdbId=${item.idImdb}`} />
+            )}
           </div>
         </div>
       </div>
@@ -164,6 +169,7 @@ export default async function CinemaPage({
             currentSeason={progress?.season ?? null}
             currentEpisode={progress?.episode ?? null}
             watched={watched}
+            idImdb={item.idImdb}
           />
         </section>
       )}

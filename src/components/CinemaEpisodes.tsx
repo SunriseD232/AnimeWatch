@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import type { SeasonInfo } from '@/lib/videoseed-catalog';
+import TrailerButton from '@/components/TrailerButton';
 
 interface Props {
   shikimoriId: number;
@@ -13,6 +14,8 @@ interface Props {
   currentEpisode: number | null;
   /** Досмотренные серии из watched_episodes (точная подсветка). */
   watched?: { season: number; episode: number }[];
+  /** Для кнопки «Трейлер сезона» — без него кнопка не показывается. */
+  idImdb: string | null;
 }
 
 /**
@@ -26,6 +29,7 @@ export default function CinemaEpisodes({
   currentSeason,
   currentEpisode,
   watched = [],
+  idImdb,
 }: Props) {
   const [selected, setSelected] = useState<number>(
     currentSeason ?? seasons[0]?.season ?? 1,
@@ -40,25 +44,38 @@ export default function CinemaEpisodes({
 
   return (
     <div className="flex flex-col gap-3">
-      {multiSeason && (
-        <div className="flex flex-wrap gap-2">
-          {seasons.map((s) => (
-            <button
-              key={s.season}
-              type="button"
-              onClick={() => setSelected(s.season)}
-              className={[
-                'rounded-lg px-3 py-1.5 text-sm font-medium ring-1 transition',
-                s.season === selected
-                  ? 'bg-accent text-white ring-accent'
-                  : 'bg-bg-card text-gray-300 ring-white/5 hover:bg-bg-soft hover:text-white',
-              ].join(' ')}
-            >
-              Сезон {s.season}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {multiSeason ? (
+          <div className="flex flex-wrap gap-2">
+            {seasons.map((s) => (
+              <button
+                key={s.season}
+                type="button"
+                onClick={() => setSelected(s.season)}
+                className={[
+                  'rounded-lg px-3 py-1.5 text-sm font-medium ring-1 transition',
+                  s.season === selected
+                    ? 'bg-accent text-white ring-accent'
+                    : 'bg-bg-card text-gray-300 ring-white/5 hover:bg-bg-soft hover:text-white',
+                ].join(' ')}
+              >
+                Сезон {s.season}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <span />
+        )}
+        {idImdb && (
+          // key=selected — сбрасывает состояние кнопки при смене сезона,
+          // иначе показала бы трейлер предыдущего сезона до нового клика.
+          <TrailerButton
+            key={selected}
+            fetchUrl={`/api/trailer?imdbId=${idImdb}&season=${selected}`}
+            label={multiSeason ? `Трейлер сезона ${selected}` : 'Трейлер'}
+          />
+        )}
+      </div>
 
       <div className="grid grid-cols-5 gap-2 sm:grid-cols-8 md:grid-cols-10">
         {episodes.map((ep) => {
