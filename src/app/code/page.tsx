@@ -4,11 +4,11 @@ import { getTodaysSignupCode } from '@/lib/signupCode';
 
 export const metadata = { title: 'Код регистрации — MediaWatch' };
 
-// Единственный аккаунт, которому виден код приглашения.
-const ADMIN_EMAIL = '2000gva@gmail.com';
+// Аккаунты, которым виден код приглашения.
+const ADMIN_EMAILS = ['2000gva@gmail.com', 'timewolf567@gmail.com'];
 
 /**
- * Страница видна только владельцу ADMIN_EMAIL — остальным (в т.ч. другим
+ * Страница видна только ADMIN_EMAILS — остальным (в т.ч. другим
  * авторизованным пользователям) отдаём notFound(), чтобы не палить даже сам
  * факт существования этой страницы.
  */
@@ -18,7 +18,7 @@ export default async function CodePage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user || user.email !== ADMIN_EMAIL) {
+  if (!user || !ADMIN_EMAILS.includes(user.email ?? '')) {
     notFound();
   }
 
