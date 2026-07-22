@@ -70,6 +70,15 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 KODIK_TOKEN=            # опционально
 ```
 
+## Telegram Bot
+
+Telegram-бот для скачивания видео. Поддерживает AniLibria (прямые HLS), Alloha (через Yummy + Puppeteer), Videoseed (через Puppeteer).
+
+- MediaWatch (Vercel) — кнопка «Скачать в Telegram» в плеере → запись задачи в Supabase
+- Telegram Bot (VPS) — асинхронно забирает задачи, качает через ffmpeg, отправляет через Local Bot API (до 2 ГБ)
+
+Подробнее — [`telegram-bot/README.md`](telegram-bot/README.md).
+
 ## 5. Деплой на Vercel
 
 1. Импортируйте репозиторий в Vercel.
@@ -91,14 +100,37 @@ src/
     auth/signout/route.ts                 выход
     api/progress/route.ts                 upsert прогресса (в т.ч. sendBeacon)
     api/kodik/route.ts                    прокси поиска плеера Kodik (Режим A)
+    api/download/route.ts                 постановка задачи в очередь скачивания
+    api/telegram/link/route.ts            привязка Telegram ID к аккаунту
   components/                             UI-компоненты (Player, карточки, ...)
+  hooks/
+    useProgressSaver.ts                   сохранение прогресса (HLS/Kodik)
+    useVideoseedEstimator.ts              эвристический трекер позиции для Videoseed
+    useTelegramLink.ts                    хук получения Telegram ID
   lib/
     supabase/                             клиенты browser/server + middleware
     shikimori.ts                          клиент Shikimori API (throttle + cache)
     video/                                абстракция VideoSource + Kodik
     format.ts, types.ts
   middleware.ts                           обновление сессии + защита /profile
-supabase/migrations/0001_init.sql
+supabase/migrations/
+  0001_init.sql
+  0006_download_queue.sql
+
+telegram-bot/
+  src/
+    index.ts                              точка входа, Telegraf, polling очереди
+    supabase.ts                           Supabase service-role клиент
+    queue.ts                              FIFO-очередь, concurrency=1, heartbeat
+    sender.ts                             ffmpeg + Local Bot API + удаление файла
+    extractors/
+      index.ts                            диспетчер по источнику
+      anilibria.ts                        AniLibria (HTTP, прямая HLS)
+      alloha.ts                           Alloha (Yummy + Puppeteer)
+      videoseed.ts                        Videoseed (Puppeteer)
+  Dockerfile                              Alpine + Chromium + ffmpeg
+  docker-compose.yml                      бот + Local Bot API Server
+  .env.example
 ```
 
 ## Как работает синхронизация прогресса

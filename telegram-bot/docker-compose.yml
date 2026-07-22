@@ -1,0 +1,24 @@
+services:
+  bot:
+    build: .
+    env_file: .env
+    depends_on:
+      - local-bot-api
+    restart: unless-stopped
+    # Бот не экспортирует порты — работает по polling
+
+  local-bot-api:
+    image: aiogram/bot-api:latest
+    environment:
+      TELEGRAM_TOKEN: ${BOT_TOKEN}
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+      TELEGRAM_LOCAL: 1
+    ports:
+      - "127.0.0.1:8081:8081"
+    volumes:
+      - bot-api-data:/var/lib/telegram-bot-api
+    restart: unless-stopped
+
+volumes:
+  bot-api-data:

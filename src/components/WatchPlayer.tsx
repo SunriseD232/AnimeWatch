@@ -21,6 +21,8 @@ import type { YummyTranslation } from '@/lib/video/yummy';
 import type { ShikimoriAnimeShort } from '@/lib/shikimori';
 import type { ContentType, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
+import { useTelegramLink } from '@/hooks/useTelegramLink';
+import DownloadButton from '@/components/DownloadButton';
 
 interface Props {
   shikimoriId: number;
@@ -101,6 +103,7 @@ export default function WatchPlayer({
   // Автопереход на следующую серию (null — неактивен/отменён).
   const [autoNext, setAutoNext] = useState<number | null>(null);
   const autoNextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { tgId } = useTelegramLink();
   const [showOtherBanner, setShowOtherBanner] = useState(otherEpisode !== null);
   // Активная серия: может измениться из самого плеера Kodik (внутренняя навигация).
   const [activeEpisode, setActiveEpisode] = useState(episode);
@@ -481,6 +484,20 @@ export default function WatchPlayer({
           onEnded={onEnded}
           onTimeUpdate={bumpPosition}
           onEpisodeChange={onEpisodeChange}
+        />
+      )}
+
+      {/* Кнопка скачивания в Telegram — только для источников, которые умеем качать */}
+      {tgId && isAuthed && !resolving && (source === 'hls' || source === 'yummy') && (
+        <DownloadButton
+          shikimoriId={shikimoriId}
+          contentType={contentType}
+          season={1}
+          episode={activeEpisode}
+          animeTitle={animeTitle}
+          posterUrl={posterUrl}
+          tgId={tgId}
+          source={source === 'hls' ? 'anilibria' : 'alloha'}
         />
       )}
 

@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import UserListView from '@/components/UserListView';
+import TelegramSettings from '@/components/TelegramSettings';
 import { createClient } from '@/lib/supabase/server';
 import type { UserListItem } from '@/lib/types';
 
@@ -42,6 +43,8 @@ export default async function ProfilePage() {
         <h2 className="text-lg font-semibold">Мой список</h2>
         <UserListView items={items} />
       </section>
+
+      <TelegramSettings />
     </div>
   );
 }

@@ -16,6 +16,8 @@ import type { SeasonInfo } from '@/lib/videoseed-catalog';
 import type { ContentType, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
 import { useVideoseedEstimator } from '@/hooks/useVideoseedEstimator';
+import { useTelegramLink } from '@/hooks/useTelegramLink';
+import DownloadButton from '@/components/DownloadButton';
 import VibixPlayer from '@/components/VibixPlayer';
 
 interface Props {
@@ -158,6 +160,7 @@ export default function Player({
   // Автопереход на следующую серию: цель и таймер (null — отменён/неактивен).
   const [autoNext, setAutoNext] = useState<StepTarget | null>(null);
   const autoNextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { tgId } = useTelegramLink();
   const [showOtherBanner, setShowOtherBanner] = useState(
     otherEpisode !== null,
   );
@@ -760,6 +763,20 @@ export default function Player({
           />
         )}
       </div>
+
+      {/* Кнопка скачивания в Telegram */}
+      {tgId && hasVideoseed && isAuthed && (
+        <DownloadButton
+          shikimoriId={shikimoriId}
+          contentType={contentType}
+          season={season}
+          episode={episode}
+          animeTitle={animeTitle}
+          posterUrl={posterUrl}
+          tgId={tgId}
+          source="videoseed"
+        />
+      )}
 
       {/* Панель управления */}
       <div className="flex flex-wrap items-center justify-between gap-3">
