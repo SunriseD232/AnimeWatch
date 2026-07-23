@@ -5,6 +5,7 @@
  */
 
 import { getYummyPostersMap } from './video/yummy';
+import { mapWithConcurrency } from './concurrency';
 
 // ВАЖНО: Shikimori переехал с shikimori.one на shikimori.io. Старый домен
 // отвечает редиректами, из-за чего картинки показывали плейсхолдер.
@@ -62,7 +63,11 @@ export function trailerEmbedUrl(anime: ShikimoriAnimeFull): string | null {
 }
 
 // --- Простой троттлер: не более N запросов в скользящем окне 1 сек ---
-const MAX_RPS = 4;
+// Shikimori заявляет 5 rps / 90 rpm. Мгновенный лимит здесь — 5 rps, но
+// каталог с AND/exclude по жанрам (см. getAnimeCatalog) намеренно держит
+// свой собственный, более консервативный потолок кандидатов — иначе один
+// проход по редкой комбинации жанров сам съел бы весь бюджет 90 rpm.
+const MAX_RPS = 5;
 let windowStart = Date.now();
 let countInWindow = 0;
 
@@ -167,44 +172,178 @@ export async function getPopularRanked(
   };
 }
 
-/** Жанры для чипов фильтра на главной (id — как в API Shikimori). */
-export const GENRE_CHIPS: { id: number; label: string }[] = [
-  { id: 1, label: 'Экшен' },
-  { id: 2, label: 'Приключения' },
-  { id: 4, label: 'Комедия' },
-  { id: 8, label: 'Драма' },
-  { id: 10, label: 'Фэнтези' },
-  { id: 22, label: 'Романтика' },
-  { id: 24, label: 'Фантастика' },
-  { id: 37, label: 'Сверхъестественное' },
-  { id: 41, label: 'Триллер' },
-  { id: 36, label: 'Повседневность' },
-  { id: 23, label: 'Школа' },
-  { id: 30, label: 'Спорт' },
-];
+
+/** Жанр аниме — id + русское/английское имя (для каталога). */
+export interface AnimeGenre {
+  id: number;
+  name: string;
+  russian: string;
+}
+
+interface ShikimoriGenreEntry extends AnimeGenre {
+  kind: string;
+  entry_type: string;
+}
+
+let cachedGenres: AnimeGenre[] | null = null;
 
 /**
- * Самые рейтинговые из недавно вышедших (последние два аниме-года),
- * с необязательным фильтром по жанру. Для главной страницы.
+ * Полный список жанров аниме — для каталога (множественный выбор +
+ * исключение). `/genres` отдаёт жанры аниме И манги вперемешку под общими
+ * id-пространством — фильтруем по entry_type. Список почти не меняется,
+ * кэшируем и в Next.js (revalidate раз в сутки), и в памяти процесса —
+ * не нужно гонять его заново на каждый рендер страницы каталога.
  */
-export async function getTopRecent(
-  genreId?: number,
-  limit = 18,
-): Promise<ShikimoriAnimeShort[]> {
-  const year = new Date().getFullYear();
-  const season = `${year - 1}_${year}`;
-  const params = new URLSearchParams({
-    order: 'ranked',
-    season,
-    kind: 'tv,movie,ona',
-    limit: String(limit),
+export async function getAnimeGenres(): Promise<AnimeGenre[]> {
+  if (cachedGenres) return cachedGenres;
+  const all = await shikimoriFetch<ShikimoriGenreEntry[]>('/genres', 86400);
+  const genres = all
+    .filter((g) => g.entry_type === 'Anime' && g.kind === 'genre')
+    .map((g) => ({ id: g.id, name: g.name, russian: g.russian }))
+    .sort((a, b) => a.russian.localeCompare(b.russian, 'ru'));
+  cachedGenres = genres;
+  return genres;
+}
+
+/** Варианты сортировки каталога — значения совпадают с `order` у Shikimori. */
+export const ANIME_CATALOG_SORTS = [
+  { value: 'aired_on', label: 'Сначала новые' },
+  { value: 'ranked', label: 'По рейтингу' },
+  { value: 'popularity', label: 'По популярности' },
+  { value: 'name', label: 'По алфавиту' },
+] as const;
+export type AnimeCatalogSort = (typeof ANIME_CATALOG_SORTS)[number]['value'];
+
+export interface AnimeCatalogParams {
+  genresInclude: number[];
+  genresExclude: number[];
+  sort: AnimeCatalogSort;
+  page: number;
+  pageSize: number;
+}
+
+export interface AnimeCatalogPage {
+  items: ShikimoriAnimeShort[];
+  hasMore: boolean;
+}
+
+// Потолок карточек, которые каталог готов догрузить целиком (для AND/exclude
+// — см. ниже) за один запрос страницы. Ограничивает не только время ответа
+// (у serverless есть свой таймаут), но и бюджет 90 rpm — при 5 rps 120
+// карточек это ~24 сек и большая часть минутного лимита Shikimori разом,
+// закладываем разумный запас на случай, что кто-то ещё дёргает API в это же
+// время (поиск, страницы тайтлов других пользователей).
+const MAX_CATALOG_CANDIDATES = 120;
+const CATALOG_CONCURRENCY = 5;
+const UPSTREAM_PAGE_SIZE = 50;
+
+/**
+ * Каталог аниме с множественным выбором жанров (AND — тайтл должен иметь
+ * ВСЕ выбранные) и исключением (тайтл не должен иметь НИ ОДНОГО из
+ * исключённых). У Shikimori в списковых ответах жанров нет вообще (только
+ * в полной карточке `/animes/{id}`), а параметр `genre=` — это OR, не AND, и
+ * без исключения совсем. Поэтому:
+ *
+ * - Без exclude и максимум с одним include-жанром — «быстрый путь»: обычная
+ *   пагинация `/animes?genre=X&order=...&page=N`, без догрузки карточек.
+ * - Иначе — «медленный путь»: используем include-жанры как OR-предфильтр
+ *   (сужает пространство поиска, хоть и не даёт точный AND), затем
+ *   параллельно (см. mapWithConcurrency) догружаем полную карточку каждого
+ *   кандидата и проверяем AND/exclude по её реальному списку жанров.
+ *   Кэш `getAnime()` (час) делает повторные заходы по той же комбинации
+ *   почти бесплатными — цена платится один раз «в фоне».
+ */
+export async function getAnimeCatalog(
+  params: AnimeCatalogParams,
+): Promise<AnimeCatalogPage> {
+  const { genresInclude, genresExclude, sort, page, pageSize } = params;
+  const needsFullFilter = genresExclude.length > 0 || genresInclude.length > 1;
+
+  if (!needsFullFilter) {
+    const qp = new URLSearchParams({
+      order: sort,
+      kind: 'tv,movie,ona',
+      limit: String(pageSize),
+      page: String(page),
+    });
+    if (genresInclude.length === 1) qp.set('genre', String(genresInclude[0]));
+    const items = await shikimoriFetch<ShikimoriAnimeShort[]>(
+      `/animes?${qp.toString()}`,
+      1800,
+    );
+    return {
+      items: await withYummyPosters(items),
+      hasMore: items.length === pageSize,
+    };
+  }
+
+  const need = page * pageSize + 1;
+  const matches: ShikimoriAnimeShort[] = [];
+  let examined = 0;
+  let upstreamPage = 1;
+
+  while (matches.length < need && examined < MAX_CATALOG_CANDIDATES) {
+    const qp = new URLSearchParams({
+      order: sort,
+      kind: 'tv,movie,ona',
+      limit: String(UPSTREAM_PAGE_SIZE),
+      page: String(upstreamPage),
+    });
+    if (genresInclude.length > 0) qp.set('genre', genresInclude.join(','));
+
+    const batch = await shikimoriFetch<ShikimoriAnimeShort[]>(
+      `/animes?${qp.toString()}`,
+      3600,
+    );
+    if (batch.length === 0) break;
+
+    const remainingBudget = MAX_CATALOG_CANDIDATES - examined;
+    const toExamine = batch.slice(0, remainingBudget);
+    examined += toExamine.length;
+
+    const fulls = await mapWithConcurrency(
+      toExamine,
+      CATALOG_CONCURRENCY,
+      (item) => getAnime(item.id).catch(() => null),
+    );
+
+    for (const full of fulls) {
+      if (!full) continue;
+      const ids = full.genres.map((g) => g.id);
+      const hasAllIncluded = genresInclude.every((id) => ids.includes(id));
+      const hasNoExcluded = !genresExclude.some((id) => ids.includes(id));
+      if (hasAllIncluded && hasNoExcluded) matches.push(full);
+      if (matches.length >= need) break;
+    }
+
+    if (batch.length < UPSTREAM_PAGE_SIZE) break; // апстрим исчерпан
+    upstreamPage++;
+  }
+
+  const start = (page - 1) * pageSize;
+  const windowed = await withYummyPosters(matches.slice(start, start + pageSize));
+  return {
+    items: windowed,
+    hasMore: matches.length > start + pageSize,
+  };
+}
+
+/**
+ * Новинки — последние вышедшие тайтлы, от новых к старым (`order=aired_on`,
+ * проверено вживую: сортирует по убыванию даты «из коробки», доп. `_desc`
+ * варианта в API нет и не нужен).
+ */
+export async function getNewAnime(
+  page = 1,
+  pageSize = 24,
+): Promise<AnimeCatalogPage> {
+  return getAnimeCatalog({
+    genresInclude: [],
+    genresExclude: [],
+    sort: 'aired_on',
+    page,
+    pageSize,
   });
-  if (genreId) params.set('genre', String(genreId));
-  const items = await shikimoriFetch<ShikimoriAnimeShort[]>(
-    `/animes?${params.toString()}`,
-    3600,
-  );
-  return withYummyPosters(items);
 }
 
 /** Разбивает название на слова (латиница/кириллица/цифры). */

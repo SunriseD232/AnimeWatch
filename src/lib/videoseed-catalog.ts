@@ -179,7 +179,7 @@ function toShort(item: VsRawItem): CinemaShort | null {
  * Дедуп по kinopoisk_id (одна единица контента может встретиться в нескольких
  * ответах). Берём первый валидный вариант, сохраняя исходный порядок.
  * `ratings` (id_imdb → vote_average) — опциональное обогащение рейтингом
- * TMDB для категорий с rankByRating, см. getCinemaByCategory.
+ * TMDB при sort: 'rating', см. getCinemaCatalog.
  */
 function dedupe(
   items: VsRawItem[],
@@ -224,105 +224,97 @@ async function enrichRatings(items: VsRawItem[]): Promise<Map<string, number>> {
 }
 
 /**
- * Категории раздела кино (вкладки-подсказки на главной).
+ * Каталог кино с множественным выбором жанров (AND), исключением жанров и
+ * сортировкой.
  *
  * У Videoseed нет РАБОЧЕЙ серверной фильтрации по жанру/стране — параметры
  * `categories`/`category`/`genre`/`country`/`genre_id`/`country_id` либо
  * отдают 500, либо принимаются, но реально ничего не фильтруют (проверено
- * вживую: total и содержимое ответа совпадают с запросом без фильтра).
- * Поэтому фильтруем САМИ — по текстовым полям `genre`/`country`, которые
- * есть в каждой записи обычного списка (`list=movie`/`list=serial`).
+ * вживую: total и содержимое ответа совпадают с запросом без фильтра). И
+ * `sort_by` тоже не работает надёжно. Поэтому фильтрация и сортировка —
+ * ЦЕЛИКОМ на нашей стороне, по текстовому полю `genre`, которое есть в
+ * каждой записи обычного списка (`list=movie`/`list=serial`) — в отличие от
+ * Shikimori это не требует догрузки полной карточки на кандидата, жанр уже
+ * под рукой в списке.
  *
- * Значения genre — реальные названия из `list=category` Videoseed (id для
- * справки, используются только имена): 1 Биография, 2 Боевик, 3 Военный,
- * 4 Вестерн, 5 Документальный, 6 Детектив, 7 Детский, 8 Драма, 9 История,
- * 10 Комедия, 11 Криминал, 12 Мелодрама, 13 Приключения, 14 Семейный,
- * 15 Спорт, 16 Триллер, 17 Ужасы, 18 Фантастика, 19 Фэнтези, 21 Мультфильмы,
- * 7570 Мюзиклы, 7569 Короткометражки.
+ * Названия жанров — реальные значения из `list=category` Videoseed:
+ * Биография, Боевик, Военный, Вестерн, Документальный, Детектив, Детский,
+ * Драма, История, Комедия, Криминал, Мелодрама, Приключения, Семейный,
+ * Спорт, Триллер, Ужасы, Фантастика, Фэнтези, Мультфильмы, Мюзиклы,
+ * Короткометражки.
  */
-export interface CinemaCategoryDef {
-  /** Slug для URL (?category=, /cinema/category/[id]). */
-  id: string;
-  label: string;
-  type: 'movie' | 'serial' | 'both';
-  /** Подстрока, которую должно содержать поле genre (без учёта регистра). */
-  genreMatch?: string;
-  /** Подстрока, которой НЕ должно быть в genre (без учёта регистра). */
-  genreExclude?: string;
-  /** 'ru' — Россия/СССР в country, 'foreign' — всё остальное. */
-  countryMatch?: 'ru' | 'foreign';
-  /** Только вышедшие в текущем или прошлом году (по полю year). */
-  recentOnly?: boolean;
-  /**
-   * Сортировать по рейтингу TMDB (vote_average, по id_imdb) вместо порядка
-   * Videoseed. У Videoseed своего рейтинга нет и сортировка `sort_by` у него
-   * не работает (тот же паттерн, что и у genre/country — см. комментарий
-   * выше), поэтому и сортировка тоже целиком на нашей стороне.
-   */
-  rankByRating?: boolean;
-}
-
-export const CINEMA_CATEGORIES: CinemaCategoryDef[] = [
-  { id: 'movies', label: 'Фильмы', type: 'movie', genreExclude: 'мультфильм' },
-  {
-    id: 'foreign-series',
-    label: 'Зарубежные сериалы',
-    type: 'serial',
-    countryMatch: 'foreign',
-    recentOnly: true,
-    rankByRating: true,
-  },
-  {
-    id: 'ru-series',
-    label: 'Русские сериалы',
-    type: 'serial',
-    countryMatch: 'ru',
-    recentOnly: true,
-    rankByRating: true,
-  },
-  { id: 'cartoons', label: 'Мультфильмы', type: 'movie', genreMatch: 'мультфильм' },
-  { id: 'cartoon-series', label: 'Многосерийные мультфильмы', type: 'serial', genreMatch: 'мультфильм' },
-  { id: 'drama', label: 'Драма', type: 'both', genreMatch: 'драма' },
-  { id: 'comedy', label: 'Комедия', type: 'both', genreMatch: 'комедия' },
-  { id: 'action', label: 'Боевик', type: 'both', genreMatch: 'боевик' },
-  { id: 'thriller', label: 'Триллер', type: 'both', genreMatch: 'триллер' },
-  { id: 'horror', label: 'Ужасы', type: 'both', genreMatch: 'ужасы' },
-  { id: 'fantasy', label: 'Фантастика', type: 'both', genreMatch: 'фантастика' },
-  { id: 'melodrama', label: 'Мелодрама', type: 'both', genreMatch: 'мелодрама' },
+export const CINEMA_GENRES: string[] = [
+  'Биография',
+  'Боевик',
+  'Военный',
+  'Вестерн',
+  'Документальный',
+  'Детектив',
+  'Детский',
+  'Драма',
+  'История',
+  'Комедия',
+  'Криминал',
+  'Мелодрама',
+  'Мультфильмы',
+  'Мюзиклы',
+  'Приключения',
+  'Семейный',
+  'Спорт',
+  'Триллер',
+  'Ужасы',
+  'Фантастика',
+  'Фэнтези',
+  'Короткометражки',
 ];
 
-function matchesCategory(item: VsRawItem, def: CinemaCategoryDef): boolean {
-  const genre = (item.genre ?? '').toLowerCase();
-  const country = (item.country ?? '').toLowerCase();
-  if (def.genreMatch && !genre.includes(def.genreMatch)) return false;
-  if (def.genreExclude && genre.includes(def.genreExclude)) return false;
-  if (def.countryMatch === 'ru' && !(country.includes('росс') || country.includes('ссср'))) {
-    return false;
-  }
-  if (def.countryMatch === 'foreign' && (country.includes('росс') || country.includes('ссср'))) {
-    return false;
-  }
-  if (def.recentOnly) {
-    const year = Number(item.year);
-    const minYear = new Date().getFullYear() - 1;
-    if (!Number.isFinite(year) || year < minYear) return false;
-  }
-  return true;
+export const CINEMA_CATALOG_SORTS = [
+  { value: 'new', label: 'Сначала новые' },
+  { value: 'rating', label: 'По рейтингу' },
+] as const;
+export type CinemaCatalogSort = (typeof CINEMA_CATALOG_SORTS)[number]['value'];
+
+export interface CinemaCatalogParams {
+  type: 'movie' | 'serial' | 'both';
+  /** Жанр должен встретиться у тайтла — ВСЕ перечисленные (AND). */
+  genresInclude: string[];
+  /** Ни один из этих жанров не должен встретиться у тайтла. */
+  genresExclude: string[];
+  sort: CinemaCatalogSort;
+  page: number;
+  pageSize: number;
 }
 
-// Жёсткий потолок «вышестоящих» страниц Videoseed на один запрос категории —
-// защита от того, что редкий жанр в глубокой странице пагинации устроит
-// лавину запросов к их квотируемому API за один клик. Каждая такая страница
-// кэшируется (revalidate) — стоимость платится один раз, а не на каждый визит.
+export interface CinemaCatalogPage {
+  items: CinemaShort[];
+  hasMore: boolean;
+}
+
+function matchesFilter(
+  item: VsRawItem,
+  genresInclude: string[],
+  genresExclude: string[],
+): boolean {
+  const genre = (item.genre ?? '').toLowerCase();
+  const hasAllIncluded = genresInclude.every((g) => genre.includes(g.toLowerCase()));
+  const hasExcluded = genresExclude.some((g) => genre.includes(g.toLowerCase()));
+  return hasAllIncluded && !hasExcluded;
+}
+
+// Жёсткий потолок «вышестоящих» страниц Videoseed на один запрос —
+// защита от того, что редкая комбинация жанров устроит лавину запросов к их
+// квотируемому API за один клик. Каждая такая страница кэшируется
+// (revalidate) — стоимость платится один раз, а не на каждый визит.
 const MAX_UPSTREAM_PAGES = 30;
 const UPSTREAM_PAGE_SIZE = 50;
 
 /** Копит подходящие под фильтр записи, дозапрашивая страницы, пока не хватит. */
-async function collectMatching(
+async function collectFiltered(
   type: 'movie' | 'serial',
-  def: CinemaCategoryDef,
+  genresInclude: string[],
+  genresExclude: string[],
   need: number,
-): Promise<{ items: VsRawItem[]; exhausted: boolean }> {
+): Promise<VsRawItem[]> {
   const collected: VsRawItem[] = [];
   for (let page = 1; page <= MAX_UPSTREAM_PAGES; page++) {
     const batch = await vsFetch(
@@ -334,109 +326,100 @@ async function collectMatching(
       },
       3600,
     );
-    if (batch.length === 0) return { items: collected, exhausted: true };
+    if (batch.length === 0) break;
     for (const item of batch) {
-      if (matchesCategory(item, def)) collected.push(item);
+      if (matchesFilter(item, genresInclude, genresExclude)) collected.push(item);
     }
-    if (collected.length >= need) return { items: collected, exhausted: false };
+    if (collected.length >= need) break;
+    if (batch.length < UPSTREAM_PAGE_SIZE) break;
   }
-  return { items: collected, exhausted: false };
+  return collected;
 }
 
-/** Страница категории: сами карточки + есть ли ещё (для «Показать ещё»/пагинации). */
-export interface CinemaCategoryPage {
-  category: CinemaCategoryDef;
-  items: CinemaShort[];
-  hasMore: boolean;
-}
-
-// Для категорий с rankByRating собираем пул кандидатов пошире, чем нужно на
-// первую страницу — иначе «сортировка по рейтингу» просто переставит те же
-// 24-25 первых попавшихся записей вместо того, чтобы выбрать лучшие среди
-// сколько-нибудь широкой выборки.
-const RATING_CANDIDATE_POOL = 120;
+// Любая наша сортировка (по году или по TMDB-рейтингу) — переупорядочивание
+// уже собранного пула на своей стороне, поэтому пул всегда собираем шире,
+// чем нужно на текущую страницу — иначе сортировка просто переставит первые
+// попавшиеся 24-25 записей вместо выбора лучших/новых среди широкой выборки.
+const SORT_CANDIDATE_POOL = 120;
 
 /**
- * Тайтлы категории (вкладка) с постраничной навигацией. Смотри комментарий
- * у CINEMA_CATEGORIES — фильтрация целиком на нашей стороне, поверх обычных
- * list=movie/list=serial, поэтому глубокая пагинация редкой категории может
- * дозапросить несколько вышестоящих страниц (см. MAX_UPSTREAM_PAGES).
+ * Единая функция каталога — используется и «Каталогом» (с фильтрами), и
+ * «Новинками» (sort: 'new', без фильтров), и «Популярным» (sort: 'rating',
+ * без фильтров) — см. getNewCinema/getPopularCinemaRanked ниже.
  */
-export async function getCinemaByCategory(
-  categoryId: string,
-  page = 1,
-  pageSize = 24,
-): Promise<CinemaCategoryPage | null> {
-  const def = CINEMA_CATEGORIES.find((c) => c.id === categoryId);
-  if (!def) return null;
-
-  const baseNeed = page * pageSize + 1; // +1 — узнать, есть ли следующая страница
-  const need = def.rankByRating
-    ? Math.max(baseNeed, RATING_CANDIDATE_POOL)
-    : baseNeed;
-  const types: ('movie' | 'serial')[] =
-    def.type === 'both' ? ['movie', 'serial'] : [def.type];
+export async function getCinemaCatalog(
+  params: CinemaCatalogParams,
+): Promise<CinemaCatalogPage> {
+  const { type, genresInclude, genresExclude, sort, page, pageSize } = params;
+  const baseNeed = page * pageSize + 1;
+  const need = Math.max(baseNeed, SORT_CANDIDATE_POOL);
+  const types: ('movie' | 'serial')[] = type === 'both' ? ['movie', 'serial'] : [type];
 
   const results = await Promise.all(
-    types.map((t) => collectMatching(t, def, need)),
+    types.map((t) => collectFiltered(t, genresInclude, genresExclude, need)),
   );
 
   // Для 'both' чередуем фильмы/сериалы, чтобы подборка не была однобокой.
   const merged: VsRawItem[] = [];
-  const max = Math.max(...results.map((r) => r.items.length));
+  const max = Math.max(...results.map((r) => r.length));
   for (let i = 0; i < max; i++) {
-    for (const r of results) if (r.items[i]) merged.push(r.items[i]);
+    for (const r of results) if (r[i]) merged.push(r[i]);
   }
 
-  const ratings = def.rankByRating ? await enrichRatings(merged) : undefined;
+  const ratings = sort === 'rating' ? await enrichRatings(merged) : undefined;
   let deduped = dedupe(merged, merged.length, ratings);
-  if (def.rankByRating) {
-    // Без TMDB_API_KEY у всех rating === null — сортировка становится
-    // no-op и порядок остаётся как есть, ничего не ломается.
+
+  if (sort === 'rating') {
+    // Без TMDB_API_KEY у всех rating === null — сортировка no-op, порядок
+    // остаётся как есть, ничего не ломается.
     deduped = [...deduped].sort((a, b) => {
       const ra = a.rating ?? -1;
       const rb = b.rating ?? -1;
       if (rb !== ra) return rb - ra;
       return (b.year ?? 0) - (a.year ?? 0);
     });
+  } else {
+    // 'new' — у Videoseed нет точной даты выхода, только год.
+    deduped = [...deduped].sort((a, b) => (b.year ?? 0) - (a.year ?? 0));
   }
 
   const start = (page - 1) * pageSize;
   const windowed = deduped.slice(start, start + pageSize);
+  return { items: windowed, hasMore: deduped.length > start + pageSize };
+}
 
-  return {
-    category: def,
-    items: windowed,
-    hasMore: deduped.length > start + pageSize,
-  };
+/** «Новинки» — весь каталог (фильмы+сериалы), от новых к старым по году. */
+export async function getNewCinema(
+  page = 1,
+  pageSize = 24,
+): Promise<CinemaCatalogPage> {
+  return getCinemaCatalog({
+    type: 'both',
+    genresInclude: [],
+    genresExclude: [],
+    sort: 'new',
+    page,
+    pageSize,
+  });
 }
 
 /**
- * Главная раздела кино. У Videoseed нет сортировки по популярности/рейтингу,
- * поэтому показываем новинки (последние добавленные) — миксом фильмов и сериалов.
+ * «Популярное» — весь каталог, отсортированный по рейтингу TMDB (у
+ * Videoseed своего рейтинга нет вообще). Требует TMDB_API_KEY — без него
+ * сортировка no-op и список просто в порядке апстрима.
  */
-export async function getPopularCinema(limit = 18): Promise<CinemaShort[]> {
-  // Берём с запасом: часть элементов отсеется (нулевой/пустой id_kp).
-  const each = limit;
-  const [serials, movies] = await Promise.all([
-    vsFetch(
-      { list: 'serial', sort_by: 'post_date desc', items: String(each) },
-      3600,
-    ),
-    vsFetch(
-      { list: 'movie', sort_by: 'post_date desc', items: String(each) },
-      3600,
-    ),
-  ]);
-
-  // Чередуем сериалы и фильмы, чтобы на главной было и то, и другое.
-  const mixed: VsRawItem[] = [];
-  const max = Math.max(serials.length, movies.length);
-  for (let i = 0; i < max; i++) {
-    if (serials[i]) mixed.push(serials[i]);
-    if (movies[i]) mixed.push(movies[i]);
-  }
-  return dedupe(mixed, limit);
+export async function getPopularCinemaRanked(
+  page = 1,
+  pageSize = 24,
+): Promise<CinemaCatalogPage> {
+  return getCinemaCatalog({
+    type: 'both',
+    genresInclude: [],
+    genresExclude: [],
+    sort: 'rating',
+    page,
+    pageSize,
+  });
 }
 
 /** Поиск по строке запроса среди фильмов и сериалов. */

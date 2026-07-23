@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import type { EpisodeNotification } from '@/lib/types';
+import type { AppNotification } from '@/lib/types';
 
 function timeAgo(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -16,17 +16,22 @@ function timeAgo(iso: string): string {
   return `${days} дн назад`;
 }
 
+/** В какой таблице живёт уведомление этого вида — для markRead/markAllRead. */
+function tableFor(kind: AppNotification['kind']): 'episode_notifications' | 'system_notifications' {
+  return kind === 'episode' ? 'episode_notifications' : 'system_notifications';
+}
+
 /**
- * Колокольчик уведомлений о новых сериях (тайтлы в статусе «Смотрю»).
- * Начальный список приходит с сервера (Navbar), дальше — Realtime-подписка
- * на INSERT в episode_notifications, чтобы новые уведомления прилетали без
- * перезагрузки страницы (тот же приём, что и синхронизация прогресса в
- * Player.tsx/WatchPlayer.tsx).
+ * Колокольчик уведомлений: новые серии (тайтлы в статусе «Смотрю») +
+ * системные уведомления для админов (например, истечение пробного периода
+ * Vibix — см. lib/vibixTrial.ts). Начальный список приходит с сервера
+ * (Navbar), дальше — Realtime-подписка на INSERT в обеих таблицах, чтобы
+ * новые уведомления прилетали без перезагрузки страницы.
  */
 export default function NotificationBell({
   initial,
 }: {
-  initial: EpisodeNotification[];
+  initial: AppNotification[];
 }) {
   const [items, setItems] = useState(initial);
   const [open, setOpen] = useState(false);
@@ -55,7 +60,17 @@ export default function NotificationBell({
         { event: 'INSERT', schema: 'public', table: 'episode_notifications' },
         (payload) => {
           setItems((prev) => [
-            payload.new as EpisodeNotification,
+            { ...(payload.new as Omit<AppNotification, 'kind'>), kind: 'episode' } as AppNotification,
+            ...prev,
+          ]);
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'system_notifications' },
+        (payload) => {
+          setItems((prev) => [
+            { ...(payload.new as Omit<AppNotification, 'kind'>), kind: 'system' } as AppNotification,
             ...prev,
           ]);
         },
@@ -66,29 +81,36 @@ export default function NotificationBell({
     };
   }, []);
 
-  async function markRead(id: string) {
-    if (items.find((n) => n.id === id)?.read_at) return;
+  async function markRead(notification: AppNotification) {
+    if (notification.read_at) return;
     const now = new Date().toISOString();
     setItems((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read_at: now } : n)),
+      prev.map((n) => (n.id === notification.id ? { ...n, read_at: now } : n)),
     );
     const supabase = createClient();
     await supabase
-      .from('episode_notifications')
+      .from(tableFor(notification.kind))
       .update({ read_at: now })
-      .eq('id', id);
+      .eq('id', notification.id);
   }
 
   async function markAllRead() {
-    const ids = items.filter((n) => !n.read_at).map((n) => n.id);
-    if (ids.length === 0) return;
+    const unreadItems = items.filter((n) => !n.read_at);
+    if (unreadItems.length === 0) return;
     const now = new Date().toISOString();
     setItems((prev) => prev.map((n) => ({ ...n, read_at: n.read_at ?? now })));
+
     const supabase = createClient();
-    await supabase
-      .from('episode_notifications')
-      .update({ read_at: now })
-      .in('id', ids);
+    const episodeIds = unreadItems.filter((n) => n.kind === 'episode').map((n) => n.id);
+    const systemIds = unreadItems.filter((n) => n.kind === 'system').map((n) => n.id);
+    await Promise.all([
+      episodeIds.length > 0
+        ? supabase.from('episode_notifications').update({ read_at: now }).in('id', episodeIds)
+        : Promise.resolve(),
+      systemIds.length > 0
+        ? supabase.from('system_notifications').update({ read_at: now }).in('id', systemIds)
+        : Promise.resolve(),
+    ]);
   }
 
   return (
@@ -141,46 +163,74 @@ export default function NotificationBell({
                 Пока нет уведомлений
               </p>
             ) : (
-              items.map((n) => (
-                <Link
-                  key={n.id}
-                  href={`/${n.content_type === 'cinema' ? 'cinema' : 'anime'}/${n.shikimori_id}`}
-                  onClick={() => {
-                    setOpen(false);
-                    markRead(n.id);
-                  }}
-                  className={[
-                    'flex gap-3 border-b border-white/5 px-4 py-3 transition last:border-b-0 hover:bg-white/5',
-                    n.read_at ? 'opacity-60' : '',
-                  ].join(' ')}
-                >
-                  <div className="h-14 w-10 shrink-0 overflow-hidden rounded-lg bg-bg-soft">
-                    {n.poster_url && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={n.poster_url}
-                        alt=""
-                        referrerPolicy="no-referrer"
-                        className="h-full w-full object-cover"
-                      />
+              items.map((n) =>
+                n.kind === 'system' ? (
+                  <button
+                    key={n.id}
+                    type="button"
+                    onClick={() => markRead(n)}
+                    className={[
+                      'flex w-full gap-3 border-b border-white/5 px-4 py-3 text-left transition last:border-b-0 hover:bg-white/5',
+                      n.read_at ? 'opacity-60' : '',
+                    ].join(' ')}
+                  >
+                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-amber-500/15 text-lg">
+                      ⚠️
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="line-clamp-1 text-sm font-medium text-gray-100">
+                        {n.title}
+                      </p>
+                      <p className="text-xs text-gray-400">{n.message}</p>
+                      <p className="mt-0.5 text-[11px] text-gray-500">
+                        {timeAgo(n.created_at)}
+                      </p>
+                    </div>
+                    {!n.read_at && (
+                      <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-accent" />
                     )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="line-clamp-1 text-sm font-medium text-gray-100">
-                      {n.title}
-                    </p>
-                    <p className="text-xs text-gray-400">
-                      Новая серия — теперь их {n.episode}
-                    </p>
-                    <p className="mt-0.5 text-[11px] text-gray-500">
-                      {timeAgo(n.created_at)}
-                    </p>
-                  </div>
-                  {!n.read_at && (
-                    <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-accent" />
-                  )}
-                </Link>
-              ))
+                  </button>
+                ) : (
+                  <Link
+                    key={n.id}
+                    href={`/${n.content_type === 'cinema' ? 'cinema' : 'anime'}/${n.shikimori_id}`}
+                    onClick={() => {
+                      setOpen(false);
+                      markRead(n);
+                    }}
+                    className={[
+                      'flex gap-3 border-b border-white/5 px-4 py-3 transition last:border-b-0 hover:bg-white/5',
+                      n.read_at ? 'opacity-60' : '',
+                    ].join(' ')}
+                  >
+                    <div className="h-14 w-10 shrink-0 overflow-hidden rounded-lg bg-bg-soft">
+                      {n.poster_url && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={n.poster_url}
+                          alt=""
+                          referrerPolicy="no-referrer"
+                          className="h-full w-full object-cover"
+                        />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="line-clamp-1 text-sm font-medium text-gray-100">
+                        {n.title}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        Новая серия — теперь их {n.episode}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-gray-500">
+                        {timeAgo(n.created_at)}
+                      </p>
+                    </div>
+                    {!n.read_at && (
+                      <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-accent" />
+                    )}
+                  </Link>
+                ),
+              )
             )}
           </div>
         </div>

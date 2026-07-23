@@ -2,7 +2,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { episodeCount, getAnime } from '@/lib/shikimori';
 import { getCinemaById } from '@/lib/videoseed-catalog';
+import { ADMIN_EMAILS } from '@/lib/admin';
+import { VIBIX_MILESTONES } from '@/lib/vibixTrial';
 import type { ContentType } from '@/lib/types';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 // До 60 сек — потолок serverless-функций на Hobby-тарифе Vercel. Проверка
 // идёт по тайтлам последовательно (внешние API уже сами троттлятся), так что
@@ -32,6 +35,43 @@ async function getCurrentEpisodeCount(
   } catch {
     return null;
   }
+}
+
+/**
+ * Уведомления о приближающемся конце пробного периода Vibix (см.
+ * lib/vibixTrial.ts) — только ADMIN_EMAILS. Проверяет ВСЕ вехи, чей срок уже
+ * настал (не только «сегодня ровно») — так пропущенный суточный прогон
+ * крона не теряет уведомление, просто присылает его на день позже.
+ * Идемпотентно: upsert с ignoreDuplicates по unique(user_id, key) — повторный
+ * запуск после того, как веха уже отправлена, ничего не создаёт заново.
+ */
+async function checkVibixTrialMilestones(
+  supabase: SupabaseClient,
+): Promise<void> {
+  const now = new Date();
+  const due = VIBIX_MILESTONES.filter((m) => now >= m.date);
+  if (due.length === 0) return;
+
+  const { data: usersPage, error } = await supabase.auth.admin.listUsers();
+  if (error || !usersPage) return;
+
+  const adminIds = usersPage.users
+    .filter((u) => u.email && ADMIN_EMAILS.includes(u.email))
+    .map((u) => u.id);
+  if (adminIds.length === 0) return;
+
+  const rows = due.flatMap((m) =>
+    adminIds.map((userId) => ({
+      user_id: userId,
+      key: m.key,
+      title: 'Vibix: скоро истекает пробный период',
+      message: `До истечения пробного периода Vibix осталось ${m.label}.`,
+    })),
+  );
+
+  await supabase
+    .from('system_notifications')
+    .upsert(rows, { onConflict: 'user_id,key', ignoreDuplicates: true });
 }
 
 /**
@@ -142,6 +182,12 @@ export async function GET(request: NextRequest) {
     } catch {
       // Единичный сбой не должен рушить весь прогон — идём дальше.
     }
+  }
+
+  try {
+    await checkVibixTrialMilestones(supabase);
+  } catch {
+    // Не должно рушить основной прогон уведомлений о сериях.
   }
 
   return NextResponse.json({ checked, notified });

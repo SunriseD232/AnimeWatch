@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import NotificationBell from './NotificationBell';
 import SearchBox from './SearchBox';
-import type { EpisodeNotification } from '@/lib/types';
+import type { AppNotification } from '@/lib/types';
 
 export default async function Navbar() {
   const supabase = createClient();
@@ -10,14 +10,34 @@ export default async function Navbar() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  let notifications: EpisodeNotification[] = [];
+  let notifications: AppNotification[] = [];
   if (user) {
-    const { data } = await supabase
-      .from('episode_notifications')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(30);
-    notifications = (data ?? []) as EpisodeNotification[];
+    // Системные уведомления (например, Vibix trial) видят только админы —
+    // но это уже гарантирует RLS на стороне system_notifications, здесь
+    // фильтровать не нужно: у обычного пользователя там просто нет строк.
+    const [{ data: episodeRows }, { data: systemRows }] = await Promise.all([
+      supabase
+        .from('episode_notifications')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(30),
+      supabase
+        .from('system_notifications')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10),
+    ]);
+
+    const episodeNotifications: AppNotification[] = (episodeRows ?? []).map(
+      (row) => ({ ...row, kind: 'episode' as const }),
+    );
+    const systemNotifications: AppNotification[] = (systemRows ?? []).map(
+      (row) => ({ ...row, kind: 'system' as const }),
+    );
+
+    notifications = [...episodeNotifications, ...systemNotifications].sort(
+      (a, b) => b.created_at.localeCompare(a.created_at),
+    );
   }
 
   return (

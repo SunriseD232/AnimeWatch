@@ -61,6 +61,7 @@ export interface UserListItem {
 
 /** Уведомление о новых сериях (таблица episode_notifications). */
 export interface EpisodeNotification {
+  kind: 'episode';
   id: string;
   user_id: string;
   content_type: ContentType;
@@ -72,3 +73,17 @@ export interface EpisodeNotification {
   created_at: string;
   read_at: string | null;
 }
+
+/** Системное уведомление (таблица system_notifications) — только админам. */
+export interface SystemNotification {
+  kind: 'system';
+  id: string;
+  user_id: string;
+  key: string;
+  title: string;
+  message: string;
+  created_at: string;
+  read_at: string | null;
+}
+
+export type AppNotification = EpisodeNotification | SystemNotification;

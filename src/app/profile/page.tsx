@@ -1,6 +1,9 @@
 import { redirect } from 'next/navigation';
-import UserListView from '@/components/UserListView';
+import ProfileTabs from '@/components/ProfileTabs';
+import VibixTrialStatus from '@/components/VibixTrialStatus';
+import { isAdminEmail } from '@/lib/admin';
 import { createClient } from '@/lib/supabase/server';
+import { getTodaysSignupCode } from '@/lib/signupCode';
 import type { UserListItem } from '@/lib/types';
 
 export const metadata = { title: 'Профиль — MediaWatch' };
@@ -20,6 +23,7 @@ export default async function ProfilePage() {
     .order('created_at', { ascending: false });
 
   const items = (data ?? []) as UserListItem[];
+  const isAdmin = isAdminEmail(user.email);
 
   return (
     <div className="flex flex-col gap-8">
@@ -38,10 +42,13 @@ export default async function ProfilePage() {
         </form>
       </section>
 
-      <section className="flex flex-col gap-4">
-        <h2 className="text-lg font-semibold">Мой список</h2>
-        <UserListView items={items} />
-      </section>
+      {isAdmin && <VibixTrialStatus />}
+
+      <ProfileTabs
+        items={items}
+        showCodeTab={isAdmin}
+        code={isAdmin ? getTodaysSignupCode() : null}
+      />
     </div>
   );
 }

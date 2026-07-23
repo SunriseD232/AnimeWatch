@@ -1,28 +1,18 @@
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
 import { Suspense } from 'react';
 import CinemaCard from '@/components/CinemaCard';
 import ModeSwitch from '@/components/ModeSwitch';
 import { CardGridSkeleton } from '@/components/Skeletons';
-import { CINEMA_CATEGORIES, getCinemaByCategory } from '@/lib/videoseed-catalog';
+import { getPopularCinemaRanked } from '@/lib/videoseed-catalog';
+
+export const metadata = { title: 'Популярное — MediaWatch' };
 
 const PAGE_SIZE = 24;
 
-export function generateMetadata({ params }: { params: { id: string } }) {
-  const def = CINEMA_CATEGORIES.find((c) => c.id === params.id);
-  return { title: `${def?.label ?? 'Категория'} — MediaWatch` };
-}
-
-async function CategoryGrid({
-  categoryId,
-  page,
-}: {
-  categoryId: string;
-  page: number;
-}) {
+async function PopularGrid({ page }: { page: number }) {
   let data;
   try {
-    data = await getCinemaByCategory(categoryId, page, PAGE_SIZE);
+    data = await getPopularCinemaRanked(page, PAGE_SIZE);
   } catch {
     return (
       <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
@@ -32,10 +22,17 @@ async function CategoryGrid({
     );
   }
 
-  if (!data || data.items.length === 0) {
+  if (data.items.length === 0) {
     return (
       <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
-        {page > 1 ? 'Дальше ничего нет.' : 'В этой категории пока нет тайтлов.'}
+        {page > 1 ? (
+          'Дальше ничего нет.'
+        ) : (
+          <>
+            Каталог кино недоступен. Убедитесь, что задан{' '}
+            <code className="rounded bg-black/30 px-1">VIDEOSEED_API_TOKEN</code>.
+          </>
+        )}
       </div>
     );
   }
@@ -52,7 +49,7 @@ async function CategoryGrid({
 
       <div className="flex items-center justify-center gap-2">
         <Link
-          href={hasPrev ? `/cinema/category/${categoryId}?page=${page - 1}` : '#'}
+          href={hasPrev ? `/cinema/popular?page=${page - 1}` : '#'}
           aria-disabled={!hasPrev}
           className={[
             'rounded-full px-4 py-2 text-sm font-medium ring-1 ring-white/10 transition',
@@ -65,7 +62,7 @@ async function CategoryGrid({
         </Link>
         <span className="px-2 text-sm text-gray-400">Стр. {page}</span>
         <Link
-          href={data.hasMore ? `/cinema/category/${categoryId}?page=${page + 1}` : '#'}
+          href={data.hasMore ? `/cinema/popular?page=${page + 1}` : '#'}
           aria-disabled={!data.hasMore}
           className={[
             'rounded-full px-4 py-2 text-sm font-medium ring-1 ring-white/10 transition',
@@ -81,16 +78,11 @@ async function CategoryGrid({
   );
 }
 
-export default function CinemaCategoryPage({
-  params,
+export default function PopularCinemaPage({
   searchParams,
 }: {
-  params: { id: string };
   searchParams: { page?: string };
 }) {
-  const def = CINEMA_CATEGORIES.find((c) => c.id === params.id);
-  if (!def) notFound();
-
   const pageParam = Number(searchParams.page);
   const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
 
@@ -99,11 +91,14 @@ export default function CinemaCategoryPage({
       <ModeSwitch active="cinema" />
 
       <div>
-        <h1 className="text-xl font-bold">{def.label}</h1>
+        <h1 className="text-xl font-bold">Популярное</h1>
+        <p className="text-sm text-gray-400">
+          Топ фильмов и сериалов по рейтингу TMDB.
+        </p>
       </div>
 
       <Suspense key={page} fallback={<CardGridSkeleton count={PAGE_SIZE} />}>
-        <CategoryGrid categoryId={def.id} page={page} />
+        <PopularGrid page={page} />
       </Suspense>
     </div>
   );

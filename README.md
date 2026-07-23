@@ -100,7 +100,8 @@ SIGNUP_CODE_SECRET=...  # обязательно, см. §6 — без него 
 ```
 src/
   app/
-    page.tsx                              главная: «Продолжить» + популярное
+    page.tsx                              главная: «Продолжить» + Популярное/Новинки/Каталог
+    catalog/page.tsx                      каталог аниме — жанры (AND/exclude) + сортировка
     search/page.tsx                       поиск по Shikimori
     anime/[shikimoriId]/page.tsx          страница тайтла
     watch/[shikimoriId]/[episode]/page.tsx страница просмотра (ядро)
