@@ -48,7 +48,16 @@ export async function GET(request: NextRequest, { params }: { params: RouteParam
     return NextResponse.json({ error: 'bad params' }, { status: 400 });
   }
 
-  const resolved = await resolveStream({ contentType, shikimoriId, season, episode, source });
+  let resolved;
+  try {
+    resolved = await resolveStream({ contentType, shikimoriId, season, episode, source });
+  } catch (err) {
+    // Puppeteer/Chromium или Supabase могли упасть — отдаём диагностируемую
+    // ошибку вместо голого 500 без тела (как было до этого try/catch).
+    console.error('[proxy] resolveStream упал:', err);
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: 'resolve_failed', message }, { status: 502 });
+  }
   if (!resolved) {
     return NextResponse.json({ error: 'not_found' }, { status: 404 });
   }
