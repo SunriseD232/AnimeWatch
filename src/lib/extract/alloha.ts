@@ -1,4 +1,4 @@
-import { launchBrowser } from './browser';
+import { isNavigableUrl, launchBrowser } from './browser';
 import type { ExtractParams, ResolvedStream } from './types';
 
 /**
@@ -65,6 +65,11 @@ async function getYummyIframeUrl(
 }
 
 async function interceptVideoUrl(embedUrl: string): Promise<string | null> {
+  if (!isNavigableUrl(embedUrl)) {
+    console.error(`[alloha] Yummy отдал невалидный iframe_url: ${embedUrl}`);
+    return null;
+  }
+
   const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
@@ -93,6 +98,11 @@ async function interceptVideoUrl(embedUrl: string): Promise<string | null> {
     const mp4 = videoUrls.find((u) => u.includes('.mp4'));
     const m3u8 = videoUrls.find((u) => u.includes('.m3u8') || u.includes('playlist'));
     return mp4 || m3u8 || videoUrls[0] || null;
+  } catch (err) {
+    // Навигация/таймаут/что угодно у чужого эмбеда — не должно валить весь
+    // запрос: источник просто недоступен для этой серии.
+    console.error('[alloha] Puppeteer упал:', err);
+    return null;
   } finally {
     await browser.close();
   }

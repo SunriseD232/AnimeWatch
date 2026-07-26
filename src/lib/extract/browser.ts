@@ -21,6 +21,22 @@ import type { Browser } from 'puppeteer-core';
 const CHROMIUM_VERSION = '149.0.0';
 const CHROMIUM_PACK_URL = `https://github.com/Sparticuz/chromium/releases/download/v${CHROMIUM_VERSION}/chromium-v${CHROMIUM_VERSION}-pack.x64.tar`;
 
+/**
+ * Проверка перед page.goto(): Yummy иногда отдаёт iframe_url без схемы или
+ * иначе битый — Puppeteer в таком случае не возвращает "not found", а роняет
+ * весь Page.navigate протокольной ошибкой ("Cannot navigate to invalid
+ * URL"), что раньше валило весь запрос. Лучше отсеять на входе и обработать
+ * как «источник недоступен».
+ */
+export function isNavigableUrl(url: string | null | undefined): url is string {
+  if (!url) return false;
+  try {
+    return ['http:', 'https:'].includes(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
+
 export async function launchBrowser(): Promise<Browser> {
   const [{ default: chromium }, { default: puppeteer }] = await Promise.all([
     import('@sparticuz/chromium-min'),

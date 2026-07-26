@@ -1,4 +1,4 @@
-import { launchBrowser } from './browser';
+import { isNavigableUrl, launchBrowser } from './browser';
 import type { ExtractParams, ResolvedStream } from './types';
 
 /**
@@ -22,6 +22,11 @@ function buildEmbedUrl(kinopoiskId: number, season: number, episode: number): st
 }
 
 async function interceptVideoUrl(embedUrl: string, referer: string): Promise<string | null> {
+  if (!isNavigableUrl(embedUrl)) {
+    console.error(`[videoseed] Собранный embed URL невалиден: ${embedUrl}`);
+    return null;
+  }
+
   const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
@@ -56,6 +61,9 @@ async function interceptVideoUrl(embedUrl: string, referer: string): Promise<str
       (u) => u.includes('/video/') || u.includes('/stream/') || u.includes('/hls/'),
     );
     return mp4 || m3u8 || stream || videoUrls[0] || null;
+  } catch (err) {
+    console.error('[videoseed] Puppeteer упал:', err);
+    return null;
   } finally {
     await browser.close();
   }
