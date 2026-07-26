@@ -3,6 +3,7 @@ import ContinueCard from '@/components/ContinueCard';
 import LoginBanner from '@/components/LoginBanner';
 import ModeSwitch from '@/components/ModeSwitch';
 import NavTile from '@/components/NavTile';
+import ScrollCarousel from '@/components/ScrollCarousel';
 import { CardGridSkeleton } from '@/components/Skeletons';
 import { createClient } from '@/lib/supabase/server';
 import type { WatchProgress } from '@/lib/types';
@@ -38,14 +39,15 @@ async function ContinueWatching() {
   }
 
   // Горизонтальная карусель: последние просмотренные листаются вбок.
+  // Помимо родной полосы прокрутки — колесо мыши и драг (см. ScrollCarousel).
   return (
-    <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2">
+    <ScrollCarousel className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2">
       {progress.map((p) => (
         <div key={p.id} className="w-56 shrink-0 snap-start sm:w-72">
           <ContinueCard progress={p} />
         </div>
       ))}
-    </div>
+    </ScrollCarousel>
   );
 }
 
