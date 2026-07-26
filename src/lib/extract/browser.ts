@@ -28,14 +28,12 @@ export async function launchBrowser(): Promise<Browser> {
   ]);
 
   return puppeteer.launch({
-    args: [
-      ...chromium.args,
-      '--disable-dev-shm-usage',
-      // Каждый вызов — новая функция/страница; процесс живёт секунды, лишние
-      // подпроцессы Chromium только тратят память лимита функции.
-      '--single-process',
-      '--no-zygote',
-    ],
+    // chromium.args уже содержит набор флагов под serverless. Раньше сюда
+    // добавляли --single-process --no-zygote (наследие бота на 1 ГБ RAM
+    // VPS) — на Vercel Pro памяти на функцию хватает с запасом (см.
+    // vercel.json), а --single-process у headless Chromium известен как
+    // источник случайных крашей/зависаний, поэтому убрано.
+    args: [...chromium.args, '--disable-dev-shm-usage'],
     defaultViewport: { width: 1280, height: 720 },
     executablePath: await chromium.executablePath(CHROMIUM_PACK_URL),
     headless: true,
