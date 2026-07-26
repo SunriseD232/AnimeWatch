@@ -5,6 +5,10 @@ const nextConfig = {
   // на главную «Продолжить просмотр» всегда подтягивается свежим из БД.
   experimental: {
     staleTimes: { dynamic: 0 },
+    // puppeteer-core/@sparticuz-chromium (headless Chromium для извлечения
+    // прямых видео-ссылок, см. src/lib/extract) — серверные пакеты с
+    // нативным бинарником, вебпак их бандлить не должен.
+    serverComponentsExternalPackages: ['puppeteer-core', '@sparticuz/chromium'],
   },
   images: {
     remotePatterns: [

@@ -45,22 +45,28 @@ src/
     cinema/category/[id]/     — категория кино целиком, пагинация (?page=N)
     cinema/watch/[id]/[season]/[episode]/ — просмотр кино (сезон — часть пути!)
     search/page.tsx           — поиск (аниме + кино раздельно)
-    profile/page.tsx          — профиль + «Мой список» (вкладки Аниме/Кино) + TelegramSettings
+    profile/page.tsx          — профиль + «Мой список» (вкладки Аниме/Кино)
     login/, signup/           — авторизация (email/password через Supabase Auth)
     api/kodik/route.ts        — прокси смены озвучки Kodik (без полной перезагрузки)
     api/progress/route.ts     — upsert прогресса просмотра (единая точка записи)
     api/cron/check-episodes/route.ts — суточный крон уведомлений о новых сериях
-    api/download/route.ts     — постановка задачи в очередь скачивания Telegram (см. §12)
-    api/telegram/link/route.ts — привязка Telegram ID (код через Bot API, см. §12.6)
+    api/proxy/[contentType]/[id]/[season]/[episode]/[source]/route.ts
+                               — собственный плеер: резолв + Range-прокси (см. §12)
+    api/proxy/raw/route.ts    — Range-прокси подписанных сегментов HLS (см. §12.3)
   components/                 — все React-компоненты (клиентские и серверные)
+    OwnPlayer.tsx              — собственный плеер (см. §12.4), источник — /api/proxy
   lib/
     shikimori.ts               — клиент Shikimori API (каталог/поиск/похожее аниме)
     videoseed-catalog.ts        — каталог кино (apiv2.php Videoseed) + категории (§7.1)
     kodik-catalog.ts            — МЁРТВЫЙ КОД, не импортируется нигде (см. §9)
     tmdb.ts                      — клиент TMDB, только рейтинг для категорий кино
-    telegram.ts                  — sendMessage через Bot API (код верификации, §12.6)
     anilibria.ts                 — клиент AniLibria (выполняется В БРАУЗЕРЕ, не на сервере!)
     format.ts, types.ts
+    extract/                     — извлечение прямых видео-ссылок для OwnPlayer (см. §12)
+      browser.ts                 — headless Chromium (puppeteer-core + @sparticuz/chromium)
+      alloha.ts, videoseed.ts    — Puppeteer-перехват сети у эмбед-плееров источников
+      resolve.ts                 — резолв с кэшем в Supabase (resolved_streams)
+      proxy.ts                   — Range-проксирование + подпись/переписывание HLS-плейлистов
     video/
       types.ts                  — общий интерфейс VideoSource
       kodik.ts, kodik-events.ts — Kodik-балансер + протокол его postMessage
@@ -71,16 +77,12 @@ src/
       client.ts    — браузерный клиент (anon key)
       server.ts    — серверный клиент для Server Components (cookies-based сессия)
       middleware.ts — обновление сессии в middleware
-      service.ts   — service_role клиент (обходит RLS; ТОЛЬКО для крона)
+      service.ts   — service_role клиент (обходит RLS; крон + кэш resolved_streams)
   hooks/
-    useProgressSaver.ts         — общая логика сохранения прогресса (HLS/Kodik)
+    useProgressSaver.ts         — общая логика сохранения прогресса (HLS/Kodik/OwnPlayer)
     useVideoseedEstimator.ts    — эвристический трекер позиции для Videoseed
-    useTelegramLink.ts          — получение привязанного tgId (для DownloadButton)
   middleware.ts                 — Supabase-сессия + редирект «/» → последний открытый раздел
 supabase/migrations/            — SQL-миграции, применяются вручную через Supabase SQL Editor
-telegram-bot/                   — отдельное Node-приложение на VPS, см. §12. ИСКЛЮЧЕНО из
-                                   корневого tsconfig.json (свои зависимости/tsconfig) — не
-                                   удалять exclude, иначе `next build` падает на чужих импортах.
 vercel.json                     — расписание крона
 ```
 
@@ -124,11 +126,11 @@ policy — доступна только через `service_role`).
 (`episode_notifications` — только крон; остальные — через клиентский upsert
 под RLS, это нормально).
 
-### `download_queue`, `telegram_links`, `telegram_verifications` (0006, 0007)
-Очередь скачивания в Telegram и привязка аккаунта — полная схема и описание
-флоу в §12.3/§12.6, здесь не дублируется. RLS: пользователь видит только
-свои строки; `telegram_verifications`/`download_queue` доступны боту на VPS
-через `service_role` (обходит RLS, как и крон).
+### `resolved_streams` (0007)
+Кэш прямых видео-ссылок для собственного плеера (§12). RLS без единой
+policy — как `title_episode_baseline`, доступна только через `service_role`
+(в ней лежат «сырые», без хотлинк-защиты на нашей стороне, ссылки апстрима,
+клиентам их видеть незачем и небезопасно).
 
 ## 5. Прогресс просмотра — общая архитектура
 
@@ -206,6 +208,12 @@ Realtime-синхронизация между устройствами: под�
   точнее всего совпадает по монтажу с нашим HLS-потоком) и **постеров**
   лучшего качества, чем у Shikimori (см. §7).
 
+### Наш плеер (четвёртый, опциональный — когда доступна Alloha)
+`OwnPlayer.tsx` — собственный плеер с полным контролем (см. §12): сервер
+извлекает у Alloha-эмбеда прямую ссылку и Range-проксирует её напрямую в
+`<video>`/`hls.js`, без стороннего iframe. За счёт этого — точный
+`timeupdate`, те же кнопки пропуска опенинга/эндинга, что и у HLS-плеера.
+
 ## 7. Видеоисточники — кино (фильмы и сериалы)
 
 Оркестратор — `src/components/Player.tsx` (отдельный от `WatchPlayer.tsx`,
@@ -249,6 +257,13 @@ Realtime-синхронизация между устройствами: под�
 ### Kodik (третий, резервный)
 Тот же клиент/протокол, что и в разделе аниме (`src/lib/video/kodik.ts`,
 `kodik-events.ts`), поиск по `kinopoisk_id` вместо `shikimori_id`.
+
+### Наш плеер (четвёртый, опциональный — когда доступен Videoseed)
+`OwnPlayer.tsx` — тот же механизм, что для Alloha в разделе аниме (см. §12),
+но извлекает ссылку у Videoseed-эмбеда. В отличие от обычного Videoseed
+(iframe без событий, только эвристическая оценка позиции, см. ниже) — тут
+позиция и вся навигация точные, потому что видео идёт напрямую в наш
+`<video>`, а не в чужой iframe.
 
 ### Сезоны
 `videoseed-catalog.ts` парсит `seasons[]` из ответа Videoseed
@@ -325,20 +340,15 @@ Server Component), дальше Realtime-подписка на `INSERT`. Mark re
   `KodikPlayer` переносят живую позицию через `bumpPosition`/`livePositionRef`
   при ручном переключении внутри сессии. `YummyPlayer` в этот перенос не
   включён — только резюм из БД при новой загрузке страницы.
-- **Ручное скачивание реализовано для Telegram-бота** — см. §12. Alloha и
-  Videoseed извлекаются через Puppeteer (reverse-engineering embed-плееров),
-  AniLibria — через прямой HTTP API. Это работает в отдельном боте на VPS,
-  не в основном MediaWatch на Vercel.
+- **Собственный плеер (§12) резолвит только Alloha и Videoseed.** AniLibria
+  уже отдаёт прямой HLS в браузер (§6) — отдельный прокси ему не нужен.
+  Kodik/Vibix/Sibnet/Aksor через прокси не пропускаются намеренно: у них нет
+  известного стабильного паттерна перехвата, как у Alloha/Videoseed.
+- **Puppeteer-резолв — самая долгая часть первого запроса серии** (секунды,
+  холодный кэш `resolved_streams`). Пока это не оптимизировано (нет
+  предзагрузки/варминга при заходе на страницу тайтла) — см. §12.2.
 - **Vercel Hobby-тариф ограничивает крон** раз в сутки — если тариф сменится
   на Pro, можно увеличить частоту проверки новых серий.
-- **`telegram-bot/` обязан быть в `exclude` корневого `tsconfig.json`.**
-  Это отдельный Node-проект со своими зависимостями (`puppeteer`, `telegraf`),
-  не установленными в корневом `node_modules`. Без exclude `next build`
-  падает на чужих импортах в ту же секунду, когда `telegram-bot/` попадает в
-  git (уже случалось — см. коммит с этим фиксом). Аналогично у
-  `telegram-bot/` должен быть СВОЙ `.gitignore` (`node_modules/`, `dist/`,
-  `.env`) — корневой `.gitignore` игнорирует `node_modules` только в корне
-  (`/node_modules`, с якорем), не рекурсивно.
 
 ## 10. Переменные окружения (полный список)
 
@@ -356,12 +366,12 @@ Server Component), дальше Realtime-подписка на `INSERT`. Mark re
 | `VIDEOSEED_HOST` | опционально | домен Videoseed, если отличается от дефолтного |
 | `VIBIX_TOKEN` | опционально | плеер кино с точным трекингом |
 | `TMDB_API_KEY` | опционально | рейтинг для категорий кино с `rankByRating` (§7.1) |
-| `BOT_TOKEN` | для привязки Telegram | **нужен и на Vercel** — `api/telegram/link` шлёт код верификации напрямую через Bot API (§12.6); тот же токен нужен и боту на VPS |
+| `PROXY_SIGNING_SECRET` | для «Нашего плеера» | подпись HLS-сегментов у `/api/proxy/raw` (§12.3); без него собственный плеер выключен (нечем подписывать) |
 
 Без опциональных токенов соответствующие источники просто не появляются в
-переключателе — сайт не падает. Переменные `TELEGRAM_API_ID`/`TELEGRAM_API_HASH`,
-`SUPABASE_SERVICE_ROLE_KEY` (дубль), `VIDEOSEED_TOKEN`/`VIDEOSEED_HOST` (дубль) —
-только для бота на VPS, см. §12 и `telegram-bot/.env.example`.
+переключателе — сайт не падает. `VIDEOSEED_TOKEN`/`VIDEOSEED_HOST` также
+переиспользуются извлечением Videoseed для «Нашего плеера» (§12) — отдельных
+переменных для этого не заведено.
 
 ## 11. Дизайн-система
 
@@ -380,176 +390,115 @@ Server Component), дальше Realtime-подписка на `INSERT`. Mark re
 - `future.hoverOnlyWhenSupported: true` в Tailwind config — официальный флаг,
   чинит требование двойного тапа на мобильном (hover не эмулируется тапом)
 
-## 12. Telegram Bot — скачивание видео
+## 12. Собственный плеер — прокси-стриминг
 
 ### 12.1. Общая архитектура
 
-Telegram-бот — отдельное приложение, работающее на VPS (1 CPU, 1 GB RAM, 20 GB SSD).
-Не имеет отношения к Vercel-хостингу MediaWatch.
+Никакого VPS и никакого Telegram — видео идёт напрямую с сайта, целиком на
+Vercel serverless-функциях. Идея: тот же приём, которым раньше извлекали
+видео для скачивания (Puppeteer-перехват сети в эмбед-плеере источника),
+только результат не скачивается на диск и не пересылается — сервер сразу
+проксирует байты Range-кусками в `<video>` на странице.
 
 ```
-MediaWatch (Vercel)                    VPS
-┌──────────────────────────┐          ┌──────────────────────────────────────┐
-│ Кнопка «Скачать в TG»    │          │ Telegram Bot (Node.js/Telegraf)      │
-│ POST /api/download       │   API    │   ↳ Supabase-очередь (polling)       │
-│ → запись в Supabase:     │ ────────→│   ↳ Извлечение видео-URL:            │
-│   { tgId, source,        │          │     • AniLibria  → HTTP API          │
-│     animeId, episode }   │          │     • Alloha     → Puppeteer         │
-│                           │          │     • Videoseed  → Puppeteer         │
-│ Показывает статус        │          │   ↳ ffmpeg → скачивание              │
-│ «Скачивается / Готов»    │ ←─────── │   ↳ Local Bot API → sendVideo (2 ГБ) │
-└──────────────────────────┘          │   ↳ fs.unlinkSync → удаление файла   │
-                                      └──────────────────────────────────────┘
+Браузер                    Vercel (serverless)                  Апстрим
+┌──────────────┐          ┌────────────────────────────┐       ┌──────────┐
+│ <video src=  │  Range   │ /api/proxy/.../[source]     │       │ Alloha / │
+│  /api/proxy> │ ───────→ │  1. resolveStream()         │       │ Videoseed│
+│              │          │     — кэш в resolved_streams│       │ (embed-  │
+│  hls.js для  │          │     — при промахе: Puppeteer│──────→│ плеер)   │
+│  HLS-плейлис-│          │       (@sparticuz/chromium) │       └──────────┘
+│  тов         │          │       перехватывает .mp4/   │
+│              │ ←─────── │       .m3u8 у эмбеда         │
+└──────────────┘  байты   │  2. fetchAndProxy() —        │
+                          │     Range-пересылка байт     │
+                          └────────────────────────────┘
 ```
 
-### 12.2. Ограничения VPS и их решение
+Ничего не хранится дольше кэша ссылки (§12.2) — ни на Vercel (serverless,
+без диска между вызовами), ни где-либо ещё.
 
-| Ограничение | Решение |
-|---|---|
-| **1 GB RAM** | Concurrency = 1; Puppeteer с `--single-process --no-zygote`; ffmpeg с `-preset ultrafast` |
-| **20 GB SSD** | Временные файлы удаляются сразу после отправки; макс. размер 1.5 GB |
-| **1 CPU** | Sequential очередь; одно скачивание за раз |
-| **Много пользователей** | Очередь FIFO через `FOR UPDATE SKIP LOCKED` |
+### 12.2. Резолв прямой ссылки и кэш
 
-### 12.3. Очередь скачивания
+`src/lib/extract/resolve.ts` — единая точка входа:
 
-Таблица `download_queue` в Supabase:
+1. Ищет в Supabase (`resolved_streams`, только `service_role`) свежую запись
+   `(content_type, shikimori_id, season, episode, source)`.
+2. Если есть и не истекла (`expires_at`) — возвращает её сразу, без Puppeteer.
+3. Иначе запускает экстрактор источника (§12.3), сохраняет результат с
+   TTL **15 минут** и возвращает его.
 
-```sql
-create table download_queue (
-  id          uuid primary key default gen_random_uuid(),
-  user_id     uuid references auth.users(id),
-  tg_id       text not null,
-  anime_id    text not null,
-  episode     int not null,
-  season      int default 1,
-  source      text not null check (source in ('anilibria','alloha','videoseed')),
-  content_type text not null default 'anime' check (content_type in ('anime','cinema')),
-  anime_title text,
-  poster_url  text,
-  status      text not null default 'pending',
-              check (status in ('pending','extracting','downloading','sending','completed','failed')),
-  error       text,
-  file_id     text,
-  retry_count int default 0,
-  created_at  timestamptz default now(),
-  started_at  timestamptz,
-  finished_at timestamptz
-);
-```
+TTL короткий специально: апстрим-ссылки Alloha/Videoseed — подписанные и
+недолговечные (как раньше для скачивания). Если TTL истёк посреди
+просмотра — следующий Range-запрос сам перерезолвит ссылку (секунда-две
+паузы, плеер это переживает как обычную буферизацию); отдельного механизма
+предзагрузки/варминга пока нет (см. §9).
 
-Атомарный захват задачи — SQL-функция `claim_download_task()`:
-- `FOR UPDATE SKIP LOCKED` — гарантирует, что два экземпляра бота не схватят одну задачу
-- `retry_count < 3` — не больше 3 попыток на битую ссылку
-- Heartbeat: задачи в `processing` дольше 15 минут сбрасываются в `pending` —
-  реализовано в JS (`telegram-bot/src/queue.ts`), не в самой SQL-функции.
+### 12.3. Извлечение и проксирование по источникам
 
-⚠️ Колонка `source` (`'anilibria'|'alloha'|'videoseed'` — то, что пользователь
-реально смотрел в плеере) добавлена отдельной миграцией `0007_download_source.sql`
-поверх основной таблицы из `0006`. Бот качает строго из указанного source, без
-подмены на другой источник; фолбэк AniLibria→Alloha остаётся только для
-задач без source (созданных до 0007).
+#### Alloha (`src/lib/extract/alloha.ts`)
+YummyAnime API → `iframe_url` Alloha-эмбеда → headless Chromium (Referer:
+`yani.tv`) → перехват сетевых запросов, ищем `.mp4`/`.m3u8`.
 
-### 12.4. Извлечение видео-URL по источникам
+#### Videoseed (`src/lib/extract/videoseed.ts`)
+`buildEmbedUrl(kpId, token, season, episode)` → headless Chromium (Referer:
+`videoseed_host`) → перехват `.mp4`/`.m3u8`.
 
-#### AniLibria (HTTP, без браузера)
-- Shikimori API → romaji/russian/year → AniLibria API (поиск релиза) → AniLibria API (список серий) → `hls_720`
-- **RAM**: ~0 (только HTTP-запрос)
+Оба перехватчика — Puppeteer поверх `puppeteer-core` + `@sparticuz/chromium`
+(`src/lib/extract/browser.ts`): сжатый бинарник Chromium распаковывается в
+`/tmp` внутри serverless-функции при первом запуске, отдельного контейнера/
+VPS не требуется. Флаги запуска (`--single-process --no-zygote`) — то же
+самое, чем раньше ужимали Puppeteer под 1 ГБ RAM VPS, здесь просто экономят
+память лимита функции.
 
-#### Alloha (Puppeteer)
-- YummyAnime API → `iframe_url` (Alloha-embed) → Puppeteer (Referer: `yani.tv`) → перехват `.mp4`/`.m3u8`
-- **RAM**: ~200-400 MB на время работы Puppeteer (1-5 сек)
+#### Проксирование (`src/lib/extract/proxy.ts`, `fetchAndProxy`)
+- **Прямой mp4**: входящий `Range` заголовок пересылается апстриму как есть
+  (плюс `Referer` из результата резолва), ответ (206/200 + заголовки)
+  транслируется в браузер потоково, без буферизации на сервере.
+- **HLS (m3u8)**: плейлист скачивается и переписывается — каждая ссылка на
+  сегмент/суб-плейлист/ключ (`URI="..."`) заменяется на подписанный
+  `/api/proxy/raw?u=...&s=...` (см. ниже), чтобы hls.js в браузере ходил
+  только на наш домен, а не напрямую на CDN источника (у которого хотлинк-
+  защита по Referer, недоступному из браузера пользователя).
 
-#### Videoseed (Puppeteer)
-- `buildEmbedUrl(kpId, token, season, episode)` → Puppeteer (Referer: videoseed_host) → перехват `.mp4`/`.m3u8`
-- **RAM**: ~200-400 MB на время работы Puppeteer (1-5 сек)
+#### `/api/proxy/raw` — подписанные сегменты
+`u` — `base64url(JSON{url, headers, exp})`, `s` — `HMAC-SHA256(u, PROXY_SIGNING_SECRET)`.
+Без верной подписи — 403: иначе эндпоинт превратился бы в открытый
+прокси-редирект на произвольные URL (SSRF). Токен живёт 6 часов — с запасом
+на любой сеанс просмотра.
 
-### 12.5. Скачивание и отправка
+### 12.4. Собственный плеер (`OwnPlayer.tsx`)
 
-- `ffmpeg -i <video_url> -c copy -movflags +faststart /tmp/mediawatch_<id>.mp4`
-- Таймаут: 15 минут
-- Проверка размера: макс. 1.5 GB (защита от заполнения диска)
-- Отправка через Local Bot API Server (MTProto, до 2 ГБ на файл)
-- После отправки: `fs.unlinkSync` — немедленное удаление временного файла
+Не iframe, а полноценный `<video>` со своими контролами (не нативные
+`<video controls>` — так кнопки пропуска опенинга/титров и переход на
+следующую серию видны и в полноэкранном режиме, который берётся на весь
+контейнер, а не на сам `<video>`):
 
-### 12.6. Привязка Telegram ID
+- При смене серии — `HEAD` на `/api/proxy/...`, по `Content-Type` ответа
+  определяется HLS это или mp4 → дальше либо `hls.js` (динамический импорт,
+  как в `HlsPlayer.tsx`), либо просто `video.src`.
+- Резюм позиции — `seekTargetRef`, применяется на `loadedmetadata`.
+- Пропуск опенинга/эндинга — те же тайминги, что и у HLS-плеера (YummyAnime,
+  §6), кнопка показывается по `timeupdate`.
+- Прогресс просмотра — общий `useProgressSaver` (тот же хук, что у
+  `HlsPlayer`), с добавленным полем `season` (кино может быть многосезонным).
+- Ошибки апстрима (`404` — серии нет у источника, `502` — Puppeteer/сеть
+  подвели) показывают разные состояния: «недоступно» без кнопки повтора vs
+  «не удалось загрузить» с кнопкой «Повторить».
 
-- Пользователь вводит Telegram ID в настройках профиля (`TelegramSettings.tsx`)
-- `POST /api/telegram/link` генерирует код, пишет его в `telegram_verifications`
-  (`status: 'pending'`) и **сразу шлёт его через Telegram Bot API напрямую с
-  Vercel** (`src/lib/telegram.ts` → `sendMessage`, требует `BOT_TOKEN` в
-  окружении Vercel — см. §10). Код в HTTP-ответ не попадает.
-- Если отправка не удалась (обычно — пользователь ещё не писал боту `/start`,
-  Telegram не позволяет ботам писать первыми) — запись удаляется, клиент
-  получает `telegram_send_failed`.
-- При успехе статус верификации становится `'sent'`.
-- Пользователь вводит код на сайте → `PUT /api/telegram/link` проверяет
-  `code`+`telegram_id`+статус ∈ {`sent`,`pending`}+не истёк → привязка
-  upsert в `telegram_links` (Supabase, RLS).
-- Это НЕ требует запущенного бота на VPS — привязка аккаунта работает
-  независимо от скачивания видео (тот же `BOT_TOKEN`, но прямой HTTP-вызов
-  из Vercel, а не через очередь/polling, как download_queue).
+Подключается как ещё один пункт переключателя источника — «Наш плеер»:
+в `WatchPlayer.tsx` (аниме) при доступной Alloha (через Yummy), в
+`Player.tsx` (кино) при доступном `VIDEOSEED_TOKEN`.
 
-### 12.7. Rate limiting
+### 12.5. Известные компромиссы
 
-- **5 запросов/мин** на `/api/download` с одного IP — in-memory sliding
-  window в самом route-модуле. На serverless Vercel это best-effort: лимит
-  живёт в рамках одного тёплого инстанса функции и сбрасывается на cold
-  start/при другом инстансе, не строгая гарантия, но первая линия защиты.
-- **3 скачивания/день** на пользователя — строгая проверка по БД
-  (`count(download_queue) where user_id=... and created_at > now()-24h`),
-  не считает повторные проверки статуса уже стоящей в очереди задачи.
-
-### 12.8. Хостинг (Docker Compose)
-
-```yaml
-services:
-  bot:
-    build: ./telegram-bot
-    env_file: .env
-    depends_on:
-      - local-bot-api
-    restart: unless-stopped
-
-  local-bot-api:
-    image: aiogram/bot-api:latest
-    environment:
-      TELEGRAM_TOKEN: ${BOT_TOKEN}
-      TELEGRAM_API_ID: ${API_ID}
-      TELEGRAM_API_HASH: ${API_HASH}
-      TELEGRAM_LOCAL: 1
-    ports:
-      - "8081:8081"
-    volumes:
-      - bot-api-data:/var/lib/telegram-bot-api
-    restart: unless-stopped
-
-volumes:
-  bot-api-data:
-```
-
-**Оценка RAM**: Local Bot API ~250 MB + бот ~50 MB + Puppeteer ~400 MB (временно) = **~700 MB пик**.
-
-### 12.9. Структура бота
-
-```
-telegram-bot/
-  src/
-    index.ts              — точка входа, Telegraf, polling очереди
-    supabase.ts           — Supabase service-role клиент + тип DownloadTask
-    queue.ts              — FIFO-очередь, concurrency=1, heartbeat
-    sender.ts             — ffmpeg + Local Bot API + удаление файла
-    extractors/
-      index.ts            — диспетчер по источнику
-      anilibria.ts        — прямая HLS-ссылка через AniLibria API
-      alloha.ts           — YummyAnime API → Puppeteer → перехват потока
-      videoseed.ts        — embed URL → Puppeteer → перехват потока
-  Dockerfile              — Alpine + Chromium + ffmpeg
-  docker-compose.yml      — бот + Local Bot API Server
-  .env.example            — переменные окружения
-  package.json
-  tsconfig.json
-```
+- Первый запрос серии после истечения TTL — самый долгий (Puppeteer, секунды
+  холодного старта headless Chromium + перехват сети). Кэш сглаживает это
+  для всех, кто смотрит эту же серию в ближайшие 15 минут.
+- `resolveStream` не защищён от одновременного дублирующего резолва двумя
+  параллельными Range-запросами одной и той же ещё не закэшированной серии
+  (гонка `upsert` в `resolved_streams` — не страшно, оба запроса просто
+  получат рабочую ссылку, лишний Puppeteer-запуск не критичен).
 
 ## 13. Карты интерфейса — маршруты
 

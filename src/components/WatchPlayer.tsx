@@ -21,8 +21,7 @@ import type { YummyTranslation } from '@/lib/video/yummy';
 import type { ShikimoriAnimeShort } from '@/lib/shikimori';
 import type { ContentType, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
-import { useTelegramLink } from '@/hooks/useTelegramLink';
-import DownloadButton from '@/components/DownloadButton';
+import OwnPlayer from '@/components/OwnPlayer';
 
 interface Props {
   shikimoriId: number;
@@ -54,7 +53,7 @@ interface Props {
   similar: ShikimoriAnimeShort[];
 }
 
-type Source = 'hls' | 'kodik' | 'yummy';
+type Source = 'hls' | 'kodik' | 'yummy' | 'own';
 
 const PREF_KEY = 'aw:preferredSource';
 /** Задержка автоперехода на следующую серию после окончания текущей. */
@@ -103,7 +102,6 @@ export default function WatchPlayer({
   // Автопереход на следующую серию (null — неактивен/отменён).
   const [autoNext, setAutoNext] = useState<number | null>(null);
   const autoNextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { tgId } = useTelegramLink();
   const [showOtherBanner, setShowOtherBanner] = useState(otherEpisode !== null);
   // Активная серия: может измениться из самого плеера Kodik (внутренняя навигация).
   const [activeEpisode, setActiveEpisode] = useState(episode);
@@ -172,6 +170,7 @@ export default function WatchPlayer({
         ...(q ? (['hls'] as const) : []),
         'kodik',
         ...(hasYummy ? (['yummy'] as const) : []),
+        ...(hasYummy ? (['own'] as const) : []),
       ];
       const fallback: Source = q ? 'hls' : 'kodik';
       setSource(pref && available.includes(pref) ? pref : fallback);
@@ -427,6 +426,20 @@ export default function WatchPlayer({
                 Yummy
               </button>
             )}
+            {hasYummy && (
+              <button
+                type="button"
+                onClick={() => switchTo('own')}
+                className={[
+                  'rounded-full px-3 py-1.5 text-sm font-medium transition',
+                  source === 'own'
+                    ? 'bg-accent text-white'
+                    : 'text-gray-300 hover:text-white',
+                ].join(' ')}
+              >
+                Наш плеер
+              </button>
+            )}
           </div>
           {switching && (
             <span className="text-xs text-gray-500">переключаем…</span>
@@ -457,6 +470,27 @@ export default function WatchPlayer({
           onEnded={onEnded}
           onTimeUpdate={bumpPosition}
         />
+      ) : source === 'own' && hasYummy ? (
+        <OwnPlayer
+          contentType={contentType}
+          shikimoriId={shikimoriId}
+          season={1}
+          episode={episode}
+          extractSource="alloha"
+          animeTitle={animeTitle}
+          posterUrl={posterUrl}
+          isAuthed={isAuthed}
+          resumeFrom={
+            livePositionRef.current > 1
+              ? Math.floor(livePositionRef.current)
+              : resumeFrom
+          }
+          skipOpening={skipOpening}
+          skipEnding={skipEnding}
+          nextHref={hasNext ? `${watchBase}/${shikimoriId}/${episode + 1}` : null}
+          onEnded={onEnded}
+          onTimeUpdate={bumpPosition}
+        />
       ) : source === 'yummy' && hasYummy ? (
         <YummyPlayer
           shikimoriId={shikimoriId}
@@ -484,20 +518,6 @@ export default function WatchPlayer({
           onEnded={onEnded}
           onTimeUpdate={bumpPosition}
           onEpisodeChange={onEpisodeChange}
-        />
-      )}
-
-      {/* Кнопка скачивания в Telegram — только для источников, которые умеем качать */}
-      {tgId && isAuthed && !resolving && (source === 'hls' || source === 'yummy') && (
-        <DownloadButton
-          shikimoriId={shikimoriId}
-          contentType={contentType}
-          season={1}
-          episode={activeEpisode}
-          animeTitle={animeTitle}
-          posterUrl={posterUrl}
-          tgId={tgId}
-          source={source === 'hls' ? 'anilibria' : 'alloha'}
         />
       )}
 

@@ -1,0 +1,31 @@
+import { NextResponse, type NextRequest } from 'next/server';
+import { verifyRawToken, fetchAndProxy } from '@/lib/extract/proxy';
+
+/**
+ * GET /api/proxy/raw?u=<payload>&s=<sig>
+ *
+ * Проксирует один сегмент/суб-плейлист HLS (или mp4-кусок), на который
+ * ссылался переписанный плейлист из /api/proxy/.../[source]. Токен u/s
+ * подписан HMAC на сервере (см. src/lib/extract/proxy.ts) — без верной
+ * подписи запрос отклоняется, иначе эндпоинт превратился бы в открытый
+ * прокси на произвольные URL (SSRF).
+ */
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 30;
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const resolved = verifyRawToken(searchParams.get('u'), searchParams.get('s'));
+  if (!resolved) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
+  return fetchAndProxy(request.headers.get('range'), resolved.url, resolved.headers);
+}
+
+export async function HEAD(request: NextRequest) {
+  const res = await GET(request);
+  await res.body?.cancel().catch(() => {});
+  return new Response(null, { status: res.status, headers: res.headers });
+}
