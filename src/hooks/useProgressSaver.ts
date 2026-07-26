@@ -13,6 +13,8 @@ interface PlaybackState {
    * старым номером и серия «не засчитывалась».
    */
   episode: number;
+  /** Сезон (кино/сериалы). Не задан — сервер считает 1. */
+  season?: number;
 }
 
 interface Args {
@@ -52,7 +54,7 @@ export function useProgressSaver({
   const save = useCallback(
     (useBeacon = false) => {
       if (!isAuthed) return;
-      const { position, duration, translationId, episode } =
+      const { position, duration, translationId, episode, season } =
         getStateRef.current();
       if (!Number.isFinite(position) || position < MIN_POSITION) return;
 
@@ -61,6 +63,7 @@ export function useProgressSaver({
         shikimori_id: shikimoriId,
         anime_title: animeTitle,
         poster_url: posterUrl,
+        ...(season != null ? { season } : {}),
         episode,
         position_seconds: position,
         duration_seconds:

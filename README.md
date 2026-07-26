@@ -72,6 +72,15 @@ KODIK_TOKEN=            # опционально
 SIGNUP_CODE_SECRET=...  # обязательно, см. §6 — без него регистрация закрыта для всех
 ```
 
+## Собственный плеер
+
+«Наш плеер» стримит видео напрямую с сайта — сервер (Vercel serverless)
+извлекает у эмбед-плеера источника (Alloha/Videoseed) прямую ссылку
+(Puppeteer-перехват сети через `puppeteer-core` + `@sparticuz/chromium`) и
+проксирует байты Range-кусками в `<video>`, без стороннего сервиса.
+Понадобится `PROXY_SIGNING_SECRET` в окружении — подробности в
+`ARCHITECTURE.md` §12.
+
 ## 5. Деплой на Vercel
 
 1. Импортируйте репозиторий в Vercel.
@@ -93,7 +102,7 @@ SIGNUP_CODE_SECRET=...  # обязательно, см. §6 — без него 
 3. **Обязательный ручной шаг в Supabase**: Dashboard → Authentication →
    Settings → отключите «Allow new users to sign up». Без этого обычная
    публичная регистрация Supabase всё ещё доступна напрямую через anon key
-   в обход кода приглашения — подробности в `ARCHITECTURE.md` §13.2.
+   в обход кода приглашения — подробности в `ARCHITECTURE.md` §14.2.
 
 ## Структура
 
@@ -109,14 +118,22 @@ src/
     auth/signout/route.ts                 выход
     api/progress/route.ts                 upsert прогресса (в т.ч. sendBeacon)
     api/kodik/route.ts                    прокси поиска плеера Kodik (Режим A)
-  components/                             UI-компоненты (Player, карточки, ...)
+    api/proxy/[..]/route.ts               собственный плеер: резолв + Range-прокси
+    api/proxy/raw/route.ts                Range-прокси подписанных сегментов HLS
+  components/                             UI-компоненты (Player, OwnPlayer, карточки, ...)
+  hooks/
+    useProgressSaver.ts                   сохранение прогресса (HLS/Kodik/OwnPlayer)
+    useVideoseedEstimator.ts              эвристический трекер позиции для Videoseed
   lib/
     supabase/                             клиенты browser/server + middleware
     shikimori.ts                          клиент Shikimori API (throttle + cache)
     video/                                абстракция VideoSource + Kodik
+    extract/                              извлечение прямых ссылок для OwnPlayer (Puppeteer)
     format.ts, types.ts
   middleware.ts                           обновление сессии + защита /profile
-supabase/migrations/0001_init.sql
+supabase/migrations/
+  0001_init.sql
+  0007_resolved_streams.sql
 ```
 
 ## Как работает синхронизация прогресса

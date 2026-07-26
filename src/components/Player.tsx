@@ -17,6 +17,7 @@ import type { ContentType, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
 import { useVideoseedEstimator } from '@/hooks/useVideoseedEstimator';
 import VibixPlayer from '@/components/VibixPlayer';
+import OwnPlayer from '@/components/OwnPlayer';
 
 interface Props {
   shikimoriId: number;
@@ -58,7 +59,7 @@ const PLAYER_PREF_KEY = 'aw:cinemaPlayer';
 /** Задержка автоперехода на следующую серию после окончания текущей. */
 const AUTO_NEXT_DELAY_MS = 3_000;
 
-type PlayerKind = 'vibix' | 'videoseed' | 'kodik';
+type PlayerKind = 'vibix' | 'videoseed' | 'kodik' | 'own';
 
 /**
  * Событие плеера Vibix — ПЛОСКИЙ нативный формат Playerjs (выяснено
@@ -211,7 +212,8 @@ export default function Player({
     if (
       pref === 'kodik' ||
       (pref === 'videoseed' && hasVideoseed) ||
-      (pref === 'vibix' && hasVibix)
+      (pref === 'vibix' && hasVibix) ||
+      (pref === 'own' && hasVideoseed)
     ) {
       setPlayer(pref);
     }
@@ -694,6 +696,7 @@ export default function Player({
                 hasVibix ? (['vibix', 'Vibix'] as const) : null,
                 hasVideoseed ? (['videoseed', 'Videoseed'] as const) : null,
                 ['kodik', 'Kodik'] as const,
+                hasVideoseed ? (['own', 'Наш плеер'] as const) : null,
               ].filter(Boolean) as ReadonlyArray<readonly [PlayerKind, string]>
             ).map(([kind, label]) => (
               <button
@@ -715,6 +718,32 @@ export default function Player({
       )}
 
       {/* Плеер 16:9 */}
+      {player === 'own' && hasVideoseed ? (
+        // Свой плеер рисует контейнер сам.
+        <OwnPlayer
+          contentType={contentType}
+          shikimoriId={shikimoriId}
+          season={season}
+          episode={episode}
+          extractSource="videoseed"
+          animeTitle={animeTitle}
+          posterUrl={posterUrl}
+          isAuthed={isAuthed}
+          resumeFrom={resumeFrom}
+          nextHref={next ? linkFor(next) : null}
+          nextLabel={
+            next && next.season !== activeSeason
+              ? `Сезон ${next.season}`
+              : undefined
+          }
+          onEnded={onEpisodeEnded}
+          onTimeUpdate={(t) => {
+            // Держим общий конвейер прогресса в курсе (перенос позиции при
+            // смене плеера, флаши при уходе со страницы).
+            currentTimeRef.current = t;
+          }}
+        />
+      ) : (
       <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10">
         {player === 'vibix' && vibixEmbed ? (
           <VibixPlayer
@@ -760,6 +789,7 @@ export default function Player({
           />
         )}
       </div>
+      )}
 
       {/* Панель управления */}
       <div className="flex flex-wrap items-center justify-between gap-3">
