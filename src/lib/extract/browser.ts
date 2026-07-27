@@ -22,18 +22,24 @@ const CHROMIUM_VERSION = '149.0.0';
 const CHROMIUM_PACK_URL = `https://github.com/Sparticuz/chromium/releases/download/v${CHROMIUM_VERSION}/chromium-v${CHROMIUM_VERSION}-pack.x64.tar`;
 
 /**
- * Проверка перед page.goto(): Yummy иногда отдаёт iframe_url без схемы или
- * иначе битый — Puppeteer в таком случае не возвращает "not found", а роняет
- * весь Page.navigate протокольной ошибкой ("Cannot navigate to invalid
- * URL"), что раньше валило весь запрос. Лучше отсеять на входе и обработать
- * как «источник недоступен».
+ * Готовит URL перед page.goto(): Yummy отдаёт iframe_url как protocol-
+ * relative ("//alloha.yani.tv/...", без схемы) — валидный в браузере (он
+ * резолвится относительно схемы страницы), но не для Puppeteer: `new URL()`
+ * без базового адреса и `page.goto()` такую строку не принимают и не
+ * возвращают "not found", а роняют весь Page.navigate протокольной ошибкой
+ * ("Cannot navigate to invalid URL"), что раньше валило весь запрос.
+ * Достраиваем схему (https — эмбеды всегда по HTTPS) и только потом
+ * проверяем валидность; иначе (действительно битый URL) — null, источник
+ * недоступен.
  */
-export function isNavigableUrl(url: string | null | undefined): url is string {
-  if (!url) return false;
+export function toAbsoluteUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const candidate = url.startsWith('//') ? `https:${url}` : url;
   try {
-    return ['http:', 'https:'].includes(new URL(url).protocol);
+    const parsed = new URL(candidate);
+    return ['http:', 'https:'].includes(parsed.protocol) ? candidate : null;
   } catch {
-    return false;
+    return null;
   }
 }
 

@@ -1,4 +1,4 @@
-import { isNavigableUrl, launchBrowser } from './browser';
+import { toAbsoluteUrl, launchBrowser } from './browser';
 import type { ExtractParams, ResolvedStream } from './types';
 
 /**
@@ -64,9 +64,10 @@ async function getYummyIframeUrl(
   return url;
 }
 
-async function interceptVideoUrl(embedUrl: string): Promise<string | null> {
-  if (!isNavigableUrl(embedUrl)) {
-    console.error(`[alloha] Yummy отдал невалидный iframe_url: ${embedUrl}`);
+async function interceptVideoUrl(rawEmbedUrl: string): Promise<string | null> {
+  const embedUrl = toAbsoluteUrl(rawEmbedUrl);
+  if (!embedUrl) {
+    console.error(`[alloha] Yummy отдал невалидный iframe_url: ${rawEmbedUrl}`);
     return null;
   }
 

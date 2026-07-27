@@ -1,4 +1,4 @@
-import { isNavigableUrl, launchBrowser } from './browser';
+import { toAbsoluteUrl, launchBrowser } from './browser';
 import type { ExtractParams, ResolvedStream } from './types';
 
 /**
@@ -21,9 +21,10 @@ function buildEmbedUrl(kinopoiskId: number, season: number, episode: number): st
   return url.toString();
 }
 
-async function interceptVideoUrl(embedUrl: string, referer: string): Promise<string | null> {
-  if (!isNavigableUrl(embedUrl)) {
-    console.error(`[videoseed] Собранный embed URL невалиден: ${embedUrl}`);
+async function interceptVideoUrl(rawEmbedUrl: string, referer: string): Promise<string | null> {
+  const embedUrl = toAbsoluteUrl(rawEmbedUrl);
+  if (!embedUrl) {
+    console.error(`[videoseed] Собранный embed URL невалиден: ${rawEmbedUrl}`);
     return null;
   }
 
