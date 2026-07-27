@@ -1,13 +1,6 @@
 'use client';
 
-import {
-  useCallback,
-  useRef,
-  type MouseEvent,
-  type PointerEvent,
-  type ReactNode,
-  type WheelEvent,
-} from 'react';
+import { useCallback, useEffect, useRef, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
 
 interface Props {
   children: ReactNode;
@@ -43,14 +36,25 @@ export default function ScrollCarousel({ children, className }: Props) {
   const draggingRef = useRef(false);
   const justDraggedRef = useRef(false);
 
-  const onWheel = useCallback((e: WheelEvent<HTMLDivElement>) => {
+  // React вешает onWheel как passive-слушатель (перформанс скролла по
+  // умолчанию с React 17) — preventDefault() внутри JSX-пропа тихо не
+  // срабатывает («Unable to preventDefault inside passive event listener»),
+  // и страница продолжает скроллиться вертикально параллельно с каруселью.
+  // Единственный способ реально погасить дефолт — навесить нативный
+  // addEventListener с explicit passive: false в обход React.
+  useEffect(() => {
     const el = ref.current;
-    if (!el || el.scrollWidth <= el.clientWidth) return;
-    // Только доминирующий вертикальный скролл (обычное колесо) — трекпад
-    // сам шлёт горизонтальный deltaX, его перехватывать не нужно.
-    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-    el.scrollLeft += e.deltaY;
-    e.preventDefault();
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth) return;
+      // Только доминирующий вертикальный скролл (обычное колесо) — трекпад
+      // сам шлёт горизонтальный deltaX, его перехватывать не нужно.
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      el.scrollLeft += e.deltaY;
+      e.preventDefault();
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
   const onPointerDown = useCallback((e: PointerEvent<HTMLDivElement>) => {
@@ -97,7 +101,6 @@ export default function ScrollCarousel({ children, className }: Props) {
   return (
     <div
       ref={ref}
-      onWheel={onWheel}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
