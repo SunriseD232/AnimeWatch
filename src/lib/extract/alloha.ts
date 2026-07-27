@@ -93,8 +93,18 @@ async function interceptVideoUrl(rawEmbedUrl: string): Promise<string | null> {
 
     await page.setExtraHTTPHeaders({ Referer: REFERER });
     await page.goto(embedUrl, { waitUntil: 'networkidle2', timeout: 30_000 });
+    // Многие embed-плееры не начинают грузить поток сам по себе —
+    // автовоспроизведение со звуком блокируется браузером без жеста
+    // пользователя, а headless Chromium в этом смысле не отличается от
+    // обычного. Кликаем в центр страницы (обычно там play-оверлей), чтобы
+    // сдвинуть плеер с места, прежде чем слушать сеть.
+    await page.mouse.click(640, 360).catch(() => {});
     await new Promise((r) => setTimeout(r, 5_000));
     await page.close();
+
+    if (videoUrls.length === 0) {
+      console.error(`[alloha] Открыли ${embedUrl}, но не поймали ни одного видео-запроса`);
+    }
 
     const mp4 = videoUrls.find((u) => u.includes('.mp4'));
     const m3u8 = videoUrls.find((u) => u.includes('.m3u8') || u.includes('playlist'));
@@ -114,7 +124,10 @@ export async function extractAlloha({
   episode,
 }: ExtractParams): Promise<ResolvedStream | null> {
   const embedUrl = await getYummyIframeUrl(shikimoriId, episode);
-  if (!embedUrl) return null;
+  if (!embedUrl) {
+    console.error(`[alloha] Yummy не вернул embed для shikimori ${shikimoriId} ep ${episode}`);
+    return null;
+  }
 
   const url = await interceptVideoUrl(embedUrl);
   if (!url) return null;
