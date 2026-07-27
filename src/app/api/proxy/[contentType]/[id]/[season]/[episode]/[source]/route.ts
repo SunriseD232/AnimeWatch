@@ -20,8 +20,9 @@ import type { ExtractSource } from '@/lib/extract/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-// Puppeteer-резолв при холодном кэше занимает секунды — даём запас.
-export const maxDuration = 60;
+// Puppeteer-резолв при холодном кэше занимает секунды, а для Alloha теперь
+// может перебирать несколько эмбедов подряд (см. extractAlloha) — даём запас.
+export const maxDuration = 120;
 
 const ALLOWED_SOURCES = new Set<ExtractSource>(['alloha', 'videoseed']);
 
