@@ -17,13 +17,20 @@ const nextConfig = {
       'puppeteer-extra',
       'puppeteer-extra-plugin-stealth',
     ],
-    // Stealth-плагин грузит свои evasions/* динамическим require() по строке,
-    // собранной из списка зависимостей плагина — трейсер файлов Vercel (nft)
-    // такие пути статически не видит и не кладёт их в бандл функции (тот же
-    // класс бага, что раньше был с полным @sparticuz/chromium: MODULE_NOT_FOUND
-    // в проде при рабочем require() локально). Форсируем включение всей папки.
+    // Stealth-плагин грузит свои evasions/* и часть их зависимостей (напр.
+    // puppeteer-extra-plugin-user-preferences — реальный пакет в
+    // package.json стелса, физически стоит в node_modules) динамическим
+    // require(name), собранным из строки в рантайме — трейсер файлов Vercel
+    // (nft) такие пути статически не видит и не кладёт их в бандл функции
+    // (тот же класс бага, что раньше был с полным @sparticuz/chromium:
+    // MODULE_NOT_FOUND в проде при рабочем require() локально). Форсируем
+    // включение вручную; если всплывёт ещё одна "missing dependency" в
+    // логах — она сюда же добавляется.
     outputFileTracingIncludes: {
-      '/api/proxy/**': ['./node_modules/puppeteer-extra-plugin-stealth/evasions/**/*'],
+      '/api/proxy/**': [
+        './node_modules/puppeteer-extra-plugin-stealth/evasions/**/*',
+        './node_modules/puppeteer-extra-plugin-user-preferences/**/*',
+      ],
     },
   },
   images: {
