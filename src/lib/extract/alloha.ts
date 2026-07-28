@@ -1,5 +1,5 @@
 import type { Browser } from 'puppeteer-core';
-import { authenticateProxy, toAbsoluteUrl, launchBrowser, type ProxyConfig } from './browser';
+import { resolveProxy, toAbsoluteUrl, launchBrowser, type ProxyConfig } from './browser';
 import type { ExtractParams, ResolvedStream } from './types';
 
 /**
@@ -13,19 +13,28 @@ import type { ExtractParams, ResolvedStream } from './types';
  *    разные embed'ы, см. §12.3 ARCHITECTURE.md: одна озвучка может просто
  *    не отдавать поток для конкретной серии, тогда пробуем следующую).
  * 2. Открываем СИНТЕТИЧЕСКУЮ обёртку с <iframe src=embedUrl> внутри —
- *    ключевой момент: страница Alloha содержит анти-хотлинк скрипт, который
- *    проверяет `window !== window.top` (т.е. что её открыли именно внутри
- *    iframe) и, если это не так, СТИРАЕТ <body> и подставляет заглушку
- *    «Контент не найден или недоступен в вашем регионе» — при обычном
- *    `page.goto(embedUrl)` формально это выглядит как гео-блок по IP
- *    сервера, но это НЕ гео-блок: подтверждено вручную (см. git history,
- *    ARCHITECTURE.md §12.5) — с локального (не-RU) IP, но внутри iframe,
- *    страница отдаёт настоящий плеер и реальный поток. Прокси для этого не
- *    нужен вообще.
- * 3. Перехватываем сетевые запросы, ждём появления .mp4/.m3u8. Первый
+ *    страница Alloha содержит анти-хотлинк скрипт, который проверяет
+ *    `window !== window.top` (т.е. что её открыли именно внутри iframe) и,
+ *    если это не так, СТИРАЕТ <body> и подставляет заглушку «недоступен в
+ *    вашем регионе» — этот текст МАСКИРУЕТСЯ под гео-блок, но это не он: с
+ *    любого IP внутри iframe отдаёт настоящий плеер (подтверждено вручную).
+ * 3. РЕАЛЬНЫЙ гео-блок находится дальше — на бэкенд-эндпоинте
+ *    `/bnsi/movies/{id}`, который резолвит файл по id: с российского IP
+ *    отвечает данными, с любого другого — 404 `{"error":"контент не
+ *    найден"}` (подтверждено: одинаковый embed, одинаковый id, разный
+ *    результат в зависимости только от исходящего IP). Поэтому вся сессия
+ *    Chromium запускается через RU-прокси, если он задан в окружении (см.
+ *    ALLOHA_PROXY_* в .env.example и resolveProxy() в browser.ts) — без
+ *    него доходит только до статики (css/js), а сам поток не резолвится.
+ * 4. Перехватываем сетевые запросы, ждём появления .mp4/.m3u8. Первый
  *    успешный (не декой вроде cdn.plyr.io/blank.mp4 — служебная заглушка
  *    Plyr, не настоящее видео) — наш.
- * 4. Возвращаем URL + Referer, с которым Alloha его отдаёт (хотлинк-защита).
+ * 5. Возвращаем URL + Referer, с которым Alloha его отдаёт (хотлинк-защита).
+ *
+ * ⚠️ Открытый вопрос: проксируется только само извлечение (Puppeteer). Сам
+ * стриминг байт пользователю (fetchAndProxy в proxy.ts) идёт БЕЗ прокси —
+ * если реальный CDN с видео тоже проверяет IP отдельно от /bnsi/, это
+ * придётся решать отдельно (и это уже трафик в гигабайтах, не килобайтах).
  */
 
 const YUMMY_BASE = 'https://api.yani.tv';
@@ -117,8 +126,6 @@ async function interceptVideoUrl(browser: Browser, rawEmbedUrl: string): Promise
 
   const page = await browser.newPage();
   try {
-    await authenticateProxy(page, getProxyConfig());
-
     const videoUrls: string[] = [];
     const allUrls: string[] = [];
     const pageErrors: string[] = [];
@@ -241,10 +248,13 @@ export async function extractAlloha({
     return null;
   }
 
+  const proxyConfig = getProxyConfig();
+  const resolvedProxy = proxyConfig ? await resolveProxy(proxyConfig) : null;
+
   // Один браузер на все попытки — Chromium холодно стартует секунды,
   // повторный запуск на каждый кандидат был бы намного дороже, чем просто
   // открыть новую вкладку.
-  const browser = await launchBrowser(getProxyConfig());
+  const browser = await launchBrowser(resolvedProxy?.launchArg);
   try {
     for (const embedUrl of embedUrls) {
       const url = await interceptVideoUrl(browser, embedUrl);
@@ -254,6 +264,7 @@ export async function extractAlloha({
     }
   } finally {
     await browser.close();
+    await resolvedProxy?.close().catch(() => {});
   }
 
   return null;

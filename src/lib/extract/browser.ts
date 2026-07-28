@@ -44,13 +44,46 @@ export function toAbsoluteUrl(url: string | null | undefined): string | null {
 }
 
 export interface ProxyConfig {
-  /** "http://host:port" — HTTP(S)-прокси (Chromium туннелирует HTTPS через CONNECT). */
+  /** "socks5://host:port" или "http://host:port" — БЕЗ логина/пароля в самом URL. */
   server: string;
   username?: string;
   password?: string;
 }
 
-export async function launchBrowser(proxy?: ProxyConfig): Promise<Browser> {
+export interface ResolvedProxy {
+  /** Локальный анонимный прокси ("http://127.0.0.1:PORT") — Chromium его понимает без авторизации. */
+  launchArg: string;
+  /** Останавливает локальный прокси-мост. Обязательно вызвать после browser.close(). */
+  close: () => Promise<void>;
+}
+
+/**
+ * Поднимает локальный анонимный HTTP-прокси (пакет proxy-chain), который
+ * внутри форвардит на настоящий апстрим-прокси с логином/паролем — включая
+ * SOCKS5, чего сам Chromium не умеет (у него `--proxy-server` не парсит
+ * `user:pass@host` вообще ни для одного протокола: HTTP-прокси с паролем
+ * требует отдельного `page.authenticate()` на CDP-уровне, а авторизованный
+ * SOCKS5 не поддержан НИКАК). Для одного из присланных пользователем прокси
+ * подтверждено на практике: HTTP(S)-порт вообще не отвечал (curl зависал),
+ * рабочим оказался только SOCKS5 — отсюда и нужда в этом мосте, а не в
+ * прямом `--proxy-server=socks5://user:pass@host:port` (Chromium его тихо
+ * проигнорировал бы или срубил на первой странице).
+ */
+export async function resolveProxy(proxy: ProxyConfig): Promise<ResolvedProxy> {
+  const { anonymizeProxy, closeAnonymizedProxy } = await import('proxy-chain');
+
+  const upstream = new URL(proxy.server);
+  if (proxy.username) upstream.username = encodeURIComponent(proxy.username);
+  if (proxy.password) upstream.password = encodeURIComponent(proxy.password);
+
+  const localUrl = await anonymizeProxy(upstream.toString());
+  return {
+    launchArg: localUrl,
+    close: () => closeAnonymizedProxy(localUrl, true).then(() => undefined),
+  };
+}
+
+export async function launchBrowser(proxyServerArg?: string): Promise<Browser> {
   const [{ default: chromium }, { default: puppeteer }] = await Promise.all([
     import('@sparticuz/chromium-min'),
     import('puppeteer-core'),
@@ -67,26 +100,10 @@ export async function launchBrowser(proxy?: ProxyConfig): Promise<Browser> {
     args: [
       ...chromium.args,
       '--disable-dev-shm-usage',
-      ...(proxy ? [`--proxy-server=${proxy.server}`] : []),
+      ...(proxyServerArg ? [`--proxy-server=${proxyServerArg}`] : []),
     ],
     defaultViewport: { width: 1280, height: 720 },
     executablePath: await chromium.executablePath(CHROMIUM_PACK_URL),
     headless: true,
   });
-}
-
-/**
- * Авторизация на прокси с логином/паролем — Chromium НЕ принимает
- * `user:pass@host` внутри --proxy-server, учётные данные нужно передавать
- * отдельно через CDP-запрос на каждую страницу (Puppeteer подписывается на
- * событие "Proxy Authentication Required" через page.authenticate()), ДО
- * первой навигации.
- */
-export async function authenticateProxy(
-  page: { authenticate(credentials: { username: string; password: string }): Promise<void> },
-  proxy: ProxyConfig | undefined,
-): Promise<void> {
-  if (proxy?.username && proxy.password) {
-    await page.authenticate({ username: proxy.username, password: proxy.password });
-  }
 }

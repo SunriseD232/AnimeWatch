@@ -6,9 +6,10 @@ const nextConfig = {
   experimental: {
     staleTimes: { dynamic: 0 },
     // puppeteer-core/@sparticuz/chromium-min (headless Chromium для
-    // извлечения прямых видео-ссылок, см. src/lib/extract) — серверные
+    // извлечения прямых видео-ссылок, см. src/lib/extract) и proxy-chain
+    // (RU-прокси для Alloha, см. §12.5 ARCHITECTURE.md) — серверные
     // пакеты, вебпак их бандлить не должен.
-    serverComponentsExternalPackages: ['puppeteer-core', '@sparticuz/chromium-min'],
+    serverComponentsExternalPackages: ['puppeteer-core', '@sparticuz/chromium-min', 'proxy-chain'],
   },
   images: {
     remotePatterns: [
