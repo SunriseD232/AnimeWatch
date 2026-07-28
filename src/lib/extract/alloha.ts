@@ -171,6 +171,9 @@ async function interceptVideoUrl(browser: Browser, rawEmbedUrl: string): Promise
       }
 
       allUrls.push(url);
+      if (url.includes('/bnsi/')) {
+        console.error(`[alloha] Заголовки запроса к ${url}: ${JSON.stringify(request.headers())}`);
+      }
       if (
         !DECOY_HOSTS.some((host) => url.includes(host)) &&
         (url.includes('.mp4') ||
@@ -272,23 +275,37 @@ export async function extractAlloha({
   // открыть новую вкладку.
   const browser = await launchBrowser(resolvedProxy?.launchArg);
   try {
-    if (resolvedProxy) {
-      // Решающая проверка: реально ли ИМЕННО ЭТОТ Chromium (те же флаги
-      // @sparticuz/chromium-min, тот же мост) ходит через прокси, или мост
-      // поднят, но браузер его фактически игнорирует. Проверяем ДО похода
-      // на Alloha — если тут не RU, дальше можно не гадать.
+    {
+      // Решающая проверка (при заданном прокси — реально ли браузер через
+      // него ходит) + отпечаток самого браузера (`@sparticuz/chromium-min`
+      // на Vercel и локальный Puppeteer с этим же прокси дают разный
+      // результат на /bnsi/ — сравниваем navigator.userAgent и полный набор
+      // клиентских хинтов, вдруг это отпечаток автоматизации, а не гео).
       const probePage = await browser.newPage();
       try {
-        await probePage.goto('https://ifconfig.co/json', {
-          waitUntil: 'networkidle2',
-          timeout: 15_000,
-        });
-        const ipInfo = await probePage
-          .evaluate(() => document.body.innerText)
-          .catch((e) => `evaluate упал: ${e}`);
-        console.error(`[alloha] Проверка IP через прокси-браузер: ${ipInfo}`);
+        const fingerprint = await probePage
+          .evaluate(() => ({
+            userAgent: navigator.userAgent,
+            webdriver: navigator.webdriver,
+            platform: navigator.platform,
+            languages: navigator.languages,
+            vendor: navigator.vendor,
+          }))
+          .catch((e) => ({ evalError: String(e) }));
+        console.error(`[alloha] Отпечаток браузера: ${JSON.stringify(fingerprint)}`);
+
+        if (resolvedProxy) {
+          await probePage.goto('https://ifconfig.co/json', {
+            waitUntil: 'networkidle2',
+            timeout: 15_000,
+          });
+          const ipInfo = await probePage
+            .evaluate(() => document.body.innerText)
+            .catch((e) => `evaluate упал: ${e}`);
+          console.error(`[alloha] Проверка IP через прокси-браузер: ${ipInfo}`);
+        }
       } catch (err) {
-        console.error('[alloha] Проверка IP через прокси-браузер упала:', err);
+        console.error('[alloha] Проверка браузера упала:', err);
       } finally {
         await probePage.close().catch(() => {});
       }
