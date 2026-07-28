@@ -17,6 +17,14 @@ const nextConfig = {
       'puppeteer-extra',
       'puppeteer-extra-plugin-stealth',
     ],
+    // Stealth-плагин грузит свои evasions/* динамическим require() по строке,
+    // собранной из списка зависимостей плагина — трейсер файлов Vercel (nft)
+    // такие пути статически не видит и не кладёт их в бандл функции (тот же
+    // класс бага, что раньше был с полным @sparticuz/chromium: MODULE_NOT_FOUND
+    // в проде при рабочем require() локально). Форсируем включение всей папки.
+    outputFileTracingIncludes: {
+      '/api/proxy/**': ['./node_modules/puppeteer-extra-plugin-stealth/evasions/**/*'],
+    },
   },
   images: {
     remotePatterns: [
