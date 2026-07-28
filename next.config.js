@@ -53,6 +53,16 @@ const nextConfig = {
         './node_modules/for-own/**/*',
         './node_modules/foreground-child/**/*',
         './node_modules/fs-extra/**/*',
+        // rimraf@3 сам зависит от glob@^7 (не от корневого glob@10 — версии
+        // конфликтуют, npm положил rimraf свою вложенную копию glob в
+        // node_modules/rimraf/node_modules/glob, её и резолвит Node в первую
+        // очередь). Обход package.json по плоской схеме (без учёта вложенных
+        // node_modules) пропустил СОБСТВЕННЫЕ зависимости именно этой
+        // вложенной copy glob@7 — они отличаются от зависимостей glob@10.
+        './node_modules/fs.realpath/**/*',
+        './node_modules/inflight/**/*',
+        './node_modules/inherits/**/*',
+        './node_modules/path-is-absolute/**/*',
         './node_modules/glob/**/*',
         './node_modules/graceful-fs/**/*',
         './node_modules/is-buffer/**/*',
