@@ -12,21 +12,35 @@ import type { ExtractParams, ResolvedStream } from './types';
  * 1. YummyAnime API → ВСЕ iframe_url'ы Alloha для серии (разные озвучки —
  *    разные embed'ы, см. §12.3 ARCHITECTURE.md: одна озвучка может просто
  *    не отдавать поток для конкретной серии, тогда пробуем следующую).
- * 2. По очереди открываем каждый в headless Chromium, перехватываем
- *    сетевые запросы, ждём появления .mp4/.m3u8. Первый успешный — наш.
- * 3. Возвращаем URL + Referer, с которым Alloha его отдаёт (хотлинк-защита).
- *
- * Alloha дополнительно гео-блокирует по IP сервера (см. §12.5
- * ARCHITECTURE.md — подтверждено вручную) — Vercel бьёт из US/EU, поэтому
- * шаг 2 идёт через RU-прокси, если он задан в окружении (см. ALLOHA_PROXY_*
- * в .env.example). Без прокси экстрактор всё равно пытается напрямую —
- * вдруг конкретно регион функции не под блоком.
+ * 2. Открываем СИНТЕТИЧЕСКУЮ обёртку с <iframe src=embedUrl> внутри —
+ *    ключевой момент: страница Alloha содержит анти-хотлинк скрипт, который
+ *    проверяет `window !== window.top` (т.е. что её открыли именно внутри
+ *    iframe) и, если это не так, СТИРАЕТ <body> и подставляет заглушку
+ *    «Контент не найден или недоступен в вашем регионе» — при обычном
+ *    `page.goto(embedUrl)` формально это выглядит как гео-блок по IP
+ *    сервера, но это НЕ гео-блок: подтверждено вручную (см. git history,
+ *    ARCHITECTURE.md §12.5) — с локального (не-RU) IP, но внутри iframe,
+ *    страница отдаёт настоящий плеер и реальный поток. Прокси для этого не
+ *    нужен вообще.
+ * 3. Перехватываем сетевые запросы, ждём появления .mp4/.m3u8. Первый
+ *    успешный (не декой вроде cdn.plyr.io/blank.mp4 — служебная заглушка
+ *    Plyr, не настоящее видео) — наш.
+ * 4. Возвращаем URL + Referer, с которым Alloha его отдаёт (хотлинк-защита).
  */
 
 const YUMMY_BASE = 'https://api.yani.tv';
 const REFERER = 'https://yani.tv/';
+/**
+ * Фиктивный top-level URL на реальном домене Yummy — на самом деле никогда
+ * не уходит в сеть: перехватывается ДО реального запроса и наполняется
+ * нашим HTML с <iframe>. Домен важен для Referer, который iframe
+ * естественно унаследует при собственной навигации (см. выше).
+ */
+const WRAPPER_URL = 'https://yani.tv/__mediawatch_wrapper__';
 /** Не перебираем весь список бесконечно — типично 2-4 разных Alloha-эмбеда на серию. */
 const MAX_CANDIDATES = 4;
+/** Служебная заглушка библиотеки видеоплеера Plyr — не настоящий контент. */
+const DECOY_HOSTS = ['cdn.plyr.io'];
 
 /** RU-прокси для обхода гео-блока Alloha — см. .env.example. */
 function getProxyConfig(): ProxyConfig | undefined {
@@ -110,40 +124,48 @@ async function interceptVideoUrl(browser: Browser, rawEmbedUrl: string): Promise
     await page.setRequestInterception(true);
     page.on('request', (request) => {
       const url = request.url();
+
+      // Наш фиктивный top-level документ — отдаём HTML с iframe вместо
+      // реального похода в сеть (WRAPPER_URL никогда не резолвится по DNS).
+      if (url === WRAPPER_URL) {
+        request
+          .respond({
+            status: 200,
+            contentType: 'text/html',
+            body: `<!DOCTYPE html><html><body style="margin:0"><iframe src="${embedUrl}" style="width:1280px;height:720px;border:0" allow="autoplay"></iframe></body></html>`,
+          })
+          .catch(() => {});
+        return;
+      }
+
       if (
-        url.includes('.mp4') ||
-        url.includes('.m3u8') ||
-        url.includes('.ts?') ||
-        url.includes('playlist.m3u8') ||
-        url.includes('master.m3u8')
+        !DECOY_HOSTS.some((host) => url.includes(host)) &&
+        (url.includes('.mp4') ||
+          url.includes('.m3u8') ||
+          url.includes('.ts?') ||
+          url.includes('playlist.m3u8') ||
+          url.includes('master.m3u8'))
       ) {
         videoUrls.push(url);
       }
-      request.continue();
+      request.continue().catch(() => {});
     });
 
     await page.setExtraHTTPHeaders({ Referer: REFERER });
-    // ⚠️ setExtraHTTPHeaders не гарантированно применяется к самому
-    // top-level запросу навигации (только к подресурсам) — Referer для
-    // ГЛАВНОГО документа нужно передавать через опцию `referer` у goto(),
-    // это идёт напрямую в CDP Page.navigate. Без неё Alloha отдаёт 404
-    // "Ошибка!" ещё до всякого плеера — подтверждено вручную (см. диалог):
-    // прямой заход без Referer → HTTP 404, страница "Ошибка!".
-    const response = await page.goto(embedUrl, {
+    const response = await page.goto(WRAPPER_URL, {
       waitUntil: 'networkidle2',
       timeout: 30_000,
-      referer: REFERER,
     });
 
     if (response && !response.ok()) {
-      console.error(`[alloha] ${embedUrl} → HTTP ${response.status()} (нет доступа даже к странице)`);
+      console.error(`[alloha] Обёртка вернула HTTP ${response.status()} — не должно происходить`);
       return null;
     }
 
     // Многие embed-плееры не начинают грузить поток сам по себе —
     // автовоспроизведение со звуком блокируется браузером без жеста
     // пользователя, а headless Chromium в этом смысле не отличается от
-    // обычного. Кликаем в центр страницы (обычно там play-оверлей), чтобы
+    // обычного. Кликаем в центр iframe (обычно там play-оверлей), чтобы
     // сдвинуть плеер с места, прежде чем слушать сеть.
     await page.mouse.click(640, 360).catch(() => {});
     await new Promise((r) => setTimeout(r, 5_000));
