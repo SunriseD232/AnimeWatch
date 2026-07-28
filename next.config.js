@@ -26,10 +26,14 @@ const nextConfig = {
     // MODULE_NOT_FOUND в проде при рабочем require() локально). Форсируем
     // включение вручную; если всплывёт ещё одна "missing dependency" в
     // логах — она сюда же добавляется.
+    // Полная цепочка (проверено по исходникам): stealth's user-agent-override
+    // evasion → требует плагин 'user-preferences' → требует 'user-data-dir'
+    // (у него самого зависимостей больше нет — конец цепочки).
     outputFileTracingIncludes: {
       '/api/proxy/**': [
         './node_modules/puppeteer-extra-plugin-stealth/evasions/**/*',
         './node_modules/puppeteer-extra-plugin-user-preferences/**/*',
+        './node_modules/puppeteer-extra-plugin-user-data-dir/**/*',
       ],
     },
   },
