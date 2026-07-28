@@ -120,6 +120,12 @@ async function interceptVideoUrl(browser: Browser, rawEmbedUrl: string): Promise
     await authenticateProxy(page, getProxyConfig());
 
     const videoUrls: string[] = [];
+    const allUrls: string[] = [];
+    const pageErrors: string[] = [];
+    page.on('pageerror', (err) => pageErrors.push(String(err)));
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') pageErrors.push(`console: ${msg.text()}`);
+    });
 
     await page.setRequestInterception(true);
     page.on('request', (request) => {
@@ -138,6 +144,7 @@ async function interceptVideoUrl(browser: Browser, rawEmbedUrl: string): Promise
         return;
       }
 
+      allUrls.push(url);
       if (
         !DECOY_HOSTS.some((host) => url.includes(host)) &&
         (url.includes('.mp4') ||
@@ -171,7 +178,24 @@ async function interceptVideoUrl(browser: Browser, rawEmbedUrl: string): Promise
     await new Promise((r) => setTimeout(r, 5_000));
 
     if (videoUrls.length === 0) {
-      console.error(`[alloha] Открыли ${embedUrl}, но не поймали ни одного видео-запроса`);
+      // Диагностика: сколько всего запросов, создался ли iframe, что реально
+      // в его DOM, есть ли JS-ошибки — раньше это ловилось локальным тестом,
+      // но в serverless-окружении (@sparticuz/chromium-min) ведёт себя иначе.
+      const frames = page.frames();
+      const allohaFrame = frames.find((f) => f.url().includes('alloha'));
+      let frameInfo = 'iframe не найден среди page.frames()';
+      if (allohaFrame) {
+        const bodyText = await allohaFrame
+          .evaluate(() => document.body?.innerText?.slice(0, 200) ?? null)
+          .catch((e) => `evaluate упал: ${e}`);
+        frameInfo = `iframe url=${allohaFrame.url()} bodyText=${JSON.stringify(bodyText)}`;
+      }
+      console.error(
+        `[alloha] Открыли ${embedUrl}, но не поймали ни одного видео-запроса. ` +
+          `Всего запросов: ${allUrls.length} (последние 10: ${JSON.stringify(allUrls.slice(-10))}). ` +
+          `Фреймов: ${frames.length}. ${frameInfo}. ` +
+          `JS-ошибки: ${pageErrors.length ? JSON.stringify(pageErrors.slice(0, 5)) : 'нет'}.`,
+      );
     }
 
     const mp4 = videoUrls.find((u) => u.includes('.mp4'));
