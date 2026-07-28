@@ -272,6 +272,28 @@ export async function extractAlloha({
   // открыть новую вкладку.
   const browser = await launchBrowser(resolvedProxy?.launchArg);
   try {
+    if (resolvedProxy) {
+      // Решающая проверка: реально ли ИМЕННО ЭТОТ Chromium (те же флаги
+      // @sparticuz/chromium-min, тот же мост) ходит через прокси, или мост
+      // поднят, но браузер его фактически игнорирует. Проверяем ДО похода
+      // на Alloha — если тут не RU, дальше можно не гадать.
+      const probePage = await browser.newPage();
+      try {
+        await probePage.goto('https://ifconfig.co/json', {
+          waitUntil: 'networkidle2',
+          timeout: 15_000,
+        });
+        const ipInfo = await probePage
+          .evaluate(() => document.body.innerText)
+          .catch((e) => `evaluate упал: ${e}`);
+        console.error(`[alloha] Проверка IP через прокси-браузер: ${ipInfo}`);
+      } catch (err) {
+        console.error('[alloha] Проверка IP через прокси-браузер упала:', err);
+      } finally {
+        await probePage.close().catch(() => {});
+      }
+    }
+
     for (const embedUrl of embedUrls) {
       const url = await interceptVideoUrl(browser, embedUrl);
       if (url) {
