@@ -17,23 +17,78 @@ const nextConfig = {
       'puppeteer-extra',
       'puppeteer-extra-plugin-stealth',
     ],
-    // Stealth-плагин грузит свои evasions/* и часть их зависимостей (напр.
-    // puppeteer-extra-plugin-user-preferences — реальный пакет в
-    // package.json стелса, физически стоит в node_modules) динамическим
+    // Stealth-плагин (и его подключаемые эвэйжны/зависимости-плагины —
+    // user-preferences, user-data-dir) грузят часть своего кода динамическим
     // require(name), собранным из строки в рантайме — трейсер файлов Vercel
     // (nft) такие пути статически не видит и не кладёт их в бандл функции
     // (тот же класс бага, что раньше был с полным @sparticuz/chromium:
-    // MODULE_NOT_FOUND в проде при рабочем require() локально). Форсируем
-    // включение вручную; если всплывёт ещё одна "missing dependency" в
-    // логах — она сюда же добавляется.
-    // Полная цепочка (проверено по исходникам): stealth's user-agent-override
-    // evasion → требует плагин 'user-preferences' → требует 'user-data-dir'
-    // (у него самого зависимостей больше нет — конец цепочки).
+    // MODULE_NOT_FOUND в проде при рабочем require() локально). Ниже —
+    // весь транзитивный граф зависимостей puppeteer-extra +
+    // puppeteer-extra-plugin-stealth (посчитан обходом package.json'ов
+    // node_modules/*, см. git history), форсированно включённый целиком —
+    // без этого пришлось бы чинить каждый "Cannot find module" по одному
+    // за деплой (fs-extra → graceful-fs/jsonfile/universalify, rimraf →
+    // glob/minimatch и т.д.).
     outputFileTracingIncludes: {
       '/api/proxy/**': [
-        './node_modules/puppeteer-extra-plugin-stealth/evasions/**/*',
-        './node_modules/puppeteer-extra-plugin-user-preferences/**/*',
+        './node_modules/puppeteer-extra-plugin-stealth/**/*',
+        './node_modules/@isaacs/cliui/**/*',
+        './node_modules/@types/debug/**/*',
+        './node_modules/@types/ms/**/*',
+        './node_modules/ansi-regex/**/*',
+        './node_modules/ansi-styles/**/*',
+        './node_modules/arr-union/**/*',
+        './node_modules/balanced-match/**/*',
+        './node_modules/brace-expansion/**/*',
+        './node_modules/clone-deep/**/*',
+        './node_modules/color-convert/**/*',
+        './node_modules/color-name/**/*',
+        './node_modules/concat-map/**/*',
+        './node_modules/cross-spawn/**/*',
+        './node_modules/debug/**/*',
+        './node_modules/deepmerge/**/*',
+        './node_modules/eastasianwidth/**/*',
+        './node_modules/emoji-regex/**/*',
+        './node_modules/for-in/**/*',
+        './node_modules/for-own/**/*',
+        './node_modules/foreground-child/**/*',
+        './node_modules/fs-extra/**/*',
+        './node_modules/glob/**/*',
+        './node_modules/graceful-fs/**/*',
+        './node_modules/is-buffer/**/*',
+        './node_modules/is-extendable/**/*',
+        './node_modules/is-fullwidth-code-point/**/*',
+        './node_modules/is-plain-object/**/*',
+        './node_modules/isexe/**/*',
+        './node_modules/isobject/**/*',
+        './node_modules/jackspeak/**/*',
+        './node_modules/jsonfile/**/*',
+        './node_modules/kind-of/**/*',
+        './node_modules/lazy-cache/**/*',
+        './node_modules/lru-cache/**/*',
+        './node_modules/merge-deep/**/*',
+        './node_modules/minimatch/**/*',
+        './node_modules/minipass/**/*',
+        './node_modules/mixin-object/**/*',
+        './node_modules/ms/**/*',
+        './node_modules/path-key/**/*',
+        './node_modules/path-scurry/**/*',
+        './node_modules/puppeteer-extra-plugin/**/*',
         './node_modules/puppeteer-extra-plugin-user-data-dir/**/*',
+        './node_modules/puppeteer-extra-plugin-user-preferences/**/*',
+        './node_modules/rimraf/**/*',
+        './node_modules/shallow-clone/**/*',
+        './node_modules/shebang-command/**/*',
+        './node_modules/shebang-regex/**/*',
+        './node_modules/signal-exit/**/*',
+        './node_modules/string-width/**/*',
+        './node_modules/string-width-cjs/**/*',
+        './node_modules/strip-ansi/**/*',
+        './node_modules/strip-ansi-cjs/**/*',
+        './node_modules/universalify/**/*',
+        './node_modules/which/**/*',
+        './node_modules/wrap-ansi/**/*',
+        './node_modules/wrap-ansi-cjs/**/*',
       ],
     },
   },
