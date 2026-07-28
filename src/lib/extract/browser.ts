@@ -43,7 +43,14 @@ export function toAbsoluteUrl(url: string | null | undefined): string | null {
   }
 }
 
-export async function launchBrowser(): Promise<Browser> {
+export interface ProxyConfig {
+  /** "http://host:port" — HTTP(S)-прокси (Chromium туннелирует HTTPS через CONNECT). */
+  server: string;
+  username?: string;
+  password?: string;
+}
+
+export async function launchBrowser(proxy?: ProxyConfig): Promise<Browser> {
   const [{ default: chromium }, { default: puppeteer }] = await Promise.all([
     import('@sparticuz/chromium-min'),
     import('puppeteer-core'),
@@ -57,9 +64,29 @@ export async function launchBrowser(): Promise<Browser> {
     // Fluid compute он это поле не принимает), с запасом даже без бампа. А
     // --single-process у headless Chromium известен как источник случайных
     // крашей/зависаний, поэтому убрано.
-    args: [...chromium.args, '--disable-dev-shm-usage'],
+    args: [
+      ...chromium.args,
+      '--disable-dev-shm-usage',
+      ...(proxy ? [`--proxy-server=${proxy.server}`] : []),
+    ],
     defaultViewport: { width: 1280, height: 720 },
     executablePath: await chromium.executablePath(CHROMIUM_PACK_URL),
     headless: true,
   });
+}
+
+/**
+ * Авторизация на прокси с логином/паролем — Chromium НЕ принимает
+ * `user:pass@host` внутри --proxy-server, учётные данные нужно передавать
+ * отдельно через CDP-запрос на каждую страницу (Puppeteer подписывается на
+ * событие "Proxy Authentication Required" через page.authenticate()), ДО
+ * первой навигации.
+ */
+export async function authenticateProxy(
+  page: { authenticate(credentials: { username: string; password: string }): Promise<void> },
+  proxy: ProxyConfig | undefined,
+): Promise<void> {
+  if (proxy?.username && proxy.password) {
+    await page.authenticate({ username: proxy.username, password: proxy.password });
+  }
 }

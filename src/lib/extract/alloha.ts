@@ -1,5 +1,5 @@
 import type { Browser } from 'puppeteer-core';
-import { toAbsoluteUrl, launchBrowser } from './browser';
+import { authenticateProxy, toAbsoluteUrl, launchBrowser, type ProxyConfig } from './browser';
 import type { ExtractParams, ResolvedStream } from './types';
 
 /**
@@ -15,12 +15,29 @@ import type { ExtractParams, ResolvedStream } from './types';
  * 2. По очереди открываем каждый в headless Chromium, перехватываем
  *    сетевые запросы, ждём появления .mp4/.m3u8. Первый успешный — наш.
  * 3. Возвращаем URL + Referer, с которым Alloha его отдаёт (хотлинк-защита).
+ *
+ * Alloha дополнительно гео-блокирует по IP сервера (см. §12.5
+ * ARCHITECTURE.md — подтверждено вручную) — Vercel бьёт из US/EU, поэтому
+ * шаг 2 идёт через RU-прокси, если он задан в окружении (см. ALLOHA_PROXY_*
+ * в .env.example). Без прокси экстрактор всё равно пытается напрямую —
+ * вдруг конкретно регион функции не под блоком.
  */
 
 const YUMMY_BASE = 'https://api.yani.tv';
 const REFERER = 'https://yani.tv/';
 /** Не перебираем весь список бесконечно — типично 2-4 разных Alloha-эмбеда на серию. */
 const MAX_CANDIDATES = 4;
+
+/** RU-прокси для обхода гео-блока Alloha — см. .env.example. */
+function getProxyConfig(): ProxyConfig | undefined {
+  const server = process.env.ALLOHA_PROXY_SERVER;
+  if (!server) return undefined;
+  return {
+    server,
+    username: process.env.ALLOHA_PROXY_USERNAME,
+    password: process.env.ALLOHA_PROXY_PASSWORD,
+  };
+}
 
 interface YummyVideoItem {
   video_id: number;
@@ -86,6 +103,8 @@ async function interceptVideoUrl(browser: Browser, rawEmbedUrl: string): Promise
 
   const page = await browser.newPage();
   try {
+    await authenticateProxy(page, getProxyConfig());
+
     const videoUrls: string[] = [];
 
     await page.setRequestInterception(true);
@@ -159,7 +178,7 @@ export async function extractAlloha({
   // Один браузер на все попытки — Chromium холодно стартует секунды,
   // повторный запуск на каждый кандидат был бы намного дороже, чем просто
   // открыть новую вкладку.
-  const browser = await launchBrowser();
+  const browser = await launchBrowser(getProxyConfig());
   try {
     for (const embedUrl of embedUrls) {
       const url = await interceptVideoUrl(browser, embedUrl);
