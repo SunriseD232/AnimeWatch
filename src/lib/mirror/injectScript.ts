@@ -20,6 +20,13 @@
  *     <base href> уже гарантирует, что относительные и абсолютные пути в
  *     разметке/JS резолвятся в один и тот же abs-URL независимо от того,
  *     как их написали в исходнике страницы — рерайт видит их одинаково.
+ *  3. Синтетический клик в центр viewport'а несколько раз после загрузки —
+ *     плееры обычно не начинают резолвить поток сами по себе: автовоспро-
+ *     изведение со звуком блокируется браузером без жеста пользователя, а
+ *     скрытый iframe этот жест никогда органически не получит. Раньше это
+ *     делал Puppeteer (page.mouse.click); здесь то же самое, но диспатчим
+ *     событие из СВОЕГО кода, который исполняется в window самой страницы
+ *     (см. п.2 — тот же трюк с общим origin/window, что и для fetch/XHR).
  */
 export function buildInjectScript(mirrorPrefix: string, allohaHost: string): string {
   // JSON.stringify — безопасное экранирование в JS-строковый литерал.
@@ -63,6 +70,23 @@ XMLHttpRequest.prototype.open=function(method,url){
   if(typeof url==='string'){args[1]=rewrite(url);}
   return origOpen.apply(this,args);
 };
+function nudge(){
+  try{
+    var x=window.innerWidth/2,y=window.innerHeight/2;
+    var el=document.elementFromPoint(x,y);
+    if(!el)return;
+    ['mousedown','mouseup','click'].forEach(function(type){
+      el.dispatchEvent(new MouseEvent(type,{bubbles:true,cancelable:true,view:window,clientX:x,clientY:y}));
+    });
+  }catch(e){}
+}
+function scheduleNudges(){
+  setTimeout(nudge,800);
+  setTimeout(nudge,3000);
+  setTimeout(nudge,6000);
+}
+if(document.readyState==='complete'){scheduleNudges();}
+else{window.addEventListener('load',scheduleNudges);}
 })();</script>`;
 }
 
