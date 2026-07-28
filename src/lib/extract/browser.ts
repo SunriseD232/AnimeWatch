@@ -83,11 +83,29 @@ export async function resolveProxy(proxy: ProxyConfig): Promise<ResolvedProxy> {
   };
 }
 
+/**
+ * Подтверждено логами с прода: WebGL-отпечаток serverless Chromium —
+ * "ANGLE (Google, Vulkan ... SwiftShader Device (Subzero) ..., SwiftShader
+ * driver)" — то есть чистый software-рендеринг, который реальные видеокарты
+ * никогда не отдают. Это классический маркер headless/CI/serverless среды.
+ * Антибот Alloha (эндпоинт /bnsi/, токен в заголовке borth) стабильно рубит
+ * запросы именно с этим отпечатком — при этом тот же прокси и тот же embed
+ * URL с обычным (не sparticuz) Chromium проходят без проблем. Раз более
+ * дешёвый фикс (снятие битого --headless='shell') не решил проблему —
+ * переходим к puppeteer-extra + stealth-плагину: он в числе прочего
+ * подменяет WEBGL_debug_renderer_info на правдоподобные vendor/renderer,
+ * убирает navigator.webdriver и другие автоматизационные "выдающие" следы.
+ */
 export async function launchBrowser(proxyServerArg?: string): Promise<Browser> {
-  const [{ default: chromium }, { default: puppeteer }] = await Promise.all([
+  const [{ default: chromium }, puppeteerCore, { addExtra }, { default: StealthPlugin }] = await Promise.all([
     import('@sparticuz/chromium-min'),
     import('puppeteer-core'),
+    import('puppeteer-extra'),
+    import('puppeteer-extra-plugin-stealth'),
   ]);
+
+  const puppeteer = addExtra(puppeteerCore as never);
+  puppeteer.use(StealthPlugin());
 
   return puppeteer.launch({
     // chromium.args уже содержит набор флагов под serverless. Раньше сюда
@@ -114,5 +132,5 @@ export async function launchBrowser(proxyServerArg?: string): Promise<Browser> {
     defaultViewport: { width: 1280, height: 720 },
     executablePath: await chromium.executablePath(CHROMIUM_PACK_URL),
     headless: true,
-  });
+  }) as unknown as Browser;
 }
