@@ -122,9 +122,28 @@ async function interceptVideoUrl(browser: Browser, rawEmbedUrl: string): Promise
     const videoUrls: string[] = [];
     const allUrls: string[] = [];
     const pageErrors: string[] = [];
+    // Статусы ответов — request-событие статуса не даёт, а именно статус
+    // бэкенд-API (напр. /bnsi/movies/{id}, который резолвит реальный файл
+    // по id) — главный подозреваемый, если запросы обрываются молча.
+    const responseStatuses: string[] = [];
     page.on('pageerror', (err) => pageErrors.push(String(err)));
     page.on('console', (msg) => {
       if (msg.type() === 'error') pageErrors.push(`console: ${msg.text()}`);
+    });
+    page.on('response', (res) => {
+      const isBnsi = res.url().includes('/bnsi/');
+      if (!res.ok() || isBnsi) {
+        (async () => {
+          let body = '';
+          if (isBnsi) {
+            body = await res
+              .text()
+              .then((t) => ` body=${t.slice(0, 300)}`)
+              .catch((e) => ` body-read-failed=${e}`);
+          }
+          responseStatuses.push(`${res.status()} ${res.url()}${body}`);
+        })().catch(() => {});
+      }
     });
 
     await page.setRequestInterception(true);
@@ -194,7 +213,8 @@ async function interceptVideoUrl(browser: Browser, rawEmbedUrl: string): Promise
         `[alloha] Открыли ${embedUrl}, но не поймали ни одного видео-запроса. ` +
           `Всего запросов: ${allUrls.length} (последние 10: ${JSON.stringify(allUrls.slice(-10))}). ` +
           `Фреймов: ${frames.length}. ${frameInfo}. ` +
-          `JS-ошибки: ${pageErrors.length ? JSON.stringify(pageErrors.slice(0, 5)) : 'нет'}.`,
+          `JS-ошибки: ${pageErrors.length ? JSON.stringify(pageErrors.slice(0, 5)) : 'нет'}. ` +
+          `Статусы ответов (не-2xx или /bnsi/): ${responseStatuses.length ? JSON.stringify(responseStatuses) : 'нет'}.`,
       );
     }
 
