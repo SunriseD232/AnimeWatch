@@ -7,9 +7,12 @@ import type { ExtractSource } from '@/lib/extract/types';
  * GET /api/proxy/[contentType]/[id]/[season]/[episode]/[source]
  *
  * Собственный плеер сайта: <video>/hls.js ходит сюда обычными Range-
- * запросами. Сервер (см. §12 ARCHITECTURE.md):
- *  1. резолвит прямую ссылку у эмбед-плеера источника (Puppeteer-перехват,
- *     кэшируется в resolved_streams — см. src/lib/extract/resolve.ts);
+ * запросами. Сервер (см. §12.6 ARCHITECTURE.md):
+ *  1. читает прямую ссылку из кэша (resolved_streams, см.
+ *     src/lib/extract/resolve.ts) — резолвит её клиент (браузер
+ *     посетителя) через зеркало эмбед-плеера источника, см.
+ *     /api/proxy/mirror и /api/extract/report; 404 здесь означает не
+ *     "недоступно", а "клиент ещё не резолвил" — так это трактует OwnPlayer;
  *  2. если это .mp4 — сразу проксирует запрошенный Range-кусок;
  *  3. если это .m3u8 — переписывает плейлист на подписанные /api/proxy/raw
  *     ссылки (сегменты тоже идут через прокси, с нужным Referer).
@@ -20,9 +23,7 @@ import type { ExtractSource } from '@/lib/extract/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-// Puppeteer-резолв при холодном кэше занимает секунды, а для Alloha теперь
-// может перебирать несколько эмбедов подряд (см. extractAlloha) — даём запас.
-export const maxDuration = 120;
+export const maxDuration = 60;
 
 const ALLOWED_SOURCES = new Set<ExtractSource>(['alloha', 'videoseed']);
 
@@ -53,8 +54,8 @@ export async function GET(request: NextRequest, { params }: { params: RouteParam
   try {
     resolved = await resolveStream({ contentType, shikimoriId, season, episode, source });
   } catch (err) {
-    // Puppeteer/Chromium или Supabase могли упасть — отдаём диагностируемую
-    // ошибку вместо голого 500 без тела (как было до этого try/catch).
+    // Supabase мог упасть — отдаём диагностируемую ошибку вместо голого
+    // 500 без тела.
     console.error('[proxy] resolveStream упал:', err);
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: 'resolve_failed', message }, { status: 502 });

@@ -1,0 +1,78 @@
+/**
+ * Скрипт, который зеркало (см. §12.6 ARCHITECTURE.md) вставляет ПЕРВЫМ
+ * дочерним элементом <head> у зеркалируемой страницы эмбед-плеера — раньше
+ * любого её собственного <script>, чтобы патч window.fetch/XHR успел
+ * применится до того, как страница сама начнёт делать запросы.
+ *
+ * Задача скрипта — ровно то, что раньше делал Puppeteer через
+ * page.setRequestInterception(true) + request.continue()/response, но внутри
+ * НАСТОЯЩЕГО браузера реального посетителя:
+ *  1. Заметить .m3u8/.mp4 в любом URL, на который страница делает fetch/XHR
+ *     (или ставит video/source.src), и сообщить его родителю через
+ *     postMessage — это и есть "перехваченная ссылка", которую раньше ловил
+ *     Puppeteer.
+ *  2. Любой запрос, чей resolved-хост совпадает с ALLOHA_HOST (т.е. страница
+ *     обращается САМА К СЕБЕ, как /bnsi/movies/{id}), перенаправить на путь
+ *     нашего зеркала на ТОМ ЖЕ origin — иначе браузер считает это
+ *     кросс-доменным запросом (документ отдан нашим доменом, см. <base>
+ *     ниже) и блокирует чтение ответа без CORS-заголовков Alloha, которых у
+ *     них, скорее всего, нет (эндпоинт не рассчитан на сторонние origin).
+ *     <base href> уже гарантирует, что относительные и абсолютные пути в
+ *     разметке/JS резолвятся в один и тот же abs-URL независимо от того,
+ *     как их написали в исходнике страницы — рерайт видит их одинаково.
+ */
+export function buildInjectScript(mirrorPrefix: string, allohaHost: string): string {
+  // JSON.stringify — безопасное экранирование в JS-строковый литерал.
+  return `<script>(function(){
+var ALLOHA_HOST=${JSON.stringify(allohaHost)};
+var MIRROR_PREFIX=${JSON.stringify(mirrorPrefix)};
+var reported=false;
+var DECOY=['cdn.plyr.io'];
+function report(u){
+  if(reported)return;
+  if(DECOY.some(function(h){return u.indexOf(h)!==-1;}))return;
+  if(/\\.m3u8(\\?|$)/.test(u)||/\\.mp4(\\?|$)/.test(u)){
+    reported=true;
+    try{window.parent.postMessage({__mediawatchProbe:true,type:'stream-found',url:u},window.location.origin);}catch(e){}
+  }
+}
+function rewrite(raw){
+  var abs;
+  try{abs=new URL(raw,document.baseURI);}catch(e){return raw;}
+  report(abs.href);
+  if(abs.hostname===ALLOHA_HOST){
+    return MIRROR_PREFIX+abs.pathname+abs.search;
+  }
+  return raw;
+}
+var origFetch=window.fetch;
+if(origFetch){
+  window.fetch=function(input,init){
+    if(typeof input==='string'){
+      arguments[0]=rewrite(input);
+    }else if(input&&typeof input.url==='string'){
+      var nu=rewrite(input.url);
+      if(nu!==input.url){arguments[0]=new Request(nu,input);}
+    }
+    return origFetch.apply(this,arguments);
+  };
+}
+var origOpen=XMLHttpRequest.prototype.open;
+XMLHttpRequest.prototype.open=function(method,url){
+  var args=Array.prototype.slice.call(arguments);
+  if(typeof url==='string'){args[1]=rewrite(url);}
+  return origOpen.apply(this,args);
+};
+})();</script>`;
+}
+
+/** Вставляет скрипт первым потомком <head> (или в начало документа, если <head> не нашёлся). */
+export function injectIntoHtml(html: string, scriptTag: string, baseHref: string): string {
+  const baseTag = `<base href="${baseHref}">`;
+  const headMatch = html.match(/<head[^>]*>/i);
+  if (headMatch) {
+    const idx = headMatch.index! + headMatch[0].length;
+    return html.slice(0, idx) + baseTag + scriptTag + html.slice(idx);
+  }
+  return baseTag + scriptTag + html;
+}
