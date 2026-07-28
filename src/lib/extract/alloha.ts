@@ -104,7 +104,23 @@ async function interceptVideoUrl(browser: Browser, rawEmbedUrl: string): Promise
     });
 
     await page.setExtraHTTPHeaders({ Referer: REFERER });
-    await page.goto(embedUrl, { waitUntil: 'networkidle2', timeout: 30_000 });
+    // ⚠️ setExtraHTTPHeaders не гарантированно применяется к самому
+    // top-level запросу навигации (только к подресурсам) — Referer для
+    // ГЛАВНОГО документа нужно передавать через опцию `referer` у goto(),
+    // это идёт напрямую в CDP Page.navigate. Без неё Alloha отдаёт 404
+    // "Ошибка!" ещё до всякого плеера — подтверждено вручную (см. диалог):
+    // прямой заход без Referer → HTTP 404, страница "Ошибка!".
+    const response = await page.goto(embedUrl, {
+      waitUntil: 'networkidle2',
+      timeout: 30_000,
+      referer: REFERER,
+    });
+
+    if (response && !response.ok()) {
+      console.error(`[alloha] ${embedUrl} → HTTP ${response.status()} (нет доступа даже к странице)`);
+      return null;
+    }
+
     // Многие embed-плееры не начинают грузить поток сам по себе —
     // автовоспроизведение со звуком блокируется браузером без жеста
     // пользователя, а headless Chromium в этом смысле не отличается от
