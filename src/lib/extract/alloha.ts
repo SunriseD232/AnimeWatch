@@ -284,13 +284,36 @@ export async function extractAlloha({
       const probePage = await browser.newPage();
       try {
         const fingerprint = await probePage
-          .evaluate(() => ({
-            userAgent: navigator.userAgent,
-            webdriver: navigator.webdriver,
-            platform: navigator.platform,
-            languages: navigator.languages,
-            vendor: navigator.vendor,
-          }))
+          .evaluate(() => {
+            // UNMASKED_VENDOR/RENDERER_WEBGL — то самое, что обычно выдаёт
+            // программный рендеринг (SwiftShader) вместо реального GPU и
+            // часто используется антибот-системами как сигнал автоматизации.
+            let webgl: { vendor: unknown; renderer: unknown } | string = 'нет WebGL';
+            try {
+              const canvas = document.createElement('canvas');
+              const gl = (canvas.getContext('webgl') ||
+                canvas.getContext('experimental-webgl')) as WebGLRenderingContext | null;
+              if (gl) {
+                const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+                webgl = dbg
+                  ? {
+                      vendor: gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL),
+                      renderer: gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL),
+                    }
+                  : { vendor: gl.getParameter(gl.VENDOR), renderer: gl.getParameter(gl.RENDERER) };
+              }
+            } catch (e) {
+              webgl = `ошибка: ${e}`;
+            }
+            return {
+              userAgent: navigator.userAgent,
+              webdriver: navigator.webdriver,
+              platform: navigator.platform,
+              languages: navigator.languages,
+              vendor: navigator.vendor,
+              webgl,
+            };
+          })
           .catch((e) => ({ evalError: String(e) }));
         console.error(`[alloha] Отпечаток браузера: ${JSON.stringify(fingerprint)}`);
 

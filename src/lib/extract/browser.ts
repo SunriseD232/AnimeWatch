@@ -96,9 +96,18 @@ export async function launchBrowser(proxyServerArg?: string): Promise<Browser> {
     // (задаётся в Dashboard → Settings → Functions, НЕ в vercel.json — при
     // Fluid compute он это поле не принимает), с запасом даже без бампа. А
     // --single-process у headless Chromium известен как источник случайных
-    // крашей/зависаний, поэтому убрано.
+    // крашей/зависаний, поэтому убрано. ⚠️ --single-process/--in-process-gpu/
+    // --use-angle=swiftshader из chromium.args НЕ трогаем: это дефолты самого
+    // sparticuz, вероятно нужные, чтобы браузер вообще запустился в их
+    // урезанной serverless-песочнице — без реального Linux-окружения для
+    // тестов рискованно их убирать (см. §12.5 ARCHITECTURE.md).
+    //
+    // Единственное, что фильтруем — их же "--headless='shell'": кавычки
+    // ВНУТРИ строки доходят до Chromium буквально (spawn с массивом
+    // аргументов, без шелла, некому их убрать), плюс конфликтует с нашим
+    // отдельным `headless: true` ниже. Заменяем на чистый флаг.
     args: [
-      ...chromium.args,
+      ...chromium.args.filter((arg) => !arg.startsWith('--headless')),
       '--disable-dev-shm-usage',
       ...(proxyServerArg ? [`--proxy-server=${proxyServerArg}`] : []),
     ],
