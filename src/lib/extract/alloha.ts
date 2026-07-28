@@ -249,7 +249,23 @@ export async function extractAlloha({
   }
 
   const proxyConfig = getProxyConfig();
-  const resolvedProxy = proxyConfig ? await resolveProxy(proxyConfig) : null;
+  console.error(
+    proxyConfig
+      ? `[alloha] ALLOHA_PROXY_SERVER задан: ${proxyConfig.server} (username=${proxyConfig.username ? 'есть' : 'нет'}, password=${proxyConfig.password ? 'есть' : 'нет'})`
+      : '[alloha] ALLOHA_PROXY_SERVER НЕ задан в окружении — работаем напрямую',
+  );
+
+  let resolvedProxy: Awaited<ReturnType<typeof resolveProxy>> | null = null;
+  if (proxyConfig) {
+    try {
+      resolvedProxy = await resolveProxy(proxyConfig);
+      console.error(`[alloha] Локальный прокси-мост поднят: ${resolvedProxy.launchArg}`);
+    } catch (err) {
+      // Не валим весь запрос из-за сломанного прокси — пробуем напрямую
+      // (пусть даже и с ожидаемым провалом на /bnsi/), но громко логируем.
+      console.error('[alloha] resolveProxy() упал, работаем без прокси:', err);
+    }
+  }
 
   // Один браузер на все попытки — Chromium холодно стартует секунды,
   // повторный запуск на каждый кандидат был бы намного дороже, чем просто
