@@ -126,9 +126,15 @@ async function interceptVideoUrl(browser, rawEmbedUrl) {
       );
     }
 
-    const mp4 = videoUrls.find((u) => u.includes('.mp4'));
-    const m3u8 = videoUrls.find((u) => u.includes('.m3u8') || u.includes('playlist'));
-    const videoUrl = mp4 || m3u8 || videoUrls[0] || null;
+    // Alloha отдаёт фрагментированный CMAF (master.m3u8 → index-*.m3u8 →
+    // init-*.mp4 + seg-*.m4s) — init-сегмент сам по себе крошечный (~1КБ,
+    // только moov/ftyp) и НЕ играбелен как самостоятельный файл. Поэтому
+    // master.m3u8 всегда в приоритете над любым .mp4-совпадением (иначе
+    // find() выше отдаёт init-сегмент как "видео").
+    const master = videoUrls.find((u) => u.includes('master.m3u8'));
+    const anyM3u8 = videoUrls.find((u) => u.includes('.m3u8') || u.includes('playlist'));
+    const mp4 = videoUrls.find((u) => u.includes('.mp4') && !u.includes('init-'));
+    const videoUrl = master || anyM3u8 || mp4 || videoUrls[0] || null;
     if (!videoUrl) return null;
     return { videoUrl, embedOrigin: new URL(embedUrl).origin };
   } catch (err) {
