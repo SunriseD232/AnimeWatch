@@ -5,16 +5,26 @@ const nextConfig = {
   // на главную «Продолжить просмотр» всегда подтягивается свежим из БД.
   experimental: {
     staleTimes: { dynamic: 0 },
-    // proxy-chain (мост к RU-прокси, см. src/lib/mirror/proxyBridge.ts) и
-    // undici (ProxyAgent для серверного fetch к зеркалу источника, см.
-    // src/lib/mirror/upstreamFetch.ts) — серверные пакеты, вебпак их
-    // бандлить не должен (см. §12.6 ARCHITECTURE.md; пробовали node-wreq
-    // для TLS-имперсонации браузера — работал локально, но на самом Vercel
-    // подменял цель запроса нашим же приложением, откачено). Раньше здесь
-    // же стоял puppeteer-core/@sparticuz/chromium-min/puppeteer-extra —
-    // весь этот путь снят с main и сохранён на ветке
+    // cycletls (TLS/JA3-имперсонация Chrome для relay-хопа к источникам —
+    // см. src/lib/mirror/upstreamFetch.ts, §12.6 ARCHITECTURE.md; до неё
+    // пробовали undici — не проходит TLS-проверку источников, и node-wreq —
+    // на Vercel подменяла цель запроса нашим же приложением) — серверный
+    // пакет, вебпак его бандлить не должен. Раньше здесь же стоял
+    // puppeteer-core/@sparticuz/chromium-min/puppeteer-extra — весь этот
+    // путь снят с main и сохранён на ветке
     // experiment/alloha-tls-fingerprint-spoofing.
-    serverComponentsExternalPackages: ['proxy-chain', 'undici'],
+    serverComponentsExternalPackages: ['cycletls'],
+    // cycletls грузит платформенный Go-бинарник через fs.existsSync() +
+    // child_process.spawn() (НЕ require()) — трейсер файлов Vercel (nft)
+    // такое не видит вообще (в отличие от puppeteer-extra-plugin-stealth
+    // или node-wreq, у которых хотя бы был require(строка) — этот класс
+    // багов трейсинга нам уже хорошо знаком). Пакет содержит бинарники под
+    // 7 платформ разом (~130 МБ распакованные) — форсируем ТОЛЬКО
+    // linux-x64 (Vercel), не все семь (иначе раздули бы бандл функции
+    // многократно).
+    outputFileTracingIncludes: {
+      '/api/proxy/mirror/**': ['./node_modules/cycletls/dist/index'],
+    },
   },
   images: {
     remotePatterns: [
