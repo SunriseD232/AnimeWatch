@@ -72,7 +72,11 @@ export async function fetchUpstream(
     body: init.body ?? undefined,
     browser: 'chrome_147',
     http1Only: true,
-    proxy: proxyUrl ?? undefined,
+    // Явно false, а не undefined, когда своего прокси нет: node-wreq по
+    // умолчанию может подхватывать системные HTTP_PROXY/HTTPS_PROXY —
+    // если Vercel выставляет что-то подобное для своих внутренних нужд,
+    // это перенаправляло бы наши запросы неизвестно куда.
+    proxy: proxyUrl ?? false,
   });
 
   const body = Buffer.from(await res.arrayBuffer());
