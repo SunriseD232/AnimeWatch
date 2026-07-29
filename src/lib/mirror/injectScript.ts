@@ -90,13 +90,34 @@ else{window.addEventListener('load',scheduleNudges);}
 })();</script>`;
 }
 
+/**
+ * `<script integrity="sha384-...">`/`<link integrity="...">` БЕЗ crossorigin —
+ * на реальном домене источника это same-origin ресурсы, SRI работает без
+ * вопросов. Но <base href> (см. injectIntoHtml) делает их относительные src/
+ * href cross-origin запросами (документ отдаём мы, ресурсы у себя же
+ * источника) — а спека требует CORS-режима для проверки integrity
+ * cross-origin ресурса; без явного crossorigin браузер такой запрос грузит
+ * как no-cors и, видя integrity, ЦЕЛИКОМ блокирует загрузку (opaque-ответ
+ * нельзя провалидировать по хешу). Итог, подтверждённый вживую: у Alloha
+ * ИМЕННО так блокировались runtime/vendor/app-бандлы — вся логика плеера
+ * просто никогда не выполнялась, никаких ошибок в консоли родителя не видно
+ * (кросс-origin). Могли бы добавить crossorigin="anonymous" вместо этого, но
+ * это завязано бы на то, шлёт ли источник Access-Control-Allow-Origin для
+ * статики (не проверено) — просто снять integrity надёжнее и не зависит от
+ * их конфигурации CORS.
+ */
+function stripIntegrity(html: string): string {
+  return html.replace(/\s+integrity=(?:"[^"]*"|'[^']*')/gi, '');
+}
+
 /** Вставляет скрипт первым потомком <head> (или в начало документа, если <head> не нашёлся). */
 export function injectIntoHtml(html: string, scriptTag: string, baseHref: string): string {
+  const cleaned = stripIntegrity(html);
   const baseTag = `<base href="${baseHref}">`;
-  const headMatch = html.match(/<head[^>]*>/i);
+  const headMatch = cleaned.match(/<head[^>]*>/i);
   if (headMatch) {
     const idx = headMatch.index! + headMatch[0].length;
-    return html.slice(0, idx) + baseTag + scriptTag + html.slice(idx);
+    return cleaned.slice(0, idx) + baseTag + scriptTag + cleaned.slice(idx);
   }
-  return baseTag + scriptTag + html;
+  return baseTag + scriptTag + cleaned;
 }
