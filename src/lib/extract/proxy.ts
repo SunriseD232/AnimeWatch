@@ -108,6 +108,45 @@ function isM3U8(url: string, contentType: string | null): boolean {
 }
 
 /**
+ * Некоторые апстримы блокируют IP-диапазоны serverless-платформ (Vercel/
+ * AWS) на уровне CDN, а не заголовков — проверено вживую для Sibnet: тот же
+ * подписанный URL с теми же Referer/User-Agent даёт 403 с Vercel, но 200/206
+ * с обычного IP (включая наш VPS). Для них байты идут через /relay VPS
+ * (см. vps-extractor/src/server.js) — Puppeteer там не нужен, только IP.
+ */
+const RELAY_HOSTS = [/(^|\.)sibnet\.ru$/i];
+
+function needsVpsRelay(url: string): boolean {
+  try {
+    return RELAY_HOSTS.some((re) => re.test(new URL(url).hostname));
+  } catch {
+    return false;
+  }
+}
+
+async function fetchUpstream(
+  url: string,
+  upstreamHeaders: Record<string, string>,
+): Promise<Response> {
+  if (!needsVpsRelay(url)) {
+    return fetch(url, { headers: upstreamHeaders, redirect: 'follow' });
+  }
+
+  const baseUrl = process.env.VPS_EXTRACTOR_URL;
+  const token = process.env.VPS_EXTRACTOR_TOKEN;
+  if (!baseUrl || !token) {
+    throw new Error('VPS_EXTRACTOR_URL/VPS_EXTRACTOR_TOKEN не заданы — relay недоступен');
+  }
+  const { Range, ...restHeaders } = upstreamHeaders;
+  const relayUrl = new URL('/relay', baseUrl);
+  relayUrl.searchParams.set('u', url);
+  relayUrl.searchParams.set('h', JSON.stringify(restHeaders));
+  return fetch(relayUrl, {
+    headers: { Authorization: `Bearer ${token}`, ...(Range ? { Range } : {}) },
+  });
+}
+
+/**
  * Загружает url (mp4/m3u8/сегмент) у апстрима с нужными заголовками и Range
  * из входящего запроса, отдаёт наружу либо переписанный плейлист (текст),
  * либо байты как есть (потоково, без буферизации).
@@ -122,7 +161,7 @@ export async function fetchAndProxy(
 
   let upstream: Response;
   try {
-    upstream = await fetch(url, { headers: upstreamHeaders, redirect: 'follow' });
+    upstream = await fetchUpstream(url, upstreamHeaders);
   } catch {
     return new Response(JSON.stringify({ error: 'upstream_unreachable' }), {
       status: 502,

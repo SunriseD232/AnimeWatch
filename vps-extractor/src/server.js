@@ -46,6 +46,64 @@ app.get('/health', (req, res) => {
   res.json({ ok: true, uptime: process.uptime() });
 });
 
+// Хосты, на которые /relay разрешено ходить — эндпоинт защищён Bearer-
+// токеном, но не стоит открывать его как SSRF-прокси на произвольный URL
+// при компрометации токена.
+const RELAY_ALLOWED_HOSTS = [/(^|\.)sibnet\.ru$/i];
+
+function isRelayHostAllowed(hostname) {
+  return RELAY_ALLOWED_HOSTS.some((re) => re.test(hostname));
+}
+
+/**
+ * Проксирует байты апстрима через IP этого VPS. Нужен для источников, чей
+ * CDN блокирует IP-диапазоны serverless-платформ (проверено вживую: Sibnet
+ * отдаёт 403 на запрос с Vercel, тот же URL с этого VPS и с обычного
+ * домашнего IP — 200/206). Puppeteer тут не нужен, только реюз IP.
+ */
+app.get('/relay', requireAuth, async (req, res) => {
+  const { u, h } = req.query;
+  if (typeof u !== 'string') return res.status(400).json({ error: 'bad params' });
+
+  let target;
+  try {
+    target = new URL(u);
+    if (target.protocol !== 'https:' || !isRelayHostAllowed(target.hostname)) {
+      throw new Error('host not allowed');
+    }
+  } catch {
+    return res.status(400).json({ error: 'bad url' });
+  }
+
+  let headers = {};
+  if (typeof h === 'string') {
+    try {
+      headers = JSON.parse(h);
+    } catch {
+      return res.status(400).json({ error: 'bad headers' });
+    }
+  }
+  const upstreamHeaders = { ...headers };
+  if (req.headers.range) upstreamHeaders.Range = req.headers.range;
+
+  let upstream;
+  try {
+    upstream = await fetch(target, { headers: upstreamHeaders, redirect: 'follow' });
+  } catch (err) {
+    console.error('[relay] fetch упал:', err);
+    return res.status(502).json({ error: 'upstream_unreachable' });
+  }
+
+  res.status(upstream.status);
+  for (const key of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
+    const v = upstream.headers.get(key);
+    if (v) res.setHeader(key, v);
+  }
+  if (!upstream.body) return res.end();
+  const { Readable } = require('stream');
+  Readable.fromWeb(upstream.body).pipe(res);
+});
+
 app.post('/extract', requireAuth, async (req, res) => {
   const { source, shikimoriId, season, episode, embedUrl } = req.body || {};
   const id = Number(shikimoriId);
