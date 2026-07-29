@@ -6,7 +6,6 @@ import { useProgressSaver } from '@/hooks/useProgressSaver';
 import { formatTime } from '@/lib/format';
 import type { ContentType } from '@/lib/types';
 import type { ExtractSource } from '@/lib/extract/types';
-import StreamDiscoveryProbe from '@/components/StreamDiscoveryProbe';
 
 interface SkipSegment {
   time: number;
@@ -44,7 +43,7 @@ const SOURCE_LABELS: Record<ExtractSource, string> = {
   videoseed: 'Videoseed',
 };
 
-type LoadState = 'probing' | 'discovering' | 'ready' | 'unavailable' | 'failed';
+type LoadState = 'probing' | 'ready' | 'unavailable' | 'failed';
 
 /**
  * Собственный плеер MediaWatch. Источник байтов — /api/proxy: сервер сам
@@ -164,10 +163,7 @@ export default function OwnPlayer({
         contentType = res.headers.get('content-type');
         if (!res.ok) {
           if (cancelled) return;
-          // 404 — resolved_streams пуст (см. §12.6 ARCHITECTURE.md): не
-          // обязательно "недоступно", просто ещё никто не резолвил эту
-          // серию клиентским перехватом — пробуем сами, прежде чем сдаваться.
-          setLoadState(res.status === 404 ? 'discovering' : 'failed');
+          setLoadState(res.status === 404 ? 'unavailable' : 'failed');
           return;
         }
       } catch {
@@ -354,17 +350,6 @@ export default function OwnPlayer({
     setReloadKey((k) => k + 1);
   }, [currentTime, resumeFrom]);
 
-  // Клиентский перехват (StreamDiscoveryProbe) отработал: нашли — перечитываем
-  // /api/proxy (уже должен быть закэширован); не нашли ни одного кандидата —
-  // источника действительно нет у этой серии.
-  const handleDiscoveryDone = useCallback((found: boolean) => {
-    if (found) {
-      setReloadKey((k) => k + 1);
-    } else {
-      setLoadState('unavailable');
-    }
-  }, []);
-
   // --- Автоскрытие контролов ----------------------------------------------------
   const showControls = useCallback(() => {
     setControlsVisible(true);
@@ -422,21 +407,11 @@ export default function OwnPlayer({
     [togglePlay, seekBy, applyVolume, toggleFullscreen, showControls, volume, muted],
   );
 
-  if (loadState === 'probing' || loadState === 'discovering') {
+  if (loadState === 'probing') {
     return (
       <div className="skeleton flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-2xl">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/15 border-t-accent" />
         <span className="text-sm text-gray-500">Извлекаем видео из {SOURCE_LABELS[extractSource]}…</span>
-        {loadState === 'discovering' && (
-          <StreamDiscoveryProbe
-            contentType={contentType}
-            shikimoriId={shikimoriId}
-            season={season}
-            episode={episode}
-            source={extractSource}
-            onDone={handleDiscoveryDone}
-          />
-        )}
       </div>
     );
   }

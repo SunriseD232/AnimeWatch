@@ -9,10 +9,11 @@ import type { ExtractSource } from '@/lib/extract/types';
  * Собственный плеер сайта: <video>/hls.js ходит сюда обычными Range-
  * запросами. Сервер (см. §12.6 ARCHITECTURE.md):
  *  1. читает прямую ссылку из кэша (resolved_streams, см.
- *     src/lib/extract/resolve.ts) — резолвит её клиент (браузер
- *     посетителя) через зеркало эмбед-плеера источника, см.
- *     /api/proxy/mirror и /api/extract/report; 404 здесь означает не
- *     "недоступно", а "клиент ещё не резолвил" — так это трактует OwnPlayer;
+ *     src/lib/extract/resolve.ts); на промахе кэша синхронно резолвит
+ *     через отдельный VPS-сервис (vps-extractor/, см. его README.md) —
+ *     единственная подтверждённо рабочая конфигурация против антибота
+ *     источников за всё расследование (обычный Puppeteer вне serverless-
+ *     песочницы Vercel);
  *  2. если это .mp4 — сразу проксирует запрошенный Range-кусок;
  *  3. если это .m3u8 — переписывает плейлист на подписанные /api/proxy/raw
  *     ссылки (сегменты тоже идут через прокси, с нужным Referer).
@@ -23,6 +24,9 @@ import type { ExtractSource } from '@/lib/extract/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// VPS может перебирать несколько эмбед-кандидатов подряд, каждый — секунды
+// холодного Chromium — даём запас (см. таймаут самого fetch к VPS в
+// vpsExtractor.ts, чуть меньше этого значения).
 export const maxDuration = 60;
 
 const ALLOWED_SOURCES = new Set<ExtractSource>(['alloha', 'videoseed']);
