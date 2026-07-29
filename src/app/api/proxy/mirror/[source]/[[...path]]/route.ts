@@ -96,7 +96,7 @@ async function handle(request: NextRequest, { params }: { params: RouteParams })
     const scriptTag = buildInjectScript(`/api/proxy/mirror/${params.source}`, config.host);
     const rewritten = injectIntoHtml(html, scriptTag, `https://${config.host}/`);
     // ВРЕМЕННО (диагностика) — видимый маркер в самом начале ответа.
-    const debugMarker = `<!--MWDEBUG target=${targetUrl} status=${upstream.status} bodyLen=${upstream.body.length}-->`;
+    const debugMarker = `<!--MWDEBUG target=${targetUrl} status=${upstream.status} bodyLen=${upstream.body.length} upstreamHeaders=${JSON.stringify(upstream.headers)}-->`;
     return new NextResponse(debugMarker + rewritten, {
       status: upstream.status,
       headers: responseHeaders,
