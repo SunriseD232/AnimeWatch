@@ -51,7 +51,8 @@ async function resolveProxy({ server, username, password }) {
 }
 
 async function launchBrowser(proxyServerArg) {
-  const chromium = require('@sparticuz/chromium-min');
+  // Пакет — ESM с CJS-интеропом: require() даёт обёртку с .default, не сам модуль.
+  const chromium = require('@sparticuz/chromium-min').default;
   const puppeteer = require('puppeteer-core');
 
   return puppeteer.launch({
