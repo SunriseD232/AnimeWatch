@@ -128,7 +128,9 @@ async function interceptVideoUrl(browser, rawEmbedUrl) {
 
     const mp4 = videoUrls.find((u) => u.includes('.mp4'));
     const m3u8 = videoUrls.find((u) => u.includes('.m3u8') || u.includes('playlist'));
-    return mp4 || m3u8 || videoUrls[0] || null;
+    const videoUrl = mp4 || m3u8 || videoUrls[0] || null;
+    if (!videoUrl) return null;
+    return { videoUrl, embedOrigin: new URL(embedUrl).origin };
   } catch (err) {
     console.error(`[alloha] Puppeteer упал на ${embedUrl}:`, err);
     return null;
@@ -160,9 +162,17 @@ async function extractAlloha({ shikimoriId, episode }) {
   const browser = await launchBrowser(resolvedProxy?.launchArg);
   try {
     for (const embedUrl of embedUrls) {
-      const url = await interceptVideoUrl(browser, embedUrl);
-      if (url) {
-        return { url, headers: { Referer: REFERER }, isHls: url.includes('.m3u8') };
+      const result = await interceptVideoUrl(browser, embedUrl);
+      if (result) {
+        const { videoUrl, embedOrigin } = result;
+        // CDN проверяет Origin/Referer именно эмбед-страницы (alloha.yani.tv),
+        // а не внешней обёртки (yani.tv) — иначе отдаёт 403 x-vd:origin_mismatch
+        // при последующем проксировании байт с Vercel. См. ARCHITECTURE.md §12.6.
+        return {
+          url: videoUrl,
+          headers: { Referer: `${embedOrigin}/`, Origin: embedOrigin },
+          isHls: videoUrl.includes('.m3u8'),
+        };
       }
     }
   } finally {
