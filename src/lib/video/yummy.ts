@@ -131,7 +131,10 @@ export async function getYummyEpisode(
     translations.push({
       id: it.video_id,
       title: player ? `${dub} · ${player.replace(/^Плеер\s*/i, '')}` : dub,
-      embedUrl: it.iframe_url,
+      // iframe_url часто протокол-относительный (//alloha.yani.tv/...) —
+      // без абсолютизации new URL() на VPS падает при явном выборе этой
+      // озвучки (см. vps-extractor/src/server.js), эмбед молча "не найден".
+      embedUrl: absolutize(it.iframe_url),
     });
   }
   if (translations.length === 0) return null;
