@@ -77,6 +77,9 @@ export default function OwnPlayer({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<{ destroy: () => void } | null>(null);
+  // Content-Type из проверочного HEAD (см. эффект резолва ниже) — переносится
+  // во второй эффект (подключение к <video>), чтобы не запрашивать HEAD дважды.
+  const upstreamContentTypeRef = useRef<string | null>(null);
   const playingRef = useRef(false);
   const seekTargetRef = useRef<number | null>(resumeFrom);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -172,10 +175,32 @@ export default function OwnPlayer({
       }
       if (cancelled || !ok) return;
 
-      const video = videoRef.current;
-      if (!video) return;
+      // <video> монтируется только в ветке 'ready' ниже — значит ref
+      // появится лишь СЛЕДУЮЩИМ рендером после setLoadState('ready').
+      // Сразу подключать источник тут нельзя (videoRef.current ещё null).
+      upstreamContentTypeRef.current = contentType;
+      setLoadState('ready');
+    })();
 
-      const isHls = (contentType ?? '').includes('mpegurl');
+    return () => {
+      cancelled = true;
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, reloadKey]);
+
+  // --- Подключение источника к <video>, когда он смонтирован (loadState === 'ready') ---
+  useEffect(() => {
+    if (loadState !== 'ready') return;
+    let cancelled = false;
+    const video = videoRef.current;
+    if (!video) return;
+
+    (async () => {
+      const isHls = (upstreamContentTypeRef.current ?? '').includes('mpegurl');
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
@@ -195,7 +220,6 @@ export default function OwnPlayer({
       } else {
         video.src = src;
       }
-      if (!cancelled) setLoadState('ready');
     })();
 
     return () => {
@@ -206,7 +230,7 @@ export default function OwnPlayer({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [src, reloadKey]);
+  }, [src, reloadKey, loadState]);
 
   // --- События <video> -------------------------------------------------------
   useEffect(() => {
