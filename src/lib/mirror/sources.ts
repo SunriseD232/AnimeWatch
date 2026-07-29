@@ -15,6 +15,10 @@ function videoseedHost(): string {
 
 /** Конфиг зеркала на источник — читается лениво (VIDEOSEED_HOST из окружения). */
 export function getMirrorSourceConfig(source: string): MirrorSourceConfig | null {
+  // ВРЕМЕННО (диагностика): проверить, действительно ли relay идёт через RU-прокси.
+  if (source === 'iptest') {
+    return { host: 'ifconfig.co', referer: 'https://yani.tv/', useProxy: true };
+  }
   switch (source as ExtractSource) {
     case 'alloha':
       return { host: 'alloha.yani.tv', referer: 'https://yani.tv/', useProxy: true };
