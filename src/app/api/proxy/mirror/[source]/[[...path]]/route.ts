@@ -76,7 +76,10 @@ async function handle(request: NextRequest, { params }: { params: RouteParams })
     });
   } catch (err) {
     console.error('[mirror] fetchUpstream упал:', err);
-    return NextResponse.json({ error: 'upstream_unreachable' }, { status: 502 });
+    return NextResponse.json(
+      { error: 'upstream_unreachable', debugTargetUrl: targetUrl, debugErr: String(err) },
+      { status: 502 },
+    );
   }
 
   const contentType = String(upstream.headers['content-type'] ?? '');
