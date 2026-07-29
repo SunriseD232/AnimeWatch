@@ -71,6 +71,17 @@ async function interceptVideoUrl(browser, rawEmbedUrl) {
   const page = await browser.newPage();
   try {
     const videoUrls = [];
+    const allUrls = [];
+    const bnsiStatuses = [];
+
+    page.on('response', (res) => {
+      if (res.url().includes('/bnsi/')) {
+        res
+          .text()
+          .then((t) => bnsiStatuses.push(`${res.status()} ${res.url()} body=${t.slice(0, 200)}`))
+          .catch(() => {});
+      }
+    });
 
     await page.setRequestInterception(true);
     page.on('request', (request) => {
@@ -85,6 +96,7 @@ async function interceptVideoUrl(browser, rawEmbedUrl) {
           .catch(() => {});
         return;
       }
+      allUrls.push(url);
       if (
         !DECOY_HOSTS.some((host) => url.includes(host)) &&
         (url.includes('.mp4') ||
@@ -108,6 +120,12 @@ async function interceptVideoUrl(browser, rawEmbedUrl) {
     await page.mouse.click(640, 360).catch(() => {});
     await new Promise((r) => setTimeout(r, 5_000));
 
+    if (videoUrls.length === 0) {
+      console.error(
+        `[alloha] ${embedUrl}: 0 видео-URL. Запросов всего: ${allUrls.length}. Последние 8: ${JSON.stringify(allUrls.slice(-8))}. /bnsi/: ${JSON.stringify(bnsiStatuses)}`,
+      );
+    }
+
     const mp4 = videoUrls.find((u) => u.includes('.mp4'));
     const m3u8 = videoUrls.find((u) => u.includes('.m3u8') || u.includes('playlist'));
     return mp4 || m3u8 || videoUrls[0] || null;
@@ -121,16 +139,19 @@ async function interceptVideoUrl(browser, rawEmbedUrl) {
 
 async function extractAlloha({ shikimoriId, episode }) {
   const embedUrls = await getAllohaEmbedUrls(shikimoriId, episode);
+  console.error(`[alloha] Кандидатов от Yummy: ${embedUrls.length}`);
   if (embedUrls.length === 0) {
     console.error(`[alloha] Yummy не вернул Alloha-эмбед для shikimori ${shikimoriId} ep ${episode}`);
     return null;
   }
 
   const proxyConfig = getProxyConfig();
+  console.error(proxyConfig ? '[alloha] RU-прокси задан' : '[alloha] RU-прокси НЕ задан — работаем напрямую');
   let resolvedProxy = null;
   if (proxyConfig) {
     try {
       resolvedProxy = await resolveProxy(proxyConfig);
+      console.error(`[alloha] Прокси-мост поднят: ${resolvedProxy.launchArg}`);
     } catch (err) {
       console.error('[alloha] resolveProxy() упал, работаем без прокси:', err);
     }
