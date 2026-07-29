@@ -45,6 +45,8 @@ interface Props {
   kodikFallback: boolean;
   // Данные Yummy (резервный источник) и тайминги пропуска для AniLibria.
   yummyTranslations: YummyTranslation[];
+  /** Сохранённая озвучка (по названию — см. миграцию 0008) для OwnPlayer. */
+  savedTranslationTitle: string | null;
   skipOpening: { time: number; length: number } | null;
   skipEnding: { time: number; length: number } | null;
   // Подсказки под плеером: прямое продолжение франшизы и похожие тайтлы.
@@ -83,6 +85,7 @@ export default function WatchPlayer({
   kodikInitialTranslationId,
   kodikFallback,
   yummyTranslations,
+  savedTranslationTitle,
   skipOpening,
   skipEnding,
   prequels,
@@ -120,6 +123,12 @@ export default function WatchPlayer({
   const watchBase = isCinema ? '/cinema/watch' : '/watch';
   const detailHref = `${isCinema ? '/cinema' : '/anime'}/${shikimoriId}`;
   const hasYummy = yummyTranslations.length > 0;
+  // OwnPlayer проксирует байты только через Alloha (см. vps-extractor/) —
+  // остальные переводы Yummy (Kodik/Sibnet/...) ему недоступны.
+  const ownPlayerTranslations = yummyTranslations.filter((t) =>
+    t.embedUrl.toLowerCase().includes('alloha'),
+  );
+  const hasOwnPlayer = ownPlayerTranslations.length > 0;
 
   const playingRef = useRef(false);
   // Актуальная позиция активного плеера — для переноса при смене источника.
@@ -170,7 +179,7 @@ export default function WatchPlayer({
         ...(q ? (['hls'] as const) : []),
         'kodik',
         ...(hasYummy ? (['yummy'] as const) : []),
-        ...(hasYummy ? (['own'] as const) : []),
+        ...(hasOwnPlayer ? (['own'] as const) : []),
       ];
       const fallback: Source = q ? 'hls' : 'kodik';
       setSource(pref && available.includes(pref) ? pref : fallback);
@@ -179,7 +188,7 @@ export default function WatchPlayer({
     return () => {
       cancelled = true;
     };
-  }, [isCinema, animeRomaji, animeRussian, animeYear, episode, hasYummy]);
+  }, [isCinema, animeRomaji, animeRussian, animeYear, episode, hasYummy, hasOwnPlayer]);
 
   // --- Ручное переключение источника с переносом позиции ---
   const switchTo = useCallback(
@@ -426,7 +435,7 @@ export default function WatchPlayer({
                 Yummy
               </button>
             )}
-            {hasYummy && (
+            {hasOwnPlayer && (
               <button
                 type="button"
                 onClick={() => switchTo('own')}
@@ -470,7 +479,7 @@ export default function WatchPlayer({
           onEnded={onEnded}
           onTimeUpdate={bumpPosition}
         />
-      ) : source === 'own' && hasYummy ? (
+      ) : source === 'own' && hasOwnPlayer ? (
         <OwnPlayer
           contentType={contentType}
           shikimoriId={shikimoriId}
@@ -485,6 +494,8 @@ export default function WatchPlayer({
               ? Math.floor(livePositionRef.current)
               : resumeFrom
           }
+          translations={ownPlayerTranslations}
+          initialTranslationTitle={savedTranslationTitle}
           skipOpening={skipOpening}
           skipEnding={skipEnding}
           nextHref={hasNext ? `${watchBase}/${shikimoriId}/${episode + 1}` : null}

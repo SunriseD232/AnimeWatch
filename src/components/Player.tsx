@@ -730,6 +730,8 @@ export default function Player({
           posterUrl={posterUrl}
           isAuthed={isAuthed}
           resumeFrom={resumeFrom}
+          translations={[]}
+          initialTranslationTitle={null}
           nextHref={next ? linkFor(next) : null}
           nextLabel={
             next && next.season !== activeSeason

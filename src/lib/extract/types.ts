@@ -13,4 +13,7 @@ export interface ExtractParams {
   shikimoriId: number;
   season: number;
   episode: number;
+  /** Конкретная озвучка (эмбед Alloha из списка переводов Yummy) — если не
+   *  задано, VPS сам перебирает кандидатов и берёт первый рабочий. */
+  embedUrl?: string;
 }

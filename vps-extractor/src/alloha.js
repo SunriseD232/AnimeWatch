@@ -145,12 +145,20 @@ async function interceptVideoUrl(browser, rawEmbedUrl) {
   }
 }
 
-async function extractAlloha({ shikimoriId, episode }) {
-  const embedUrls = await getAllohaEmbedUrls(shikimoriId, episode);
-  console.error(`[alloha] Кандидатов от Yummy: ${embedUrls.length}`);
-  if (embedUrls.length === 0) {
-    console.error(`[alloha] Yummy не вернул Alloha-эмбед для shikimori ${shikimoriId} ep ${episode}`);
-    return null;
+async function extractAlloha({ shikimoriId, episode, embedUrl: forcedEmbedUrl }) {
+  let embedUrls;
+  if (forcedEmbedUrl) {
+    // Конкретная озвучка уже выбрана на стороне основного приложения (оно
+    // само знает список переводов Yummy) — не гадаем среди кандидатов сами.
+    embedUrls = [forcedEmbedUrl];
+    console.error('[alloha] Используем явно переданный embedUrl (конкретная озвучка)');
+  } else {
+    embedUrls = await getAllohaEmbedUrls(shikimoriId, episode);
+    console.error(`[alloha] Кандидатов от Yummy: ${embedUrls.length}`);
+    if (embedUrls.length === 0) {
+      console.error(`[alloha] Yummy не вернул Alloha-эмбед для shikimori ${shikimoriId} ep ${episode}`);
+      return null;
+    }
   }
 
   const proxyConfig = getProxyConfig();

@@ -54,9 +54,13 @@ export async function GET(request: NextRequest, { params }: { params: RouteParam
     return NextResponse.json({ error: 'bad params' }, { status: 400 });
   }
 
+  // ?t= — id выбранной озвучки (Yummy video_id), см. OwnPlayer/WatchPlayer.
+  const tRaw = request.nextUrl.searchParams.get('t');
+  const translationId = tRaw != null && Number.isFinite(Number(tRaw)) ? Number(tRaw) : undefined;
+
   let resolved;
   try {
-    resolved = await resolveStream({ contentType, shikimoriId, season, episode, source });
+    resolved = await resolveStream({ contentType, shikimoriId, season, episode, source, translationId });
   } catch (err) {
     // Supabase мог упасть — отдаём диагностируемую ошибку вместо голого
     // 500 без тела.

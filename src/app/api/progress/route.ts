@@ -112,6 +112,7 @@ export async function POST(request: NextRequest) {
         duration_seconds: null,
         translation_id:
           body.translation_id != null ? Number(body.translation_id) : null,
+        translation_title: body.translation_title ?? null,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'user_id,content_type,shikimori_id' },
@@ -143,6 +144,7 @@ export async function POST(request: NextRequest) {
           : null,
       translation_id:
         body.translation_id != null ? Number(body.translation_id) : null,
+      translation_title: body.translation_title ?? null,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'user_id,content_type,shikimori_id' },

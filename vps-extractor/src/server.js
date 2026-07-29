@@ -46,7 +46,7 @@ app.get('/health', (req, res) => {
 });
 
 app.post('/extract', requireAuth, async (req, res) => {
-  const { source, shikimoriId, season, episode } = req.body || {};
+  const { source, shikimoriId, season, episode, embedUrl } = req.body || {};
   const id = Number(shikimoriId);
   const ep = Number(episode);
   const se = Number(season) || 1;
@@ -54,12 +54,30 @@ app.post('/extract', requireAuth, async (req, res) => {
   if (!['alloha', 'videoseed'].includes(source) || !Number.isFinite(id) || !Number.isFinite(ep)) {
     return res.status(400).json({ error: 'bad params' });
   }
+  // embedUrl — конкретная озвучка, выбранная пользователем на основном сайте
+  // (см. resolve.ts). Валидируем здесь тоже: эндпоинт защищён токеном, но
+  // не стоит открывать его как SSRF на произвольный URL при компрометации.
+  let safeEmbedUrl;
+  if (embedUrl != null) {
+    if (typeof embedUrl !== 'string') {
+      return res.status(400).json({ error: 'bad params' });
+    }
+    try {
+      const parsed = new URL(embedUrl);
+      if (parsed.protocol !== 'https:') throw new Error('not https');
+      safeEmbedUrl = parsed.toString();
+    } catch {
+      return res.status(400).json({ error: 'bad embedUrl' });
+    }
+  }
 
   console.error(`[server] Извлечение: source=${source} shikimoriId=${id} season=${se} episode=${ep}`);
 
   try {
     const result = await serialized(() =>
-      source === 'alloha' ? extractAlloha({ shikimoriId: id, episode: ep }) : extractVideoseed({ shikimoriId: id, season: se, episode: ep }),
+      source === 'alloha'
+        ? extractAlloha({ shikimoriId: id, episode: ep, embedUrl: safeEmbedUrl })
+        : extractVideoseed({ shikimoriId: id, season: se, episode: ep }),
     );
     if (!result) {
       return res.status(404).json({ error: 'not_found' });

@@ -6,6 +6,7 @@ import { useProgressSaver } from '@/hooks/useProgressSaver';
 import { formatTime } from '@/lib/format';
 import type { ContentType } from '@/lib/types';
 import type { ExtractSource } from '@/lib/extract/types';
+import type { YummyTranslation } from '@/lib/video/yummy';
 
 interface SkipSegment {
   time: number;
@@ -24,6 +25,12 @@ interface Props {
   isAuthed: boolean;
   /** Стартовая позиция для восстановления (сек) или null. */
   resumeFrom: number | null;
+  /** Доступные озвучки (эмбеды Alloha из списка переводов Yummy для этой
+   *  серии) — селектор в левом верхнем углу плеера. */
+  translations: YummyTranslation[];
+  /** Озвучка, сохранённая с прошлого раза (по названию — id Yummy не
+   *  стабилен между сериями, см. миграцию 0008). null — берём первую. */
+  initialTranslationTitle: string | null;
   skipOpening?: SkipSegment | null;
   skipEnding?: SkipSegment | null;
   /** Ссылка на следующую серию — кнопка внутри плеера. null — некуда. */
@@ -65,6 +72,8 @@ export default function OwnPlayer({
   posterUrl,
   isAuthed,
   resumeFrom,
+  translations,
+  initialTranslationTitle,
   skipOpening,
   skipEnding,
   nextHref,
@@ -72,7 +81,25 @@ export default function OwnPlayer({
   onEnded,
   onTimeUpdate,
 }: Props) {
-  const src = `/api/proxy/${contentType}/${shikimoriId}/${season}/${episode}/${extractSource}`;
+  // Выбор озвучки: сперва пробуем сохранённую (по названию), иначе первую
+  // из списка. video_id Yummy меняется от серии к серии, поэтому именно
+  // название — стабильный ключ сопоставления (см. миграцию 0008).
+  const [translationId, setTranslationId] = useState<number | null>(() => {
+    const saved = initialTranslationTitle
+      ? translations.find((t) => t.title === initialTranslationTitle)
+      : undefined;
+    return saved?.id ?? translations[0]?.id ?? null;
+  });
+  const activeTranslation =
+    translations.find((t) => t.id === translationId) ?? translations[0] ?? null;
+  // Держим название текущей озвучки в ref — при смене серии translationId
+  // (video_id) станет невалидным, а по названию найдём тот же перевод заново.
+  const activeTranslationTitleRef = useRef<string | null>(activeTranslation?.title ?? null);
+  activeTranslationTitleRef.current = activeTranslation?.title ?? activeTranslationTitleRef.current;
+
+  const src = `/api/proxy/${contentType}/${shikimoriId}/${season}/${episode}/${extractSource}${
+    translationId != null ? `?t=${translationId}` : ''
+  }`;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -112,11 +139,12 @@ export default function OwnPlayer({
     return {
       position: v ? v.currentTime : 0,
       duration: v && Number.isFinite(v.duration) ? v.duration : null,
-      translationId: null,
+      translationId,
+      translationTitle: activeTranslation?.title ?? null,
       episode,
       season,
     };
-  }, [episode, season]);
+  }, [episode, season, translationId, activeTranslation]);
 
   const save = useProgressSaver({
     contentType,
@@ -127,6 +155,15 @@ export default function OwnPlayer({
     getState,
     playingRef,
   });
+
+  // --- Смена серии: список переводов приходит заново с сервера (новые
+  // video_id) — пробуем найти ту же озвучку по названию, иначе первую. ---
+  useEffect(() => {
+    const wantTitle = activeTranslationTitleRef.current ?? initialTranslationTitle;
+    const match = wantTitle ? translations.find((t) => t.title === wantTitle) : undefined;
+    setTranslationId(match?.id ?? translations[0]?.id ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [episode]);
 
   // --- Громкость: восстановление/сохранение ---------------------------------
   useEffect(() => {
@@ -374,6 +411,16 @@ export default function OwnPlayer({
     setReloadKey((k) => k + 1);
   }, [currentTime, resumeFrom]);
 
+  // Ручная смена озвучки — переносим текущую позицию (src меняется вместе с
+  // translationId, что уже само по себе перезапускает эффект резолва).
+  const changeTranslation = useCallback(
+    (id: number) => {
+      seekTargetRef.current = currentTime > 1 ? currentTime : resumeFrom;
+      setTranslationId(id);
+    },
+    [currentTime, resumeFrom],
+  );
+
   // --- Автоскрытие контролов ----------------------------------------------------
   const showControls = useCallback(() => {
     setControlsVisible(true);
@@ -431,9 +478,29 @@ export default function OwnPlayer({
     [togglePlay, seekBy, applyVolume, toggleFullscreen, showControls, volume, muted],
   );
 
+  // Селектор озвучки — виден в любом loadState (в т.ч. до/после ошибки), чтобы
+  // можно было переключить озвучку, не дожидаясь текущей или после её отказа.
+  const translationSelector = translations.length > 1 && (
+    <div className="absolute left-3 top-3 z-20">
+      <select
+        value={translationId ?? ''}
+        onChange={(e) => changeTranslation(Number(e.target.value))}
+        aria-label="Озвучка"
+        className="rounded-lg border border-white/10 bg-black/70 px-2.5 py-1.5 text-xs font-medium text-gray-100 backdrop-blur focus:border-accent focus:outline-none"
+      >
+        {translations.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.title}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+
   if (loadState === 'probing') {
     return (
-      <div className="skeleton flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-2xl">
+      <div className="skeleton relative flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-2xl">
+        {translationSelector}
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/15 border-t-accent" />
         <span className="text-sm text-gray-500">Извлекаем видео из {SOURCE_LABELS[extractSource]}…</span>
       </div>
@@ -442,7 +509,8 @@ export default function OwnPlayer({
 
   if (loadState === 'unavailable') {
     return (
-      <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-2xl bg-bg-card p-6 text-center ring-1 ring-white/10">
+      <div className="relative flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-2xl bg-bg-card p-6 text-center ring-1 ring-white/10">
+        {translationSelector}
         <div className="text-4xl">📡</div>
         <p className="text-sm font-medium text-gray-200">Эта серия недоступна в нашем плеере</p>
         <p className="max-w-md text-xs leading-relaxed text-gray-400">
@@ -454,7 +522,8 @@ export default function OwnPlayer({
 
   if (loadState === 'failed') {
     return (
-      <div className="flex aspect-video w-full flex-col items-center justify-center gap-3 rounded-2xl bg-bg-card p-6 text-center ring-1 ring-white/10">
+      <div className="relative flex aspect-video w-full flex-col items-center justify-center gap-3 rounded-2xl bg-bg-card p-6 text-center ring-1 ring-white/10">
+        {translationSelector}
         <p className="text-sm text-gray-200">Не удалось загрузить видео.</p>
         <button
           type="button"
@@ -493,6 +562,8 @@ export default function OwnPlayer({
           onDoubleClick={toggleFullscreen}
           className="absolute inset-0 h-full w-full"
         />
+
+        {translationSelector}
 
         {buffering && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">

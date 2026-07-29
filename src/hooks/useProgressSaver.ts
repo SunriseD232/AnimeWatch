@@ -7,6 +7,11 @@ interface PlaybackState {
   position: number;
   duration: number | null;
   translationId: number | null;
+  /** Текстовая метка озвучки (стабильна между сериями в отличие от
+   *  translationId — см. миграцию 0008) — для восстановления выбора на
+   *  следующем заходе. Как и translationId — плееры, которые её не знают,
+   *  пишут null (upsert перезаписывает всю строку, не патчит поля). */
+  translationTitle?: string | null;
   /**
    * Активная серия. Держим в состоянии плеера (а не в аргументах хука), чтобы
    * учитывать смену серии ВНУТРИ Kodik-плеера — иначе прогресс писался бы под
@@ -54,7 +59,7 @@ export function useProgressSaver({
   const save = useCallback(
     (useBeacon = false) => {
       if (!isAuthed) return;
-      const { position, duration, translationId, episode, season } =
+      const { position, duration, translationId, translationTitle, episode, season } =
         getStateRef.current();
       if (!Number.isFinite(position) || position < MIN_POSITION) return;
 
@@ -69,6 +74,7 @@ export function useProgressSaver({
         duration_seconds:
           duration != null && Number.isFinite(duration) ? duration : null,
         translation_id: translationId,
+        translation_title: translationTitle ?? null,
       };
 
       if (useBeacon && typeof navigator.sendBeacon === 'function') {

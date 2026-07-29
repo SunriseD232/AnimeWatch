@@ -75,6 +75,10 @@ export default async function WatchPage({
   }
 
   const initialTranslationId = progress?.translation_id ?? null;
+  // Для OwnPlayer/Alloha: video_id Yummy не стабилен между сериями, поэтому
+  // сохранённую озвучку сопоставляем по текстовой метке (см. миграцию 0008),
+  // а не по id.
+  const savedTranslationTitle = progress?.translation_title ?? null;
 
   // Готовим Kodik как fallback (AniLibria подбирается на клиенте), Yummy
   // (второй резервный источник + тайминги пропуска опенинга/эндинга) и
@@ -120,6 +124,7 @@ export default async function WatchPage({
       kodikInitialTranslationId={resolvedTranslationId}
       kodikFallback={embed.fallback}
       yummyTranslations={yummy?.translations ?? []}
+      savedTranslationTitle={savedTranslationTitle}
       skipOpening={yummy?.skipOpening ?? null}
       skipEnding={yummy?.skipEnding ?? null}
       prequels={prequels}

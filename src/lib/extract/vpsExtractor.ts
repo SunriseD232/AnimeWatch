@@ -9,7 +9,7 @@ import type { ExtractParams, ExtractSource, ResolvedStream } from './types';
  */
 export async function extractViaVps(
   source: ExtractSource,
-  { shikimoriId, season, episode }: ExtractParams,
+  { shikimoriId, season, episode, embedUrl }: ExtractParams,
 ): Promise<ResolvedStream | null> {
   const baseUrl = process.env.VPS_EXTRACTOR_URL;
   const token = process.env.VPS_EXTRACTOR_TOKEN;
@@ -26,7 +26,7 @@ export async function extractViaVps(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ source, shikimoriId, season, episode }),
+      body: JSON.stringify({ source, shikimoriId, season, episode, embedUrl }),
       // Puppeteer на VPS может перебирать несколько эмбед-кандидатов подряд —
       // даём запас (сама функция /api/proxy тоже ограничена maxDuration).
       signal: AbortSignal.timeout(55_000),

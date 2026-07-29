@@ -19,6 +19,9 @@ export interface WatchProgress {
   position_seconds: number;
   duration_seconds: number | null;
   translation_id: number | null;
+  /** Текстовая метка озвучки — см. миграцию 0008 (translation_id Yummy не
+   *  стабилен между сериями, поэтому для восстановления используем строку). */
+  translation_title: string | null;
   updated_at: string;
 }
 
@@ -33,6 +36,7 @@ export interface WatchProgressInput {
   position_seconds: number;
   duration_seconds: number | null;
   translation_id: number | null;
+  translation_title: string | null;
   /** Режим «отметить открытую серию» без позиции (Videoseed). */
   mark?: boolean;
   /** Пометить серию season/episode полностью просмотренной. */
