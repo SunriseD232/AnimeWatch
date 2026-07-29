@@ -1,4 +1,4 @@
-import { ProxyAgent, fetch as undiciFetch } from 'undici';
+import { fetch as wreqFetch } from 'node-wreq';
 import { getAllohaProxyConfig, resolveProxy } from './proxyBridge';
 
 /**
@@ -7,16 +7,16 @@ import { getAllohaProxyConfig, resolveProxy } from './proxyBridge';
  * запрос: поднимать proxy-chain мост на каждый JS/CSS/API-запрос страницы
  * Alloha было бы заметно медленнее.
  */
-let bridgePromise: Promise<{ agent: ProxyAgent } | null> | null = null;
+let bridgePromise: Promise<string | null> | null = null;
 
-function getBridge(): Promise<{ agent: ProxyAgent } | null> {
+function getBridgeUrl(): Promise<string | null> {
   if (bridgePromise) return bridgePromise;
   bridgePromise = (async () => {
     const config = getAllohaProxyConfig();
     if (!config) return null;
     try {
       const resolved = await resolveProxy(config);
-      return { agent: new ProxyAgent(resolved.localUrl) };
+      return resolved.localUrl;
       // Мост намеренно не закрывается — живёт вместе с warm-инстансом
       // функции; Vercel сам утилизирует процесс при простое.
     } catch (err) {
@@ -36,9 +36,25 @@ export interface UpstreamResponse {
 /**
  * Прокидывает запрос апстриму — через RU-прокси, если задан в окружении
  * (см. .env.example, ALLOHA_PROXY_*) И источник его запрашивает
- * (`useProxy` в src/lib/mirror/sources.ts), иначе напрямую. undici.fetch
- * (не глобальный Next-патченный fetch) — следует редиректам по умолчанию и
- * поддерживает ProxyAgent через dispatcher.
+ * (`useProxy` в src/lib/mirror/sources.ts), иначе напрямую.
+ *
+ * node-wreq (не undici/встроенный fetch) — оба источника (§12.6
+ * ARCHITECTURE.md) рвут TLS-соединение с обычных HTTP-клиентов (Node
+ * `https`, undici, curl — подтверждено экспериментально, не только у нас,
+ * но и локально с этой же машины): похоже на TLS/JA3-фингерпринтинг на
+ * уровне ClientHello, а не на IP/гео (RU-прокси не помог). node-wreq
+ * оборачивает Rust-библиотеку wreq и умеет собирать ClientHello/HTTP2-
+ * SETTINGS так, чтобы выглядеть как конкретный настоящий браузер
+ * (`browser: 'chrome_147'`) — обычный undici такого не умеет вообще (нет
+ * низкоуровневого доступа к TLS-хендшейку из чистого JS/OpenSSL-обвязки).
+ *
+ * `http1Only: true` — с правильным TLS-отпечатком, но по HTTP/2 у Videoseed
+ * стабильно падало с "http2 error: unspecific protocol error" (WAF, похоже,
+ * отдельно валидирует HTTP/2-специфику); по HTTP/1.1 то же самое падало на
+ * "connection closed before message completed", пока не выяснилось (см.
+ * §12.6 ARCHITECTURE.md), что не хватало Sec-Fetch-* заголовков — их
+ * ставит сам браузер на настоящей iframe-навигации и наш route.ts просто
+ * пересылает как есть, специально ничего добавлять не нужно.
  */
 export async function fetchUpstream(
   url: string,
@@ -49,19 +65,16 @@ export async function fetchUpstream(
     useProxy?: boolean;
   } = {},
 ): Promise<UpstreamResponse> {
-  const bridge = init.useProxy ? await getBridge() : null;
-  const res = await undiciFetch(url, {
+  const proxyUrl = init.useProxy ? await getBridgeUrl() : null;
+  const res = await wreqFetch(url, {
     method: init.method ?? 'GET',
     headers: init.headers,
     body: init.body ?? undefined,
-    dispatcher: bridge?.agent,
+    browser: 'chrome_147',
+    http1Only: true,
+    proxy: proxyUrl ?? undefined,
   });
 
   const body = Buffer.from(await res.arrayBuffer());
-  const headers: Record<string, string> = {};
-  res.headers.forEach((value, key) => {
-    headers[key] = value;
-  });
-
-  return { status: res.status, headers, body };
+  return { status: res.status, headers: res.headers.toObject(), body };
 }
