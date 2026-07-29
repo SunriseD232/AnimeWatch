@@ -48,7 +48,12 @@ function rewrite(raw){
   try{abs=new URL(raw,document.baseURI);}catch(e){return raw;}
   report(abs.href);
   if(abs.hostname===ALLOHA_HOST){
-    return MIRROR_PREFIX+abs.pathname+abs.search;
+    // Абсолютный ПУТЬ (начинается с /) при наличии <base href> резолвится
+    // браузером относительно BASE, а не относительно origin документа —
+    // "/api/proxy/mirror/..." превратился бы в "https://ALLOHA_HOST/api/
+    // proxy/mirror/..." (несуществующий на их сервере путь, тихий 404).
+    // Явный origin обходит это резолвление совсем.
+    return window.location.origin+MIRROR_PREFIX+abs.pathname+abs.search;
   }
   return raw;
 }
