@@ -4,6 +4,7 @@ require('dotenv').config();
 const express = require('express');
 const { extractAlloha } = require('./alloha');
 const { extractVideoseed } = require('./videoseed');
+const { extractSibnet } = require('./sibnet');
 
 const PORT = Number(process.env.PORT) || 3300;
 const AUTH_TOKEN = process.env.EXTRACTOR_AUTH_TOKEN;
@@ -51,7 +52,7 @@ app.post('/extract', requireAuth, async (req, res) => {
   const ep = Number(episode);
   const se = Number(season) || 1;
 
-  if (!['alloha', 'videoseed'].includes(source) || !Number.isFinite(id) || !Number.isFinite(ep)) {
+  if (!['alloha', 'videoseed', 'sibnet'].includes(source) || !Number.isFinite(id) || !Number.isFinite(ep)) {
     return res.status(400).json({ error: 'bad params' });
   }
   // embedUrl — конкретная озвучка, выбранная пользователем на основном сайте
@@ -74,11 +75,16 @@ app.post('/extract', requireAuth, async (req, res) => {
   console.error(`[server] Извлечение: source=${source} shikimoriId=${id} season=${se} episode=${ep}`);
 
   try {
-    const result = await serialized(() =>
-      source === 'alloha'
-        ? extractAlloha({ shikimoriId: id, episode: ep, embedUrl: safeEmbedUrl })
-        : extractVideoseed({ shikimoriId: id, season: se, episode: ep }),
-    );
+    // Sibnet — обычный fetch(), не Puppeteer: не занимает очередь Chromium
+    // (см. serialized() выше) и не блокируется/не блокирует Alloha-извлечения.
+    const result =
+      source === 'sibnet'
+        ? await extractSibnet({ embedUrl: safeEmbedUrl })
+        : await serialized(() =>
+            source === 'alloha'
+              ? extractAlloha({ shikimoriId: id, episode: ep, embedUrl: safeEmbedUrl })
+              : extractVideoseed({ shikimoriId: id, season: se, episode: ep }),
+          );
     if (!result) {
       return res.status(404).json({ error: 'not_found' });
     }

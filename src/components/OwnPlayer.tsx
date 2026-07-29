@@ -48,6 +48,7 @@ const CONTROLS_HIDE_MS = 3_000;
 const SOURCE_LABELS: Record<ExtractSource, string> = {
   alloha: 'Alloha',
   videoseed: 'Videoseed',
+  sibnet: 'Sibnet',
 };
 
 type LoadState = 'probing' | 'ready' | 'unavailable' | 'failed';
@@ -96,8 +97,12 @@ export default function OwnPlayer({
   // (video_id) станет невалидным, а по названию найдём тот же перевод заново.
   const activeTranslationTitleRef = useRef<string | null>(activeTranslation?.title ?? null);
   activeTranslationTitleRef.current = activeTranslation?.title ?? activeTranslationTitleRef.current;
+  // Каждая озвучка может идти через свой источник извлечения (Alloha/Sibnet/
+  // ...) — используем его, а extractSource остаётся дефолтом только когда
+  // список переводов пуст (раздел «Фильмы и сериалы», см. Player.tsx).
+  const effectiveSource = activeTranslation?.source ?? extractSource;
 
-  const src = `/api/proxy/${contentType}/${shikimoriId}/${season}/${episode}/${extractSource}${
+  const src = `/api/proxy/${contentType}/${shikimoriId}/${season}/${episode}/${effectiveSource}${
     translationId != null ? `?t=${translationId}` : ''
   }`;
 
@@ -502,7 +507,7 @@ export default function OwnPlayer({
       <div className="skeleton relative flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-2xl">
         {translationSelector}
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/15 border-t-accent" />
-        <span className="text-sm text-gray-500">Извлекаем видео из {SOURCE_LABELS[extractSource]}…</span>
+        <span className="text-sm text-gray-500">Извлекаем видео из {SOURCE_LABELS[effectiveSource]}…</span>
       </div>
     );
   }
@@ -514,7 +519,7 @@ export default function OwnPlayer({
         <div className="text-4xl">📡</div>
         <p className="text-sm font-medium text-gray-200">Эта серия недоступна в нашем плеере</p>
         <p className="max-w-md text-xs leading-relaxed text-gray-400">
-          У источника {SOURCE_LABELS[extractSource]} нет этой серии — попробуйте другой плеер выше.
+          У источника {SOURCE_LABELS[effectiveSource]} нет этой серии — попробуйте другой плеер выше.
         </p>
       </div>
     );
@@ -720,7 +725,7 @@ export default function OwnPlayer({
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="rounded-md bg-sky-500/15 px-2.5 py-1 text-xs font-medium text-sky-300">
-          Наш плеер · {SOURCE_LABELS[extractSource]}
+          Наш плеер · {SOURCE_LABELS[effectiveSource]}
         </span>
       </div>
     </div>

@@ -12,6 +12,8 @@
  * Модуль исполняется ТОЛЬКО на сервере.
  */
 
+import type { ExtractSource } from '@/lib/extract/types';
+
 const BASE = 'https://api.yani.tv';
 
 interface YummyPoster {
@@ -55,6 +57,20 @@ export interface YummyTranslation {
   id: number;
   title: string;
   embedUrl: string;
+  /** Источник, через который /api/proxy умеет извлечь и проксировать этот
+   *  перевод (см. vps-extractor/). null — только iframe (YummyPlayer), у нас
+   *  для этого балансера пока нет извлечения. */
+  source: ExtractSource | null;
+}
+
+/** Балансер Yummy (it.data?.player) → наш ExtractSource, если для него есть
+ *  извлечение на VPS. Порядок проверки не важен — подстроки не пересекаются. */
+function detectSource(player: string | undefined, iframeUrl: string): ExtractSource | null {
+  const p = (player || '').toLowerCase();
+  const u = iframeUrl.toLowerCase();
+  if (p.includes('alloha') || u.includes('alloha')) return 'alloha';
+  if (p.includes('sibnet') || u.includes('sibnet')) return 'sibnet';
+  return null;
 }
 
 export interface YummyEpisodeData {
@@ -135,6 +151,7 @@ export async function getYummyEpisode(
       // без абсолютизации new URL() на VPS падает при явном выборе этой
       // озвучки (см. vps-extractor/src/server.js), эмбед молча "не найден".
       embedUrl: absolutize(it.iframe_url),
+      source: detectSource(player, it.iframe_url),
     });
   }
   if (translations.length === 0) return null;

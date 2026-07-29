@@ -1,4 +1,4 @@
-export type ExtractSource = 'alloha' | 'videoseed';
+export type ExtractSource = 'alloha' | 'videoseed' | 'sibnet';
 
 export interface ResolvedStream {
   /** Прямая ссылка на .mp4 или .m3u8, перехваченная у эмбед-плеера источника. */

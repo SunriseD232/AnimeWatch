@@ -123,11 +123,11 @@ export default function WatchPlayer({
   const watchBase = isCinema ? '/cinema/watch' : '/watch';
   const detailHref = `${isCinema ? '/cinema' : '/anime'}/${shikimoriId}`;
   const hasYummy = yummyTranslations.length > 0;
-  // OwnPlayer проксирует байты только через Alloha (см. vps-extractor/) —
-  // остальные переводы Yummy (Kodik/Sibnet/...) ему недоступны.
-  const ownPlayerTranslations = yummyTranslations.filter((t) =>
-    t.embedUrl.toLowerCase().includes('alloha'),
-  );
+  // OwnPlayer проксирует байты только для переводов, для которых есть
+  // извлечение на VPS (source != null, см. lib/video/yummy.ts detectSource) —
+  // остальные балансеры Yummy (Kodik/CVH/Aksor/...) пока доступны только
+  // через iframe-плеер Yummy (вкладка «Yummy»).
+  const ownPlayerTranslations = yummyTranslations.filter((t) => t.source != null);
   const hasOwnPlayer = ownPlayerTranslations.length > 0;
 
   const playingRef = useRef(false);

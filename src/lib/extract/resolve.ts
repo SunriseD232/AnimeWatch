@@ -18,9 +18,10 @@ interface Args {
   season: number;
   episode: number;
   source: ExtractSource;
-  /** Yummy video_id выбранной озвучки (только 'alloha'/anime) — валиден
-   *  только в рамках этой серии, см. §12 ARCHITECTURE.md / миграцию 0008.
-   *  Не задано — берём слот "по умолчанию" (VPS сам выбирает первую рабочую). */
+  /** Yummy video_id выбранной озвучки (только anime) — валиден только в
+   *  рамках этой серии, см. §12 ARCHITECTURE.md / миграцию 0008. Не задано —
+   *  для Alloha VPS сам перебирает кандидатов; для source, которым embedUrl
+   *  обязателен (sibnet), извлечение без него вернёт null. */
   translationId?: number;
 }
 
@@ -60,7 +61,7 @@ export async function resolveStream({
   // Yummy этой же серии (тот же список, что уже показывался пользователю
   // в селекторе плеера — см. WatchPlayer/OwnPlayer).
   let embedUrl: string | undefined;
-  if (translationId != null && source === 'alloha' && contentType === 'anime') {
+  if (translationId != null && contentType === 'anime') {
     const yummy = await getYummyEpisode(shikimoriId, episode);
     embedUrl = yummy?.translations.find((t) => t.id === translationId)?.embedUrl;
   }
