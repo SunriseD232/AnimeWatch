@@ -75,20 +75,14 @@ async function handle(request: NextRequest, { params }: { params: RouteParams })
       useProxy: config.useProxy,
     });
   } catch (err) {
-    console.error('[mirror] fetchUpstream упал:', err);
-    return NextResponse.json(
-      { error: 'upstream_unreachable', debugTargetUrl: targetUrl, debugErr: String(err) },
-      { status: 502 },
-    );
+    console.error(`[mirror] fetchUpstream упал (${targetUrl}):`, err);
+    return NextResponse.json({ error: 'upstream_unreachable' }, { status: 502 });
   }
 
   const contentType = String(upstream.headers['content-type'] ?? '');
   const responseHeaders = new Headers();
   if (contentType) responseHeaders.set('content-type', contentType);
   responseHeaders.set('cache-control', 'private, no-store');
-  // ВРЕМЕННО (диагностика).
-  responseHeaders.set('x-debug-target-url', targetUrl);
-  responseHeaders.set('x-debug-upstream-status', String(upstream.status));
   // Апстрим может прислать свои x-frame-options/CSP — они запретили бы
   // ИМЕННО нашей странице встраивать этот документ в iframe.
   // (x-frame-options/content-security-policy сюда намеренно не копируются.)

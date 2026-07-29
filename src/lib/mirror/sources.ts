@@ -19,8 +19,7 @@ export function getMirrorSourceConfig(source: string): MirrorSourceConfig | null
     case 'alloha':
       return { host: 'alloha.yani.tv', referer: 'https://yani.tv/', useProxy: true };
     case 'videoseed':
-      // ВРЕМЕННО true: диагностика "TypeError: fetch failed" к tv-1-kinoserial.net.
-      return { host: videoseedHost(), referer: `https://${videoseedHost()}/`, useProxy: true };
+      return { host: videoseedHost(), referer: `https://${videoseedHost()}/`, useProxy: false };
     default:
       return null;
   }
