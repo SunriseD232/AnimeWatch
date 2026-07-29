@@ -83,6 +83,10 @@ async function handle(request: NextRequest, { params }: { params: RouteParams })
   const responseHeaders = new Headers();
   if (contentType) responseHeaders.set('content-type', contentType);
   responseHeaders.set('cache-control', 'private, no-store');
+  // ВРЕМЕННО (диагностика).
+  responseHeaders.set('x-debug-target-url', targetUrl);
+  responseHeaders.set('x-debug-upstream-status', String(upstream.status));
+  responseHeaders.set('x-debug-body-len', String(upstream.body.length));
   // Апстрим может прислать свои x-frame-options/CSP — они запретили бы
   // ИМЕННО нашей странице встраивать этот документ в iframe.
   // (x-frame-options/content-security-policy сюда намеренно не копируются.)
