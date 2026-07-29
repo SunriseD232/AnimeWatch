@@ -47,45 +47,32 @@ function rewrite(raw){
   var abs;
   try{abs=new URL(raw,document.baseURI);}catch(e){return raw;}
   report(abs.href);
-  try{window.parent.postMessage({__mediawatchProbe:true,type:'debug-req',url:abs.href},window.location.origin);}catch(e){}
   if(abs.hostname===ALLOHA_HOST){
-    // ВРЕМЕННЫЙ ЭКСПЕРИМЕНТ: не переписываем на зеркало, пускаем запрос
-    // напрямую cross-origin — проверяем, разрешает ли Alloha CORS на чтение.
-    return raw;
+    // Абсолютный ПУТЬ (начинается с /) при наличии <base href> резолвится
+    // браузером относительно BASE, а не относительно origin документа —
+    // "/api/proxy/mirror/..." превратился бы в "https://ALLOHA_HOST/api/
+    // proxy/mirror/..." (несуществующий на их сервере путь, тихий 404).
+    // Явный origin обходит это резолвление совсем.
+    return window.location.origin+MIRROR_PREFIX+abs.pathname+abs.search;
   }
   return raw;
-}
-function debugOutcome(url,info){
-  try{window.parent.postMessage({__mediawatchProbe:true,type:'debug-outcome',url:url,info:info},window.location.origin);}catch(e){}
 }
 var origFetch=window.fetch;
 if(origFetch){
   window.fetch=function(input,init){
-    var url=typeof input==='string'?input:(input&&input.url);
     if(typeof input==='string'){
       arguments[0]=rewrite(input);
     }else if(input&&typeof input.url==='string'){
       var nu=rewrite(input.url);
       if(nu!==input.url){arguments[0]=new Request(nu,input);}
     }
-    var p=origFetch.apply(this,arguments);
-    if(url&&url.indexOf('bnsi')!==-1){
-      p.then(function(res){
-        return res.text().then(function(t){debugOutcome(url,{status:res.status,type:res.type,body:t.slice(0,200)});});
-      }).catch(function(e){debugOutcome(url,{fetchError:String(e)});});
-    }
-    return p;
+    return origFetch.apply(this,arguments);
   };
 }
 var origOpen=XMLHttpRequest.prototype.open;
 XMLHttpRequest.prototype.open=function(method,url){
   var args=Array.prototype.slice.call(arguments);
-  var rewritten=typeof url==='string'?rewrite(url):url;
-  if(typeof url==='string'){args[1]=rewritten;}
-  if(url&&url.indexOf&&url.indexOf('bnsi')!==-1){
-    this.addEventListener('load',function(){debugOutcome(url,{status:this.status,body:String(this.responseText).slice(0,200)});});
-    this.addEventListener('error',function(){debugOutcome(url,{xhrError:true});});
-  }
+  if(typeof url==='string'){args[1]=rewrite(url);}
   return origOpen.apply(this,args);
 };
 function nudge(){
