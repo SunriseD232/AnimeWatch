@@ -12,11 +12,14 @@ Puppeteer на VPS — единственная конфигурация, кот
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
-  ca-certificates fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 \
-  libcups2 libdbus-1-3 libdrm2 libgbm1 libgtk-3-0 libnspr4 libnss3 \
+  ca-certificates fonts-liberation libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 \
+  libcups2t64 libdbus-1-3 libdrm2 libgbm1 libgtk-3-0t64 libnspr4 libnss3 \
   libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 libxrandr2 \
+  libxss1 libxtst6 libatspi2.0-0t64 libx11-xcb1 \
   xdg-utils
 ```
+(имена пакетов — для Ubuntu 24.04 "noble", суффикс `t64`; на других
+дистрибутивах убрать суффикс.)
 
 Node.js (если ещё не стоит — проверить `node -v`, нужен 18+):
 ```bash
@@ -94,18 +97,20 @@ server {
 Vercel `VPS_EXTRACTOR_URL=https://extractor.ваш-домен.ru`, порт 3300 наружу
 НЕ открывать (`sudo ufw deny 3300/tcp`, только `127.0.0.1`).
 
-## Если `@sparticuz/chromium-min` не пройдёт `/bnsi/` и на VPS
+## История: `@sparticuz/chromium-min` не прошёл `/bnsi/` и на VPS
 
-Значит дело не в serverless-песочнице Vercel, а в самом урезанном билде
-Chromium. Следующий шаг — заменить на обычный `puppeteer` (полный пакет,
-сам скачивает стандартный Chromium):
-```bash
-npm uninstall @sparticuz/chromium-min puppeteer-core
-npm install puppeteer
-```
-и в `src/browser.js` заменить `launchBrowser()` на использование
-`require('puppeteer').launch({ args: [...], headless: true })` без
-`executablePath`/`chromium.args` — сообщите, помогу переписать.
+Первый заход использовал `@sparticuz/chromium-min` (урезанный
+serverless-билд) — проверяли, была ли причиной блокировки именно
+serverless-песочница Vercel. Результат: `/bnsi/` отклонил запрос тем же
+generic 404 даже с настоящего VPS + RU-прокси + рабочим Puppeteer —
+значит дело было не в Vercel. Сейчас сервис использует обычный
+`puppeteer` (полный пакет, `npm install` сам скачивает стандартный
+Chromium, ~170-300 МБ в `node_modules/puppeteer/.cache`).
+
+Если обычный `puppeteer` тоже не пройдёт `/bnsi/` — следующие кандидаты:
+запуск с `headless: false` через Xvfb (виртуальный дисплей, `xvfb-run`)
+для полностью "живого" рендеринга, либо возврат к вопросу через прокси/
+unlocker API — см. §12.6 ARCHITECTURE.md за полный список опробованного.
 
 ## Логи и обслуживание
 

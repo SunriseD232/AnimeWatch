@@ -11,10 +11,9 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@sparticuz/chromium-min": "149.0.0",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
     "proxy-chain": "^3.0.0",
-    "puppeteer-core": "^25.3.0"
+    "puppeteer": "^23.0.0"
   }
 }

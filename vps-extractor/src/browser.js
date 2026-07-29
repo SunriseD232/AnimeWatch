@@ -3,21 +3,19 @@
 /**
  * Запуск headless Chromium на VPS (не serverless!) — см. README.md.
  *
- * Используем @sparticuz/chromium-min НАРОЧНО (не полный обычный Chromium
- * через `puppeteer`) — это эксперимент: проверяем, была ли причиной
- * блокировки Alloha именно serverless-песочница Vercel (сетевой namespace,
- * см. основной репозиторий ARCHITECTURE.md §12.6 про node-wreq), а не сам
- * билд Chromium. Если этот вариант всё равно упрётся в блокировку —
- * следующий шаг: обычный `puppeteer` (полный, недостающий бинарник качает
- * сам), см. README.md "Если chromium-min не сработает".
+ * Использовали @sparticuz/chromium-min (урезанный serverless-билд) первым
+ * заходом — проверяли, была ли причиной блокировки Alloha именно
+ * serverless-песочница Vercel (сетевой namespace, см. основной репозиторий
+ * ARCHITECTURE.md §12.6 про node-wreq), а не сам билд Chromium. Результат:
+ * /bnsi/ отклонил запрос и здесь (тот же generic 404), значит дело было
+ * не в Vercel — перешли на обычный `puppeteer` (полный пакет, стандартный
+ * недостающий бинарник Chromium качает сам при `npm install`).
  *
  * ⚠️ Puppeteer-extra + stealth-плагин сюда НЕ переносим: в основном
  * расследовании (см. experiment/alloha-tls-fingerprint-spoofing и §12.5
  * ARCHITECTURE.md) подмена JS-фингерпринта (WebGL/navigator.webdriver и
  * т.д.) не решила блокировку — значит не стоит своей сложности здесь.
  */
-const CHROMIUM_VERSION = '149.0.0';
-const CHROMIUM_PACK_URL = `https://github.com/Sparticuz/chromium/releases/download/v${CHROMIUM_VERSION}/chromium-v${CHROMIUM_VERSION}-pack.x64.tar`;
 
 /** Protocol-relative URL ("//host/path") → абсолютный. См. основной репозиторий, тот же баг с Yummy. */
 function toAbsoluteUrl(url) {
@@ -51,18 +49,15 @@ async function resolveProxy({ server, username, password }) {
 }
 
 async function launchBrowser(proxyServerArg) {
-  // Пакет — ESM с CJS-интеропом: require() даёт обёртку с .default, не сам модуль.
-  const chromium = require('@sparticuz/chromium-min').default;
-  const puppeteer = require('puppeteer-core');
+  const puppeteer = require('puppeteer');
 
   return puppeteer.launch({
     args: [
-      ...chromium.args.filter((arg) => !arg.startsWith('--headless')),
       '--disable-dev-shm-usage',
+      '--no-sandbox',
       ...(proxyServerArg ? [`--proxy-server=${proxyServerArg}`] : []),
     ],
     defaultViewport: { width: 1280, height: 720 },
-    executablePath: await chromium.executablePath(CHROMIUM_PACK_URL),
     headless: true,
   });
 }
