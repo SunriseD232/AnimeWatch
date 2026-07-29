@@ -70,8 +70,13 @@ async function interceptVideoUrl(rawEmbedUrl, referer) {
 
     await page.setExtraHTTPHeaders({ Referer: referer });
     await page.goto(wrapperUrl, { waitUntil: 'networkidle2', timeout: 30_000 });
+    await new Promise((r) => setTimeout(r, 2_000));
+    // Первый клик закрывает preroll-рекламу (code.21wiz.com), второй
+    // реально стартует плеер — подтверждено вручную (diag.js), см. коммит.
     await page.mouse.click(640, 360).catch(() => {});
-    await new Promise((r) => setTimeout(r, 5_000));
+    await new Promise((r) => setTimeout(r, 4_000));
+    await page.mouse.click(640, 360).catch(() => {});
+    await new Promise((r) => setTimeout(r, 6_000));
     await page.close();
 
     if (videoUrls.length === 0) {
