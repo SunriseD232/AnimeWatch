@@ -68,7 +68,12 @@ async function handle(request: NextRequest, { params }: { params: RouteParams })
 
   let upstream;
   try {
-    upstream = await fetchUpstream(targetUrl, { method: request.method, headers, body });
+    upstream = await fetchUpstream(targetUrl, {
+      method: request.method,
+      headers,
+      body,
+      useProxy: config.useProxy,
+    });
   } catch (err) {
     console.error('[mirror] fetchUpstream упал:', err);
     return NextResponse.json({ error: 'upstream_unreachable' }, { status: 502 });

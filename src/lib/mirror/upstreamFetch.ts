@@ -34,16 +34,22 @@ export interface UpstreamResponse {
 }
 
 /**
- * Прокидывает запрос апстриму (alloha.yani.tv) — через RU-прокси, если
- * задан в окружении (см. .env.example, ALLOHA_PROXY_*), иначе напрямую.
- * undici.fetch (не глобальный Next-патченный fetch) — следует редиректам по
- * умолчанию и поддерживает ProxyAgent через dispatcher.
+ * Прокидывает запрос апстриму — через RU-прокси, если задан в окружении
+ * (см. .env.example, ALLOHA_PROXY_*) И источник его запрашивает
+ * (`useProxy` в src/lib/mirror/sources.ts), иначе напрямую. undici.fetch
+ * (не глобальный Next-патченный fetch) — следует редиректам по умолчанию и
+ * поддерживает ProxyAgent через dispatcher.
  */
 export async function fetchUpstream(
   url: string,
-  init: { method?: string; headers?: Record<string, string>; body?: Buffer | null } = {},
+  init: {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: Buffer | null;
+    useProxy?: boolean;
+  } = {},
 ): Promise<UpstreamResponse> {
-  const bridge = await getBridge();
+  const bridge = init.useProxy ? await getBridge() : null;
   const res = await undiciFetch(url, {
     method: init.method ?? 'GET',
     headers: init.headers,
