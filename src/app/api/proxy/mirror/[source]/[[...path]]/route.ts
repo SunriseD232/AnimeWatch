@@ -95,7 +95,12 @@ async function handle(request: NextRequest, { params }: { params: RouteParams })
     const html = upstream.body.toString('utf8');
     const scriptTag = buildInjectScript(`/api/proxy/mirror/${params.source}`, config.host);
     const rewritten = injectIntoHtml(html, scriptTag, `https://${config.host}/`);
-    return new NextResponse(rewritten, { status: upstream.status, headers: responseHeaders });
+    // ВРЕМЕННО (диагностика) — видимый маркер в самом начале ответа.
+    const debugMarker = `<!--MWDEBUG target=${targetUrl} status=${upstream.status} bodyLen=${upstream.body.length}-->`;
+    return new NextResponse(debugMarker + rewritten, {
+      status: upstream.status,
+      headers: responseHeaders,
+    });
   }
 
   return new NextResponse(new Uint8Array(upstream.body), {
