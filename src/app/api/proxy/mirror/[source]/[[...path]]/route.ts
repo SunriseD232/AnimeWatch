@@ -83,10 +83,6 @@ async function handle(request: NextRequest, { params }: { params: RouteParams })
   const responseHeaders = new Headers();
   if (contentType) responseHeaders.set('content-type', contentType);
   responseHeaders.set('cache-control', 'private, no-store');
-  // ВРЕМЕННО (диагностика).
-  responseHeaders.set('x-debug-target-url', targetUrl);
-  responseHeaders.set('x-debug-upstream-status', String(upstream.status));
-  responseHeaders.set('x-debug-body-len', String(upstream.body.length));
   // Апстрим может прислать свои x-frame-options/CSP — они запретили бы
   // ИМЕННО нашей странице встраивать этот документ в iframe.
   // (x-frame-options/content-security-policy сюда намеренно не копируются.)
@@ -95,12 +91,7 @@ async function handle(request: NextRequest, { params }: { params: RouteParams })
     const html = upstream.body.toString('utf8');
     const scriptTag = buildInjectScript(`/api/proxy/mirror/${params.source}`, config.host);
     const rewritten = injectIntoHtml(html, scriptTag, `https://${config.host}/`);
-    // ВРЕМЕННО (диагностика) — видимый маркер в самом начале ответа.
-    const debugMarker = `<!--MWDEBUG target=${targetUrl} status=${upstream.status} bodyLen=${upstream.body.length} upstreamHeaders=${JSON.stringify(upstream.headers)}-->`;
-    return new NextResponse(debugMarker + rewritten, {
-      status: upstream.status,
-      headers: responseHeaders,
-    });
+    return new NextResponse(rewritten, { status: upstream.status, headers: responseHeaders });
   }
 
   return new NextResponse(new Uint8Array(upstream.body), {
