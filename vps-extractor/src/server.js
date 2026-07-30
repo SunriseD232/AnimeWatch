@@ -102,16 +102,18 @@ app.get('/relay', requireAuth, async (req, res) => {
   }
 
   res.status(upstream.status);
-  for (const key of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
+  // БЕЗ content-length: okcdn.ru (CVH) отдаёт для этих ссылок ЗАВЕДОМО
+  // неверный content-length (проверено вживую: заголовок says 508, реальное
+  // тело — 4846+ байт с #EXT-X-ENDLIST в конце). Скопировав его как есть,
+  // Node обрубает наш ответ ровно на этой неверной длине, как только мы
+  // пишем больше — именно так терялся хвост плейлиста. Без заголовка Node
+  // сам включает chunked encoding и шлёт ровно то, что мы реально записали.
+  for (const key of ['content-type', 'content-range', 'accept-ranges']) {
     const v = upstream.headers.get(key);
     if (v) res.setHeader(key, v);
   }
   if (!upstream.body) return res.end();
 
-  // Readable.fromWeb(upstream.body).pipe(res) обрывал поток на фиксированной
-  // длине задолго до конца (проверено вживую на манифесте CVH: всегда ровно
-  // 5428 байт из ~40КБ) — известная неустойчивость этой связки в узле.
-  // Ручной цикл чтения через reader работает надёжно.
   const reader = upstream.body.getReader();
   try {
     while (true) {
