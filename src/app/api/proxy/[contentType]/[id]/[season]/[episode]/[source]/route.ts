@@ -109,7 +109,12 @@ export async function GET(request: NextRequest, ctx: { params: RouteParams }) {
 export async function HEAD(request: NextRequest, ctx: { params: RouteParams }) {
   try {
     const res = await handleGet(request, ctx, true);
-    await res.body?.cancel().catch(() => {});
+    // res.body.cancel() зависал намертво (проверено вживую: curl HEAD ждал
+    // 25с+ без единого байта) — тело идёт через relay VPS двойным hop'ом
+    // (Vercel→VPS→апстрим), и отмена такого сцепленного потока, похоже, не
+    // всегда доходит до конца. Тело уже маленькое (см. bytes=0-0 выше) —
+    // проще дочитать до конца, чем пытаться его оборвать.
+    await res.arrayBuffer().catch(() => {});
     return new Response(null, { status: res.status, headers: res.headers });
   } catch (err) {
     console.error('[proxy] HEAD упал:', err);

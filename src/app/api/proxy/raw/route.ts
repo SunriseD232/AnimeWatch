@@ -47,7 +47,9 @@ export async function GET(request: NextRequest) {
 export async function HEAD(request: NextRequest) {
   try {
     const res = await handleGet(request, true);
-    await res.body?.cancel().catch(() => {});
+    // .cancel() зависал намертво на relay-цепочке — см. тот же приём в
+    // /api/proxy/.../[source]/route.ts. Тело уже маленькое (bytes=0-0).
+    await res.arrayBuffer().catch(() => {});
     return new Response(null, { status: res.status, headers: res.headers });
   } catch (err) {
     console.error('[proxy/raw] HEAD упал:', err);
