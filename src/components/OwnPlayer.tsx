@@ -7,10 +7,17 @@ import { formatTime } from '@/lib/format';
 import type { ContentType } from '@/lib/types';
 import type { ExtractSource } from '@/lib/extract/types';
 import type { YummyTranslation } from '@/lib/video/yummy';
+import type HlsType from 'hls.js';
 
 interface SkipSegment {
   time: number;
   length: number;
+}
+
+interface QualityLevel {
+  /** Индекс уровня в hls.levels — то, что подставляется в hls.currentLevel. */
+  index: number;
+  height: number;
 }
 
 interface Props {
@@ -108,7 +115,7 @@ export default function OwnPlayer({
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const hlsRef = useRef<{ destroy: () => void } | null>(null);
+  const hlsRef = useRef<HlsType | null>(null);
   // Content-Type из проверочного HEAD (см. эффект резолва ниже) — переносится
   // во второй эффект (подключение к <video>), чтобы не запрашивать HEAD дважды.
   const upstreamContentTypeRef = useRef<string | null>(null);
@@ -137,6 +144,10 @@ export default function OwnPlayer({
   const [controlsVisible, setControlsVisible] = useState(true);
   const [activeSkip, setActiveSkip] = useState<'opening' | 'ending' | null>(null);
   const [isEnded, setIsEnded] = useState(false);
+  // Уровни качества из hls.js (только для HLS-источников с несколькими
+  // вариантами в master.m3u8 — иначе список пуст, и селектор скрыт).
+  const [qualityLevels, setQualityLevels] = useState<QualityLevel[]>([]);
+  const [currentLevel, setCurrentLevel] = useState(-1); // -1 = авто (ABR)
 
   // --- Прогресс просмотра ---------------------------------------------------
   const getState = useCallback(() => {
@@ -247,6 +258,8 @@ export default function OwnPlayer({
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
+      setQualityLevels([]);
+      setCurrentLevel(-1);
 
       if (isHls) {
         const { default: Hls } = await import('hls.js');
@@ -254,10 +267,26 @@ export default function OwnPlayer({
         if (Hls.isSupported()) {
           const hls = new Hls({ enableWorker: true });
           hlsRef.current = hls;
+          // master.m3u8 может содержать несколько ABR-вариантов (см. §12
+          // ARCHITECTURE.md) — показываем выбор только когда их больше одного,
+          // иначе (как сейчас почти всегда у Alloha — один уровень) селектор
+          // просто не рендерится.
+          hls.on(Hls.Events.MANIFEST_PARSED, (_evt, data) => {
+            if (cancelled) return;
+            const levels = data.levels
+              .map((lvl, index) => ({ index, height: lvl.height }))
+              .filter((l) => l.height > 0)
+              .sort((a, b) => b.height - a.height);
+            setQualityLevels(levels);
+            setCurrentLevel(hls.currentLevel);
+          });
+          hls.on(Hls.Events.LEVEL_SWITCHED, (_evt, data) => {
+            if (!cancelled) setCurrentLevel(data.level);
+          });
           hls.loadSource(src);
           hls.attachMedia(video);
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-          video.src = src; // Safari/iOS — нативный HLS
+          video.src = src; // Safari/iOS — нативный HLS, свой выбор качества
         }
       } else {
         video.src = src;
@@ -425,6 +454,13 @@ export default function OwnPlayer({
     },
     [currentTime, resumeFrom],
   );
+
+  // Смена качества — hls.js переключает уровень на лету, без перезагрузки
+  // src и без потери позиции (в отличие от смены серии/озвучки).
+  const changeQuality = useCallback((index: number) => {
+    if (hlsRef.current) hlsRef.current.currentLevel = index;
+    setCurrentLevel(index);
+  }, []);
 
   // --- Автоскрытие контролов ----------------------------------------------------
   const showControls = useCallback(() => {
@@ -727,6 +763,38 @@ export default function OwnPlayer({
         <span className="rounded-md bg-sky-500/15 px-2.5 py-1 text-xs font-medium text-sky-300">
           Наш плеер · {SOURCE_LABELS[effectiveSource]}
         </span>
+        {qualityLevels.length > 1 && (
+          <>
+            <span className="ml-1 text-gray-400">Качество:</span>
+            <button
+              type="button"
+              onClick={() => changeQuality(-1)}
+              className={[
+                'rounded-md px-3 py-1.5 text-sm font-medium transition',
+                currentLevel === -1
+                  ? 'bg-accent text-white'
+                  : 'bg-bg-card text-gray-200 hover:bg-bg-soft',
+              ].join(' ')}
+            >
+              Авто
+            </button>
+            {qualityLevels.map((lvl) => (
+              <button
+                key={lvl.index}
+                type="button"
+                onClick={() => changeQuality(lvl.index)}
+                className={[
+                  'rounded-md px-3 py-1.5 text-sm font-medium transition',
+                  currentLevel === lvl.index
+                    ? 'bg-accent text-white'
+                    : 'bg-bg-card text-gray-200 hover:bg-bg-soft',
+                ].join(' ')}
+              >
+                {lvl.height}p
+              </button>
+            ))}
+          </>
+        )}
       </div>
     </div>
   );
