@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useProgressSaver } from '@/hooks/useProgressSaver';
 import { formatTime } from '@/lib/format';
 import type { ContentType } from '@/lib/types';
-import type { ExtractSource } from '@/lib/extract/types';
+import type { ExtractSource, Subtitle } from '@/lib/extract/types';
 import type { YummyTranslation } from '@/lib/video/yummy';
 import type HlsType from 'hls.js';
 
@@ -150,6 +150,11 @@ export default function OwnPlayer({
   // вариантами в master.m3u8 — иначе список пуст, и селектор скрыт).
   const [qualityLevels, setQualityLevels] = useState<QualityLevel[]>([]);
   const [currentLevel, setCurrentLevel] = useState(-1); // -1 = авто (ABR)
+  // Субтитры — отдельная ручка (не часть m3u8/mp4), см. /api/proxy/subtitles.
+  // Сейчас реально отдаёт только Videoseed — для остальных источников список
+  // всегда пуст, и селектор просто не рендерится.
+  const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
+  const [activeSubtitleIndex, setActiveSubtitleIndex] = useState<number | null>(null); // null = выкл
 
   // --- Прогресс просмотра ---------------------------------------------------
   const getState = useCallback(() => {
@@ -304,6 +309,45 @@ export default function OwnPlayer({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src, reloadKey, loadState]);
+
+  // --- Субтитры: отдельный запрос, только после того, как основной резолв
+  // видео уже сходил на VPS (loadState==='ready') — иначе гонка с ним даёт
+  // ДВА параллельных извлечения одной и той же серии вместо одного (VPS
+  // слабый, 1ГБ RAM, лишний Puppeteer-прогон ни к чему). К тому моменту
+  // resolveStream уже закэширован тем первым запросом, так что этот —
+  // обычно просто попадание в кэш. -----------------------------------------
+  useEffect(() => {
+    if (loadState !== 'ready') {
+      setSubtitles([]);
+      setActiveSubtitleIndex(null);
+      return;
+    }
+    let cancelled = false;
+    const subsUrl = `/api/proxy/subtitles/${contentType}/${shikimoriId}/${season}/${episode}/${effectiveSource}${
+      translationId != null ? `?t=${translationId}` : ''
+    }`;
+    fetch(subsUrl)
+      .then((r) => (r.ok ? r.json() : { subtitles: [] }))
+      .then((data: { subtitles?: Subtitle[] }) => {
+        if (!cancelled) setSubtitles(Array.isArray(data.subtitles) ? data.subtitles : []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadState, src]);
+
+  // Применяем выбор дорожки к нативным <track> — по индексу, не по языку
+  // (проще и надёжнее сопоставления, дублей lang не бывает в рамках одной
+  // серии/озвучки).
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    for (let i = 0; i < video.textTracks.length; i++) {
+      video.textTracks[i].mode = i === activeSubtitleIndex ? 'showing' : 'hidden';
+    }
+  }, [activeSubtitleIndex, subtitles]);
 
   // --- События <video> -------------------------------------------------------
   useEffect(() => {
@@ -604,7 +648,14 @@ export default function OwnPlayer({
           onClick={togglePlay}
           onDoubleClick={toggleFullscreen}
           className="absolute inset-0 h-full w-full"
-        />
+        >
+          {/* mode ('showing'/'hidden') выставляется отдельным эффектом по
+              activeSubtitleIndex — default тут не нужен и может конфликтовать
+              с этим эффектом при первом монтировании. */}
+          {subtitles.map((s) => (
+            <track key={s.lang} kind="subtitles" src={s.url} srcLang={s.lang} label={s.label} />
+          ))}
+        </video>
 
         {translationSelector}
 
@@ -793,6 +844,38 @@ export default function OwnPlayer({
                 ].join(' ')}
               >
                 {lvl.height}p
+              </button>
+            ))}
+          </>
+        )}
+        {subtitles.length > 0 && (
+          <>
+            <span className="ml-1 text-gray-400">Субтитры:</span>
+            <button
+              type="button"
+              onClick={() => setActiveSubtitleIndex(null)}
+              className={[
+                'rounded-md px-3 py-1.5 text-sm font-medium transition',
+                activeSubtitleIndex === null
+                  ? 'bg-accent text-white'
+                  : 'bg-bg-card text-gray-200 hover:bg-bg-soft',
+              ].join(' ')}
+            >
+              Выкл
+            </button>
+            {subtitles.map((s, i) => (
+              <button
+                key={s.lang}
+                type="button"
+                onClick={() => setActiveSubtitleIndex(i)}
+                className={[
+                  'rounded-md px-3 py-1.5 text-sm font-medium transition',
+                  activeSubtitleIndex === i
+                    ? 'bg-accent text-white'
+                    : 'bg-bg-card text-gray-200 hover:bg-bg-soft',
+                ].join(' ')}
+              >
+                {s.label}
               </button>
             ))}
           </>

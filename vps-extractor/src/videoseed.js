@@ -55,6 +55,38 @@ async function probeQualities(url, referer) {
   return qualities.length > 0 ? qualities : null;
 }
 
+/**
+ * Субтитры — НЕ в самом HLS-манифесте (проверено: там только сегменты, ни
+ * одного #EXT-X-MEDIA:TYPE=SUBTITLES) и не в API — плеер сам подгружает
+ * готовые .vtt отдельными запросами (найдено сетевым перехватом при
+ * извлечении видео, тем же проходом, без лишней загрузки страницы), путь
+ * вида /contents/videos_sources/{bucket}/{id}/{lang}.vtt. Код языка — из
+ * имени файла (rus/eng/...), человекочитаемая подпись — из таблицы ниже.
+ */
+const SUBTITLE_LABELS = {
+  rus: 'Русский',
+  eng: 'English',
+  ukr: 'Українська',
+  ger: 'Deutsch',
+  fre: 'Français',
+  spa: 'Español',
+  ita: 'Italiano',
+  chi: '中文',
+  jpn: '日本語',
+  kor: '한국어',
+  tur: 'Türkçe',
+  pol: 'Polski',
+};
+
+function subtitleLabel(lang) {
+  return SUBTITLE_LABELS[lang.toLowerCase()] || lang.toUpperCase();
+}
+
+function subtitleLangFromUrl(url) {
+  const match = url.match(/\/([a-zA-Z]{2,3})\.vtt(?:[?#]|$)/);
+  return match ? match[1].toLowerCase() : null;
+}
+
 function buildEmbedUrl(kinopoiskId, season, episode) {
   const token = process.env.VIDEOSEED_TOKEN;
   if (!token) return null;
@@ -77,6 +109,7 @@ async function interceptVideoUrl(rawEmbedUrl, referer) {
   try {
     const page = await browser.newPage();
     const videoUrls = [];
+    const subtitleUrls = [];
     const allUrls = [];
 
     await page.setRequestInterception(true);
@@ -93,7 +126,9 @@ async function interceptVideoUrl(rawEmbedUrl, referer) {
         return;
       }
       allUrls.push(url);
-      if (
+      if (/\.vtt(?:[?#]|$)/i.test(url)) {
+        if (!subtitleUrls.includes(url)) subtitleUrls.push(url);
+      } else if (
         url.includes('.mp4') ||
         url.includes('.m3u8') ||
         url.includes('playlist.m3u8') ||
@@ -128,7 +163,8 @@ async function interceptVideoUrl(rawEmbedUrl, referer) {
     const mp4 = videoUrls.find((u) => u.includes('.mp4'));
     const m3u8 = videoUrls.find((u) => u.includes('.m3u8') || u.includes('playlist'));
     const stream = videoUrls.find((u) => u.includes('/video/') || u.includes('/stream/') || u.includes('/hls/'));
-    return mp4 || m3u8 || stream || videoUrls[0] || null;
+    const videoUrl = mp4 || m3u8 || stream || videoUrls[0] || null;
+    return { videoUrl, subtitleUrls };
   } catch (err) {
     console.error('[videoseed] Puppeteer упал:', err);
     return null;
@@ -146,8 +182,9 @@ async function extractVideoseed({ shikimoriId, season, episode, embedUrl }) {
   if (!url) return null;
 
   const referer = `https://${videoseedHost()}/`;
-  const resultUrl = await interceptVideoUrl(url, referer);
-  if (!resultUrl) return null;
+  const intercepted = await interceptVideoUrl(url, referer);
+  if (!intercepted?.videoUrl) return null;
+  const { videoUrl: resultUrl, subtitleUrls } = intercepted;
 
   const isHls = resultUrl.includes('.m3u8');
   // Список качеств — best-effort: не находим тиры (нестандартный путь CDN,
@@ -155,11 +192,19 @@ async function extractVideoseed({ shikimoriId, season, episode, embedUrl }) {
   // качество, как раньше.
   const qualities = isHls ? await probeQualities(resultUrl, referer) : null;
 
+  const subtitles = subtitleUrls
+    .map((subUrl) => {
+      const lang = subtitleLangFromUrl(subUrl);
+      return lang ? { lang, label: subtitleLabel(lang), url: subUrl } : null;
+    })
+    .filter(Boolean);
+
   return {
     url: resultUrl,
     headers: { Referer: referer },
     isHls,
     ...(qualities ? { qualities } : {}),
+    ...(subtitles.length > 0 ? { subtitles } : {}),
   };
 }
 

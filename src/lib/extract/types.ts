@@ -12,6 +12,17 @@ export interface ResolvedStream {
    *  с выбором качества. `url` при этом — просто лучшее качество, для
    *  совместимости с источниками без этого поля. */
   qualities?: { height: number; url: string }[];
+  /** Внешние субтитры (сейчас только Videoseed отдаёт реальные .vtt — Alloha/
+   *  Sibnet/Kodik/CVH ничего подобного не предоставляют, см. коммит). */
+  subtitles?: Subtitle[];
+}
+
+/** Одна дорожка субтитров — lang используется и для матчинга/индекса, и как
+ *  <track srclang>, label — то, что видит пользователь в селекторе. */
+export interface Subtitle {
+  lang: string;
+  label: string;
+  url: string;
 }
 
 export interface ExtractParams {
