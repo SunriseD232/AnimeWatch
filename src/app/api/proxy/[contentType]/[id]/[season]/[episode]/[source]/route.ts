@@ -39,7 +39,10 @@ interface RouteParams {
   source: string;
 }
 
-export async function GET(request: NextRequest, { params }: { params: RouteParams }) {
+async function handleGet(
+  request: NextRequest,
+  { params }: { params: RouteParams },
+): Promise<Response> {
   const contentType = params.contentType === 'cinema' ? 'cinema' : 'anime';
   const shikimoriId = Number(params.id);
   const season = Number(params.season) || 1;
@@ -58,16 +61,7 @@ export async function GET(request: NextRequest, { params }: { params: RouteParam
   const tRaw = request.nextUrl.searchParams.get('t');
   const translationId = tRaw != null && Number.isFinite(Number(tRaw)) ? Number(tRaw) : undefined;
 
-  let resolved;
-  try {
-    resolved = await resolveStream({ contentType, shikimoriId, season, episode, source, translationId });
-  } catch (err) {
-    // Supabase мог упасть — отдаём диагностируемую ошибку вместо голого
-    // 500 без тела.
-    console.error('[proxy] resolveStream упал:', err);
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: 'resolve_failed', message }, { status: 502 });
-  }
+  const resolved = await resolveStream({ contentType, shikimoriId, season, episode, source, translationId });
   if (!resolved) {
     return NextResponse.json({ error: 'not_found' }, { status: 404 });
   }
@@ -87,6 +81,18 @@ export async function GET(request: NextRequest, { params }: { params: RouteParam
   }
 
   return fetchAndProxy(request.headers.get('range'), resolved.url, resolved.headers);
+}
+
+export async function GET(request: NextRequest, ctx: { params: RouteParams }) {
+  try {
+    return await handleGet(request, ctx);
+  } catch (err) {
+    // Ловим ВСЁ (не только resolveStream) — иначе браузер получает голый
+    // платформенный 500 без тела, который вообще нечем диагностировать.
+    console.error('[proxy] Необработанная ошибка:', err);
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: 'internal_error', message }, { status: 502 });
+  }
 }
 
 export async function HEAD(request: NextRequest, ctx: { params: RouteParams }) {

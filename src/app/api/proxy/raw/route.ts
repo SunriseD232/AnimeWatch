@@ -16,12 +16,20 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const resolved = verifyRawToken(searchParams.get('u'), searchParams.get('s'));
-  if (!resolved) {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  try {
+    const { searchParams } = new URL(request.url);
+    const resolved = verifyRawToken(searchParams.get('u'), searchParams.get('s'));
+    if (!resolved) {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    }
+    return await fetchAndProxy(request.headers.get('range'), resolved.url, resolved.headers);
+  } catch (err) {
+    // Голый платформенный 500 нечем диагностировать — см. тот же приём в
+    // /api/proxy/.../[source]/route.ts.
+    console.error('[proxy/raw] Необработанная ошибка:', err);
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: 'internal_error', message }, { status: 502 });
   }
-  return fetchAndProxy(request.headers.get('range'), resolved.url, resolved.headers);
 }
 
 export async function HEAD(request: NextRequest) {
