@@ -15,6 +15,46 @@ function videoseedHost() {
   return process.env.VIDEOSEED_HOST || 'tv-1-kinoserial.net';
 }
 
+const UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+/**
+ * Стандартные битрейт-тиры Videoseed CDN. Найдено вживую: путь извлечённого
+ * URL содержит номер качества (.../{H}.mp4:hls:manifest.m3u8) и его можно
+ * просто подставлять другими значениями В ТОМ ЖЕ подписанном пути — хэш
+ * авторизации НЕ привязан к конкретному качеству (проверено: разные H дают
+ * реально разный битрейт по размеру сегмента, а несуществующий тир — честный
+ * 404, не молчаливый клэмп на ближайший). Поэтому нужен только один клик
+ * Puppeteer + серия дешёвых GET на текстовый манифест (не сам видеопоток),
+ * без необходимости лезть в плеер за каждым качеством отдельно.
+ */
+const QUALITY_CANDIDATES = [2160, 1440, 1080, 720, 480, 360, 240];
+
+/** Пробует остальные тиры для URL вида .../{H}.mp4:hls:manifest.m3u8. */
+async function probeQualities(url, referer) {
+  const match = url.match(/^(.*\/)(\d{3,4})(\.mp4:hls:manifest\.m3u8)(\?.*)?$/);
+  if (!match) return null;
+  const [, prefix, , suffix, qs = ''] = match;
+
+  const probes = await Promise.all(
+    QUALITY_CANDIDATES.map(async (height) => {
+      const candidateUrl = `${prefix}${height}${suffix}${qs}`;
+      try {
+        const res = await fetch(candidateUrl, {
+          headers: { Referer: referer, 'User-Agent': UA },
+          signal: AbortSignal.timeout(8_000),
+        });
+        return res.ok ? { height, url: candidateUrl } : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  const qualities = probes.filter(Boolean).sort((a, b) => b.height - a.height);
+  return qualities.length > 0 ? qualities : null;
+}
+
 function buildEmbedUrl(kinopoiskId, season, episode) {
   const token = process.env.VIDEOSEED_TOKEN;
   if (!token) return null;
@@ -109,7 +149,18 @@ async function extractVideoseed({ shikimoriId, season, episode, embedUrl }) {
   const resultUrl = await interceptVideoUrl(url, referer);
   if (!resultUrl) return null;
 
-  return { url: resultUrl, headers: { Referer: referer }, isHls: resultUrl.includes('.m3u8') };
+  const isHls = resultUrl.includes('.m3u8');
+  // Список качеств — best-effort: не находим тиры (нестандартный путь CDN,
+  // не .../{H}.mp4:hls:manifest.m3u8) — просто отдаём единственное найденное
+  // качество, как раньше.
+  const qualities = isHls ? await probeQualities(resultUrl, referer) : null;
+
+  return {
+    url: resultUrl,
+    headers: { Referer: referer },
+    isHls,
+    ...(qualities ? { qualities } : {}),
+  };
 }
 
 module.exports = { extractVideoseed };
