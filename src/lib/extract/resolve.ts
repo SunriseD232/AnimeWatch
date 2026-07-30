@@ -23,6 +23,10 @@ interface Args {
    *  для Alloha VPS сам перебирает кандидатов; для source, которым embedUrl
    *  обязателен (sibnet), извлечение без него вернёт null. */
   translationId?: number;
+  /** Пропустить кэш и извлечь заново — для повтора после того, как
+   *  закэшированная ссылка уже протухла у апстрима раньше своего TTL
+   *  (видел на Videoseed: подписанные CDN-ссылки живут короче 15 минут). */
+  forceFresh?: boolean;
 }
 
 /** Резолвит прямую ссылку на видео с кэшированием в Supabase (общий для всех). */
@@ -33,29 +37,32 @@ export async function resolveStream({
   episode,
   source,
   translationId,
+  forceFresh,
 }: Args): Promise<ResolvedStream | null> {
   const supabase = createServiceClient();
   // 0 — слот "без явного выбора озвучки" (старое поведение, VPS сам перебирает).
   const translationSlot = translationId ?? 0;
 
-  const { data: cached } = await supabase
-    .from('resolved_streams')
-    .select('url, headers, is_hls, qualities, expires_at')
-    .eq('content_type', contentType)
-    .eq('shikimori_id', shikimoriId)
-    .eq('season', season)
-    .eq('episode', episode)
-    .eq('source', source)
-    .eq('translation_id', translationSlot)
-    .maybeSingle();
+  if (!forceFresh) {
+    const { data: cached } = await supabase
+      .from('resolved_streams')
+      .select('url, headers, is_hls, qualities, expires_at')
+      .eq('content_type', contentType)
+      .eq('shikimori_id', shikimoriId)
+      .eq('season', season)
+      .eq('episode', episode)
+      .eq('source', source)
+      .eq('translation_id', translationSlot)
+      .maybeSingle();
 
-  if (cached && new Date(cached.expires_at).getTime() > Date.now()) {
-    return {
-      url: cached.url,
-      headers: (cached.headers as Record<string, string>) ?? {},
-      isHls: cached.is_hls,
-      qualities: (cached.qualities as ResolvedStream['qualities']) ?? undefined,
-    };
+    if (cached && new Date(cached.expires_at).getTime() > Date.now()) {
+      return {
+        url: cached.url,
+        headers: (cached.headers as Record<string, string>) ?? {},
+        isHls: cached.is_hls,
+        qualities: (cached.qualities as ResolvedStream['qualities']) ?? undefined,
+      };
+    }
   }
 
   // Конкретная озвучка запрошена — находим её embedUrl среди переводов

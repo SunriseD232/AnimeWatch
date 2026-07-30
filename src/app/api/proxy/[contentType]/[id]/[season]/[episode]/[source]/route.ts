@@ -44,7 +44,7 @@ async function handleGet(
   { params }: { params: RouteParams },
   isHeadProbe: boolean,
 ): Promise<Response> {
-  const contentType = params.contentType === 'cinema' ? 'cinema' : 'anime';
+  const contentType: 'anime' | 'cinema' = params.contentType === 'cinema' ? 'cinema' : 'anime';
   const shikimoriId = Number(params.id);
   const season = Number(params.season) || 1;
   const episode = Number(params.episode);
@@ -62,7 +62,8 @@ async function handleGet(
   const tRaw = request.nextUrl.searchParams.get('t');
   const translationId = tRaw != null && Number.isFinite(Number(tRaw)) ? Number(tRaw) : undefined;
 
-  const resolved = await resolveStream({ contentType, shikimoriId, season, episode, source, translationId });
+  const resolveArgs = { contentType, shikimoriId, season, episode, source, translationId };
+  const resolved = await resolveStream(resolveArgs);
   if (!resolved) {
     return NextResponse.json({ error: 'not_found' }, { status: 404 });
   }
@@ -91,7 +92,30 @@ async function handleGet(
     range = 'bytes=0-0';
   }
 
-  return fetchAndProxy(range, resolved.url, resolved.headers);
+  const proxied = await fetchAndProxy(range, resolved.url, resolved.headers);
+  if (proxied.status !== 404) return proxied;
+
+  // Кэш мог протухнуть раньше своего TTL — у Videoseed подписанные CDN-
+  // ссылки живут заметно меньше 15 минут (проверено вживую: закэшированная
+  // ссылка 404'ит у апстрима, при этом свежее извлечение того же тайтла
+  // проходит нормально). Раз апстрим ответил, а не молчит — пробуем
+  // переизвлечь один раз, прежде чем сдаваться.
+  await proxied.body?.cancel().catch(() => {});
+  const fresh = await resolveStream({ ...resolveArgs, forceFresh: true });
+  if (!fresh) {
+    return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  }
+  if (fresh.qualities && fresh.qualities.length > 1) {
+    const text = synthesizeMasterPlaylist(fresh.qualities, fresh.headers);
+    return new Response(text, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/vnd.apple.mpegurl',
+        'Cache-Control': 'private, no-store',
+      },
+    });
+  }
+  return fetchAndProxy(range, fresh.url, fresh.headers);
 }
 
 export async function GET(request: NextRequest, ctx: { params: RouteParams }) {
