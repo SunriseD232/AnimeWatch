@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import Player from '@/components/Player';
-import { getCinemaById } from '@/lib/videoseed-catalog';
+import { getCinemaById, getVideoseedOwnPlayerTranslations } from '@/lib/videoseed-catalog';
 import { createClient } from '@/lib/supabase/server';
 import { createVideoSource, getKodikOwnPlayerTranslations } from '@/lib/video/kodik';
 import { buildVideoseedEmbedUrl } from '@/lib/video/videoseed';
@@ -82,17 +82,19 @@ export default async function CinemaWatchPage({
   // Kodik (второстепенный плеер + список для «Наш плеер») и Vibix (основной,
   // точный трекинг) — параллельно.
   const source = createVideoSource();
-  const [embed, vibixEmbed, kodikOwnPlayerTranslations] = await Promise.all([
-    source.getEmbedUrl({
-      kinopoiskId,
-      season,
-      episode,
-      translationId: initialTranslationId ?? undefined,
-      startFrom: resumeFrom ?? undefined,
-    }),
-    getVibixEmbed(kinopoiskId),
-    getKodikOwnPlayerTranslations(kinopoiskId, season, episode),
-  ]);
+  const [embed, vibixEmbed, kodikOwnPlayerTranslations, videoseedOwnPlayerTranslations] =
+    await Promise.all([
+      source.getEmbedUrl({
+        kinopoiskId,
+        season,
+        episode,
+        translationId: initialTranslationId ?? undefined,
+        startFrom: resumeFrom ?? undefined,
+      }),
+      getVibixEmbed(kinopoiskId),
+      getKodikOwnPlayerTranslations(kinopoiskId, season, episode),
+      getVideoseedOwnPlayerTranslations(kinopoiskId, season, episode),
+    ]);
 
   const resolvedTranslationId =
     initialTranslationId ?? embed.translations[0]?.id ?? null;
@@ -115,14 +117,18 @@ export default async function CinemaWatchPage({
   const seasonEpisodes =
     seasonInfo?.episodes ?? (item.isSerial ? item.episodesTotal : 1);
 
-  // «Наш плеер» для кино: Videoseed (текущий единственный трек, id=0 — тот
-  // же слот "без явного выбора", см. resolve.ts) первым в списке + все
-  // озвучки Kodik по kinopoisk_id. Videoseed своих альтернативных озвучек
-  // не отдаёт (проверено вживую на паре тайтлов) — этим и ограничены.
+  // «Наш плеер» для кино: все озвучки Videoseed (item=search отдаёт
+  // translation_iframe с готовым embed на каждую, см.
+  // getVideoseedOwnPlayerTranslations) первыми, затем все озвучки Kodik по
+  // kinopoisk_id. Если у Videoseed нет данных по озвучкам для тайтла —
+  // старое поведение: один синтетический трек (id=0 — слот "без явного
+  // выбора", VPS сам решает через embed_auto, см. resolve.ts).
   const ownPlayerTranslations: OwnPlayerTranslation[] = [
-    ...(videoseedUrl
-      ? [{ id: 0, title: 'Videoseed', embedUrl: '', source: 'videoseed' as const }]
-      : []),
+    ...(videoseedOwnPlayerTranslations.length > 0
+      ? videoseedOwnPlayerTranslations
+      : videoseedUrl
+        ? [{ id: 0, title: 'Videoseed', embedUrl: '', source: 'videoseed' as const }]
+        : []),
     ...kodikOwnPlayerTranslations,
   ];
 

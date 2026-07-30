@@ -18,6 +18,7 @@
  */
 
 import { getTmdbRatingByImdbId } from './tmdb';
+import type { OwnPlayerTranslation } from './extract/types';
 
 const VIDEOSEED_API = 'https://api.videoseed.tv/apiv2.php';
 
@@ -25,6 +26,14 @@ interface VsRawSeason {
   name?: string;
   total_videos?: number | string;
   videos?: Record<string, unknown>;
+}
+
+/** Одна альтернативная озвучка тайтла — embed уже содержит default_audio_id. */
+interface VsRawTranslationIframe {
+  translations_id: number | string;
+  name?: string;
+  short_name?: string;
+  iframe?: string;
 }
 
 interface VsRawItem {
@@ -43,6 +52,10 @@ interface VsRawItem {
   time?: string; // длительность «ЧЧ:ММ» (у сериала — суммарная по всем сериям)
   total_videos?: number | string; // всего видео (для сериалов)
   seasons?: Record<string, VsRawSeason>; // сезоны (в детальном ответе)
+  /** Озвучка по умолчанию (только в item=search, только у части фильмов). */
+  translations_id?: number | string;
+  /** Все альтернативные озвучки — только в item=search. */
+  translation_iframe?: Record<string, VsRawTranslationIframe>;
 }
 
 interface VsResponse {
@@ -482,4 +495,58 @@ export async function getCinemaById(
     countries: splitList(base.country),
     idImdb: base.id_imdb ?? null,
   };
+}
+
+/**
+ * Все альтернативные озвучки тайтла из Videoseed (item=search отдаёт
+ * translation_iframe — на каждую озвучку готовый embed с default_audio_id,
+ * найдено при разборе сырого ответа каталога, в отличие от embed-страницы
+ * плеера, где эти данные не видны). embed уже указывает на нужный
+ * внутренний id (для фильма — embed/{id}, для сериала — embed_serial/{id}),
+ * добавляем только video=sСЕЗОНvСЕРИЯ для сериала — подтверждено вживую
+ * (см. коммит), что параметр работает и на embed_serial.
+ *
+ * Пустой список — нет данных по озвучкам (старые/непроиндексированные
+ * тайтлы) или отсутствует токен; вызывающий код в этом случае должен сам
+ * выставить единственный синтетический трек (старое поведение).
+ *
+ * isSerial НЕ передаётся отдельным параметром — сериал определяем по самому
+ * пути embed (embed_serial/{id}/ у сериала, embed/{id}/ у фильма), это же
+ * значение приходит и из resolve.ts, где нет доступа к CinemaFull.isSerial.
+ */
+export async function getVideoseedOwnPlayerTranslations(
+  kinopoiskId: number,
+  season: number,
+  episode: number,
+): Promise<OwnPlayerTranslation[]> {
+  const items = await vsFetch({ item: 'search', kp: String(kinopoiskId) }, 600);
+  const base = items[0];
+  if (!base?.translation_iframe) return [];
+
+  const defaultId = Number(base.translations_id);
+  const seen = new Set<number>();
+  const out: OwnPlayerTranslation[] = [];
+  for (const t of Object.values(base.translation_iframe)) {
+    const id = Number(t.translations_id);
+    if (!Number.isFinite(id) || !t.iframe || seen.has(id)) continue;
+    seen.add(id);
+
+    let embedUrl = t.iframe;
+    if (embedUrl.includes('/embed_serial/') && episode > 0) {
+      const s = season > 0 ? season : 1;
+      embedUrl += `${embedUrl.includes('?') ? '&' : '?'}video=s${s}v${episode}`;
+    }
+
+    out.push({
+      id,
+      title: `${t.short_name || t.name || 'Озвучка'} · Videoseed`,
+      embedUrl,
+      source: 'videoseed',
+    });
+  }
+
+  // Озвучка по умолчанию (та же, что раньше открывалась без явного выбора) —
+  // первой в списке, она же станет выбором по умолчанию в OwnPlayer.
+  out.sort((a, b) => (a.id === defaultId ? -1 : b.id === defaultId ? 1 : 0));
+  return out;
 }

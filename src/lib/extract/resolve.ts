@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/service';
 import { getYummyEpisode } from '@/lib/video/yummy';
 import { getKodikOwnPlayerTranslations } from '@/lib/video/kodik';
+import { getVideoseedOwnPlayerTranslations } from '@/lib/videoseed-catalog';
 import { extractViaVps } from './vpsExtractor';
 import type { ExtractSource, ResolvedStream } from './types';
 
@@ -69,7 +70,7 @@ export async function resolveStream({
   // Конкретная озвучка запрошена — находим её embedUrl среди переводов той
   // же серии (тот же список, что уже показывался пользователю в селекторе
   // плеера — см. WatchPlayer/OwnPlayer). Источник списка разный: аниме —
-  // Yummy, кино — Kodik по kinopoisk_id (у Yummy кино вообще нет).
+  // Yummy, кино — Kodik/Videoseed по kinopoisk_id (у Yummy кино вообще нет).
   let embedUrl: string | undefined;
   if (translationId != null) {
     if (contentType === 'anime') {
@@ -78,6 +79,9 @@ export async function resolveStream({
     } else if (source === 'kodik') {
       const kodik = await getKodikOwnPlayerTranslations(shikimoriId, season, episode);
       embedUrl = kodik.find((t) => t.id === translationId)?.embedUrl;
+    } else if (source === 'videoseed') {
+      const videoseed = await getVideoseedOwnPlayerTranslations(shikimoriId, season, episode);
+      embedUrl = videoseed.find((t) => t.id === translationId)?.embedUrl;
     }
   }
 
