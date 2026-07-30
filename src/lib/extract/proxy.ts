@@ -99,6 +99,31 @@ export function rewriteM3U8(
     .join('\n');
 }
 
+/**
+ * Kodik отдаёт не один master.m3u8 с ABR-вариантами, а отдельную m3u8-ссылку
+ * на каждое качество (см. vps-extractor/src/kodik.js) — синтезируем master
+ * сами, чтобы hls.js увидел обычный многоуровневый HLS-стрим (тот же путь,
+ * что и для Alloha, когда у неё несколько уровней в master.m3u8). Ссылки на
+ * саб-плейлисты подписываем так же, как сегменты в rewriteM3U8 — реальный
+ * upstream-домен наружу не уходит.
+ */
+export function synthesizeMasterPlaylist(
+  qualities: { height: number; url: string }[],
+  headers: Record<string, string>,
+): string {
+  const lines = ['#EXTM3U'];
+  for (const q of qualities) {
+    // Точного битрейта не знаем — грубая оценка по высоте достаточна: нужна
+    // лишь для сортировки в auto-режиме hls.js, наш селектор качества всё
+    // равно ориентируется на height напрямую.
+    const bandwidth = q.height * 2000;
+    const width = Math.round((q.height * 16) / 9);
+    lines.push(`#EXT-X-STREAM-INF:BANDWIDTH=${bandwidth},RESOLUTION=${width}x${q.height}`);
+    lines.push(signRawUrl(q.url, headers));
+  }
+  return lines.join('\n');
+}
+
 function isM3U8(url: string, contentType: string | null): boolean {
   return (
     url.includes('.m3u8') ||
@@ -114,7 +139,11 @@ function isM3U8(url: string, contentType: string | null): boolean {
  * с обычного IP (включая наш VPS). Для них байты идут через /relay VPS
  * (см. vps-extractor/src/server.js) — Puppeteer там не нужен, только IP.
  */
-const RELAY_HOSTS = [/(^|\.)sibnet\.ru$/i];
+const RELAY_HOSTS = [
+  /(^|\.)sibnet\.ru$/i,
+  /(^|\.)okcdn\.ru$/i, // CVH (через cdnvideohub.com) — тот же srcIp-замок у Odnoklassniki.
+  /(^|\.)solodcdn\.com$/i, // Kodik — превентивно, не проверяли вживую с Vercel.
+];
 
 function needsVpsRelay(url: string): boolean {
   try {

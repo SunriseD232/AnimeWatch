@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { resolveStream } from '@/lib/extract/resolve';
-import { fetchAndProxy } from '@/lib/extract/proxy';
+import { fetchAndProxy, synthesizeMasterPlaylist } from '@/lib/extract/proxy';
 import type { ExtractSource } from '@/lib/extract/types';
 
 /**
@@ -29,7 +29,7 @@ export const dynamic = 'force-dynamic';
 // vpsExtractor.ts, чуть меньше этого значения).
 export const maxDuration = 60;
 
-const ALLOWED_SOURCES = new Set<ExtractSource>(['alloha', 'videoseed', 'sibnet']);
+const ALLOWED_SOURCES = new Set<ExtractSource>(['alloha', 'videoseed', 'sibnet', 'kodik', 'cvh']);
 
 interface RouteParams {
   contentType: string;
@@ -70,6 +70,20 @@ export async function GET(request: NextRequest, { params }: { params: RouteParam
   }
   if (!resolved) {
     return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  }
+
+  // Kodik отдаёт отдельный m3u8 на каждое качество, а не один master.m3u8 с
+  // вариантами (см. ResolvedStream.qualities) — синтезируем master сами,
+  // чтобы hls.js/наш селектор качества видели обычный ABR-стрим.
+  if (resolved.qualities && resolved.qualities.length > 1) {
+    const text = synthesizeMasterPlaylist(resolved.qualities, resolved.headers);
+    return new Response(text, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/vnd.apple.mpegurl',
+        'Cache-Control': 'private, no-store',
+      },
+    });
   }
 
   return fetchAndProxy(request.headers.get('range'), resolved.url, resolved.headers);

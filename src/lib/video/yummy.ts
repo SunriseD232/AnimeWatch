@@ -63,13 +63,21 @@ export interface YummyTranslation {
   source: ExtractSource | null;
 }
 
-/** Балансер Yummy (it.data?.player) → наш ExtractSource, если для него есть
- *  извлечение на VPS. Порядок проверки не важен — подстроки не пересекаются. */
+/**
+ * Балансер Yummy (it.data?.player) → наш ExtractSource, если для него есть
+ * извлечение на VPS. Порядок проверки не важен — подстроки не пересекаются.
+ *
+ * Aksor НАРОЧНО не сюда — извлекается не менее легко, чем Sibnet/CVH, но
+ * отдаёт только DASH (.mpd), а OwnPlayer/hls.js умеет только HLS. Добавить
+ * можно, когда появится поддержка dash.js (или конвертация на VPS).
+ */
 function detectSource(player: string | undefined, iframeUrl: string): ExtractSource | null {
   const p = (player || '').toLowerCase();
   const u = iframeUrl.toLowerCase();
   if (p.includes('alloha') || u.includes('alloha')) return 'alloha';
   if (p.includes('sibnet') || u.includes('sibnet')) return 'sibnet';
+  if (p.includes('kodik') || u.includes('kodik')) return 'kodik';
+  if (p.includes('cvh') || u.includes('cvh')) return 'cvh';
   return null;
 }
 

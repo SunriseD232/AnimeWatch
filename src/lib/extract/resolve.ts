@@ -40,7 +40,7 @@ export async function resolveStream({
 
   const { data: cached } = await supabase
     .from('resolved_streams')
-    .select('url, headers, is_hls, expires_at')
+    .select('url, headers, is_hls, qualities, expires_at')
     .eq('content_type', contentType)
     .eq('shikimori_id', shikimoriId)
     .eq('season', season)
@@ -54,6 +54,7 @@ export async function resolveStream({
       url: cached.url,
       headers: (cached.headers as Record<string, string>) ?? {},
       isHls: cached.is_hls,
+      qualities: (cached.qualities as ResolvedStream['qualities']) ?? undefined,
     };
   }
 
@@ -80,6 +81,7 @@ export async function resolveStream({
       url: resolved.url,
       headers: resolved.headers,
       is_hls: resolved.isHls,
+      qualities: resolved.qualities ?? null,
       expires_at: new Date(Date.now() + CACHE_TTL_MS).toISOString(),
     },
     { onConflict: 'content_type,shikimori_id,season,episode,source,translation_id' },

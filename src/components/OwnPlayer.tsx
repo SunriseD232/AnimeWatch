@@ -56,6 +56,8 @@ const SOURCE_LABELS: Record<ExtractSource, string> = {
   alloha: 'Alloha',
   videoseed: 'Videoseed',
   sibnet: 'Sibnet',
+  kodik: 'Kodik',
+  cvh: 'CVH',
 };
 
 type LoadState = 'probing' | 'ready' | 'unavailable' | 'failed';

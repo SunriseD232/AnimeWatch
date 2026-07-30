@@ -5,6 +5,8 @@ const express = require('express');
 const { extractAlloha } = require('./alloha');
 const { extractVideoseed } = require('./videoseed');
 const { extractSibnet } = require('./sibnet');
+const { extractKodik } = require('./kodik');
+const { extractCVH } = require('./cvh');
 
 const PORT = Number(process.env.PORT) || 3300;
 const AUTH_TOKEN = process.env.EXTRACTOR_AUTH_TOKEN;
@@ -48,8 +50,13 @@ app.get('/health', (req, res) => {
 
 // Хосты, на которые /relay разрешено ходить — эндпоинт защищён Bearer-
 // токеном, но не стоит открывать его как SSRF-прокси на произвольный URL
-// при компрометации токена.
-const RELAY_ALLOWED_HOSTS = [/(^|\.)sibnet\.ru$/i];
+// при компрометации токена. solodcdn.com (Kodik) — превентивно, ещё не
+// проверяли вживую блокирует ли он Vercel так же, как Sibnet/CVH.
+const RELAY_ALLOWED_HOSTS = [
+  /(^|\.)sibnet\.ru$/i,
+  /(^|\.)okcdn\.ru$/i,
+  /(^|\.)solodcdn\.com$/i,
+];
 
 function isRelayHostAllowed(hostname) {
   return RELAY_ALLOWED_HOSTS.some((re) => re.test(hostname));
@@ -110,7 +117,12 @@ app.post('/extract', requireAuth, async (req, res) => {
   const ep = Number(episode);
   const se = Number(season) || 1;
 
-  if (!['alloha', 'videoseed', 'sibnet'].includes(source) || !Number.isFinite(id) || !Number.isFinite(ep)) {
+  const NO_BROWSER_SOURCES = ['sibnet', 'kodik', 'cvh'];
+  if (
+    !['alloha', 'videoseed', ...NO_BROWSER_SOURCES].includes(source) ||
+    !Number.isFinite(id) ||
+    !Number.isFinite(ep)
+  ) {
     return res.status(400).json({ error: 'bad params' });
   }
   // embedUrl — конкретная озвучка, выбранная пользователем на основном сайте
@@ -133,16 +145,23 @@ app.post('/extract', requireAuth, async (req, res) => {
   console.error(`[server] Извлечение: source=${source} shikimoriId=${id} season=${se} episode=${ep}`);
 
   try {
-    // Sibnet — обычный fetch(), не Puppeteer: не занимает очередь Chromium
-    // (см. serialized() выше) и не блокируется/не блокирует Alloha-извлечения.
-    const result =
-      source === 'sibnet'
-        ? await extractSibnet({ embedUrl: safeEmbedUrl })
-        : await serialized(() =>
-            source === 'alloha'
-              ? extractAlloha({ shikimoriId: id, episode: ep, embedUrl: safeEmbedUrl })
-              : extractVideoseed({ shikimoriId: id, season: se, episode: ep }),
-          );
+    // Sibnet/Kodik/CVH — обычный fetch(), не Puppeteer: не занимают очередь
+    // Chromium (см. serialized() выше) и не блокируются/не блокируют
+    // Alloha-извлечения.
+    let result;
+    if (source === 'sibnet') {
+      result = await extractSibnet({ embedUrl: safeEmbedUrl });
+    } else if (source === 'kodik') {
+      result = await extractKodik({ embedUrl: safeEmbedUrl });
+    } else if (source === 'cvh') {
+      result = await extractCVH({ embedUrl: safeEmbedUrl });
+    } else {
+      result = await serialized(() =>
+        source === 'alloha'
+          ? extractAlloha({ shikimoriId: id, episode: ep, embedUrl: safeEmbedUrl })
+          : extractVideoseed({ shikimoriId: id, season: se, episode: ep }),
+      );
+    }
     if (!result) {
       return res.status(404).json({ error: 'not_found' });
     }
