@@ -12,6 +12,7 @@ import {
 } from '@/lib/video/kodik-events';
 import type { Translation } from '@/lib/video/types';
 import type { VibixEmbed } from '@/lib/video/vibix';
+import type { OwnPlayerTranslation } from '@/lib/extract/types';
 import type { SeasonInfo } from '@/lib/videoseed-catalog';
 import type { ContentType, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
@@ -44,6 +45,12 @@ interface Props {
   durationSeconds: number | null;
   translations: Translation[];
   initialTranslationId: number | null;
+  /** Озвучки для селектора «Наш плеер» (Videoseed + Kodik по kinopoisk_id) —
+   *  отдельно от `translations` выше (те — только для нативного Kodik-плеера,
+   *  без прямых embed-ссылок на КАЖДУЮ озвучку). См. §12 ARCHITECTURE.md. */
+  ownPlayerTranslations: OwnPlayerTranslation[];
+  /** Сохранённая с прошлого раза озвучка «Наш плеер» (по названию). */
+  savedTranslationTitle: string | null;
   /** Стартовая позиция для восстановления (сек) или null. */
   resumeFrom: number | null;
   /** Сезон, на котором пользователь остановился в другом месте тайтла. */
@@ -121,6 +128,8 @@ export default function Player({
   durationSeconds,
   translations,
   initialTranslationId,
+  ownPlayerTranslations,
+  savedTranslationTitle,
   resumeFrom,
   otherSeason,
   otherEpisode,
@@ -146,6 +155,7 @@ export default function Player({
   // Vibix/Videoseed доступны при наличии токенов и тайтла в их каталогах.
   const hasVibix = vibixEmbed !== null;
   const hasVideoseed = videoseedUrl !== null;
+  const hasOwnPlayer = ownPlayerTranslations.length > 0;
   const [player, setPlayer] = useState<PlayerKind>(
     hasVibix ? 'vibix' : hasVideoseed ? 'videoseed' : 'kodik',
   );
@@ -213,11 +223,11 @@ export default function Player({
       pref === 'kodik' ||
       (pref === 'videoseed' && hasVideoseed) ||
       (pref === 'vibix' && hasVibix) ||
-      (pref === 'own' && hasVideoseed)
+      (pref === 'own' && hasOwnPlayer)
     ) {
       setPlayer(pref);
     }
-  }, [hasVideoseed, hasVibix]);
+  }, [hasVideoseed, hasVibix, hasOwnPlayer]);
 
   // Переключение плеера с сохранением выбора.
   const switchPlayer = useCallback((next: PlayerKind) => {
@@ -687,7 +697,7 @@ export default function Player({
       )}
 
       {/* Переключатель плеера — когда есть альтернативы Kodik */}
-      {(hasVibix || hasVideoseed) && (
+      {(hasVibix || hasVideoseed || hasOwnPlayer) && (
         <div className="flex items-center gap-2 text-sm">
           <span className="text-gray-400">Плеер:</span>
           <div className="inline-flex rounded-full bg-bg-card p-0.5 ring-1 ring-white/5">
@@ -696,7 +706,7 @@ export default function Player({
                 hasVibix ? (['vibix', 'Vibix'] as const) : null,
                 hasVideoseed ? (['videoseed', 'Videoseed'] as const) : null,
                 ['kodik', 'Kodik'] as const,
-                hasVideoseed ? (['own', 'Наш плеер'] as const) : null,
+                hasOwnPlayer ? (['own', 'Наш плеер'] as const) : null,
               ].filter(Boolean) as ReadonlyArray<readonly [PlayerKind, string]>
             ).map(([kind, label]) => (
               <button
@@ -718,7 +728,7 @@ export default function Player({
       )}
 
       {/* Плеер 16:9 */}
-      {player === 'own' && hasVideoseed ? (
+      {player === 'own' && hasOwnPlayer ? (
         // Свой плеер рисует контейнер сам.
         <OwnPlayer
           contentType={contentType}
@@ -730,8 +740,8 @@ export default function Player({
           posterUrl={posterUrl}
           isAuthed={isAuthed}
           resumeFrom={resumeFrom}
-          translations={[]}
-          initialTranslationTitle={null}
+          translations={ownPlayerTranslations}
+          initialTranslationTitle={savedTranslationTitle}
           nextHref={next ? linkFor(next) : null}
           nextLabel={
             next && next.season !== activeSeason

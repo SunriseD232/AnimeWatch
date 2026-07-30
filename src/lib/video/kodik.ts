@@ -4,6 +4,7 @@ import type {
   Translation,
   VideoSource,
 } from './types';
+import type { OwnPlayerTranslation } from '@/lib/extract/types';
 
 /**
  * Источник видео на базе Kodik.
@@ -174,4 +175,56 @@ export class KodikVideoSource implements VideoSource {
 /** Фабрика активного источника видео (сервер). */
 export function createVideoSource(): VideoSource {
   return new KodikVideoSource(process.env.KODIK_TOKEN);
+}
+
+/**
+ * Все озвучки Kodik для тайтла кино по kinopoisk_id, в форме, понятной
+ * OwnPlayer/resolveStream — аналог getYummyEpisode() для аниме, только
+ * источник данных другой (Kodik ищет по kinopoisk_id напрямую, Yummy кино
+ * вообще не индексирует). embedUrl — тот же реальный embed каждой отдельной
+ * озвучки (не только выбранной), в отличие от KodikVideoSource.getEmbedUrl().
+ */
+export async function getKodikOwnPlayerTranslations(
+  kinopoiskId: number,
+  season: number,
+  episode: number,
+): Promise<OwnPlayerTranslation[]> {
+  const token = process.env.KODIK_TOKEN;
+  if (!token) return [];
+
+  const search = new URLSearchParams({
+    token,
+    with_episodes: 'true',
+    kinopoisk_id: String(kinopoiskId),
+  });
+
+  let data: KodikSearchResponse;
+  try {
+    const res = await fetch(`${KODIK_API}?${search.toString()}`, {
+      next: { revalidate: 600 },
+    });
+    if (!res.ok) return [];
+    data = (await res.json()) as KodikSearchResponse;
+  } catch {
+    return [];
+  }
+  if (!data.results) return [];
+
+  const seen = new Set<number>();
+  const translations: OwnPlayerTranslation[] = [];
+  for (const item of data.results) {
+    if (!item.translation || !item.link || seen.has(item.translation.id)) continue;
+    seen.add(item.translation.id);
+    const embedUrl = withParams(item.link, {
+      season: season && season > 0 ? season : undefined,
+      episode,
+    });
+    translations.push({
+      id: item.translation.id,
+      title: `${item.translation.title} · Kodik`,
+      embedUrl: embedUrl.startsWith('//') ? `https:${embedUrl}` : embedUrl,
+      source: 'kodik',
+    });
+  }
+  return translations;
 }

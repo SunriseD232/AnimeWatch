@@ -2,9 +2,10 @@ import { notFound } from 'next/navigation';
 import Player from '@/components/Player';
 import { getCinemaById } from '@/lib/videoseed-catalog';
 import { createClient } from '@/lib/supabase/server';
-import { createVideoSource } from '@/lib/video/kodik';
+import { createVideoSource, getKodikOwnPlayerTranslations } from '@/lib/video/kodik';
 import { buildVideoseedEmbedUrl } from '@/lib/video/videoseed';
 import { getVibixEmbed } from '@/lib/video/vibix';
+import type { OwnPlayerTranslation } from '@/lib/extract/types';
 import type { WatchProgress } from '@/lib/types';
 
 export const metadata = { title: 'Просмотр — MediaWatch' };
@@ -72,10 +73,16 @@ export default async function CinemaWatchPage({
   }
 
   const initialTranslationId = progress?.translation_id ?? null;
+  // Для OwnPlayer/Kodik: video_id Yummy у аниме не стабилен между сериями,
+  // поэтому там сопоставляют по названию (см. миграцию 0008) — у Kodik id
+  // озвучки стабилен и без этого, но переиспользуем тот же механизм ради
+  // единообразия с OwnPlayer.tsx (там персистентность всегда по title).
+  const savedTranslationTitle = progress?.translation_title ?? null;
 
-  // Kodik (второстепенный) и Vibix (основной, точный трекинг) — параллельно.
+  // Kodik (второстепенный плеер + список для «Наш плеер») и Vibix (основной,
+  // точный трекинг) — параллельно.
   const source = createVideoSource();
-  const [embed, vibixEmbed] = await Promise.all([
+  const [embed, vibixEmbed, kodikOwnPlayerTranslations] = await Promise.all([
     source.getEmbedUrl({
       kinopoiskId,
       season,
@@ -84,6 +91,7 @@ export default async function CinemaWatchPage({
       startFrom: resumeFrom ?? undefined,
     }),
     getVibixEmbed(kinopoiskId),
+    getKodikOwnPlayerTranslations(kinopoiskId, season, episode),
   ]);
 
   const resolvedTranslationId =
@@ -107,6 +115,17 @@ export default async function CinemaWatchPage({
   const seasonEpisodes =
     seasonInfo?.episodes ?? (item.isSerial ? item.episodesTotal : 1);
 
+  // «Наш плеер» для кино: Videoseed (текущий единственный трек, id=0 — тот
+  // же слот "без явного выбора", см. resolve.ts) первым в списке + все
+  // озвучки Kodik по kinopoisk_id. Videoseed своих альтернативных озвучек
+  // не отдаёт (проверено вживую на паре тайтлов) — этим и ограничены.
+  const ownPlayerTranslations: OwnPlayerTranslation[] = [
+    ...(videoseedUrl
+      ? [{ id: 0, title: 'Videoseed', embedUrl: '', source: 'videoseed' as const }]
+      : []),
+    ...kodikOwnPlayerTranslations,
+  ];
+
   return (
     <Player
       shikimoriId={kinopoiskId}
@@ -124,6 +143,8 @@ export default async function CinemaWatchPage({
       durationSeconds={item.durationSeconds}
       translations={embed.translations}
       initialTranslationId={resolvedTranslationId}
+      ownPlayerTranslations={ownPlayerTranslations}
+      savedTranslationTitle={savedTranslationTitle}
       resumeFrom={resumeFrom}
       otherSeason={otherSeason}
       otherEpisode={otherEpisode}

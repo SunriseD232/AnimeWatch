@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/service';
 import { getYummyEpisode } from '@/lib/video/yummy';
+import { getKodikOwnPlayerTranslations } from '@/lib/video/kodik';
 import { extractViaVps } from './vpsExtractor';
 import type { ExtractSource, ResolvedStream } from './types';
 
@@ -65,13 +66,19 @@ export async function resolveStream({
     }
   }
 
-  // Конкретная озвучка запрошена — находим её embedUrl среди переводов
-  // Yummy этой же серии (тот же список, что уже показывался пользователю
-  // в селекторе плеера — см. WatchPlayer/OwnPlayer).
+  // Конкретная озвучка запрошена — находим её embedUrl среди переводов той
+  // же серии (тот же список, что уже показывался пользователю в селекторе
+  // плеера — см. WatchPlayer/OwnPlayer). Источник списка разный: аниме —
+  // Yummy, кино — Kodik по kinopoisk_id (у Yummy кино вообще нет).
   let embedUrl: string | undefined;
-  if (translationId != null && contentType === 'anime') {
-    const yummy = await getYummyEpisode(shikimoriId, episode);
-    embedUrl = yummy?.translations.find((t) => t.id === translationId)?.embedUrl;
+  if (translationId != null) {
+    if (contentType === 'anime') {
+      const yummy = await getYummyEpisode(shikimoriId, episode);
+      embedUrl = yummy?.translations.find((t) => t.id === translationId)?.embedUrl;
+    } else if (source === 'kodik') {
+      const kodik = await getKodikOwnPlayerTranslations(shikimoriId, season, episode);
+      embedUrl = kodik.find((t) => t.id === translationId)?.embedUrl;
+    }
   }
 
   const resolved = await extractViaVps(source, { shikimoriId, season, episode, embedUrl });

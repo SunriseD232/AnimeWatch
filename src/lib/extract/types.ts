@@ -23,3 +23,17 @@ export interface ExtractParams {
    *  задано, VPS сам перебирает кандидатов и берёт первый рабочий. */
   embedUrl?: string;
 }
+
+/**
+ * Одна озвучка в селекторе OwnPlayer — источник переводов разный для аниме
+ * (Yummy, см. lib/video/yummy.ts) и кино (Kodik по kinopoisk_id, см.
+ * lib/video/kodik.ts getKodikOwnPlayerTranslations), но форма общая.
+ */
+export interface OwnPlayerTranslation {
+  id: number;
+  title: string;
+  embedUrl: string;
+  /** Источник, через который /api/proxy умеет извлечь и проксировать этот
+   *  перевод. null — только сторонний iframe-плеер, извлечения ещё нет. */
+  source: ExtractSource | null;
+}

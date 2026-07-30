@@ -12,7 +12,7 @@
  * Модуль исполняется ТОЛЬКО на сервере.
  */
 
-import type { ExtractSource } from '@/lib/extract/types';
+import type { ExtractSource, OwnPlayerTranslation } from '@/lib/extract/types';
 
 const BASE = 'https://api.yani.tv';
 
@@ -53,15 +53,9 @@ interface YummyVideosResponse {
   response?: YummyVideoItem[];
 }
 
-export interface YummyTranslation {
-  id: number;
-  title: string;
-  embedUrl: string;
-  /** Источник, через который /api/proxy умеет извлечь и проксировать этот
-   *  перевод (см. vps-extractor/). null — только iframe (YummyPlayer), у нас
-   *  для этого балансера пока нет извлечения. */
-  source: ExtractSource | null;
-}
+/** Alias — исторически "YummyTranslation", но форма теперь общая для всех
+ *  источников переводов OwnPlayer (кино берёт свои из lib/video/kodik.ts). */
+export type YummyTranslation = OwnPlayerTranslation;
 
 /**
  * Балансер Yummy (it.data?.player) → наш ExtractSource, если для него есть
