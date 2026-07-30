@@ -15,14 +15,26 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
+async function handleGet(request: NextRequest, isHeadProbe: boolean): Promise<Response> {
+  const { searchParams } = new URL(request.url);
+  const resolved = verifyRawToken(searchParams.get('u'), searchParams.get('s'));
+  if (!resolved) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
+
+  let range = request.headers.get('range');
+  // Тот же приём, что в /api/proxy/.../[source]/route.ts — HEAD без Range
+  // иначе тянет апстрим целиком через relay только чтобы отбросить тело.
+  if (isHeadProbe && !range && !resolved.url.includes('.m3u8')) {
+    range = 'bytes=0-0';
+  }
+
+  return fetchAndProxy(range, resolved.url, resolved.headers);
+}
+
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const resolved = verifyRawToken(searchParams.get('u'), searchParams.get('s'));
-    if (!resolved) {
-      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-    }
-    return await fetchAndProxy(request.headers.get('range'), resolved.url, resolved.headers);
+    return await handleGet(request, false);
   } catch (err) {
     // Голый платформенный 500 нечем диагностировать — см. тот же приём в
     // /api/proxy/.../[source]/route.ts.
@@ -33,7 +45,13 @@ export async function GET(request: NextRequest) {
 }
 
 export async function HEAD(request: NextRequest) {
-  const res = await GET(request);
-  await res.body?.cancel().catch(() => {});
-  return new Response(null, { status: res.status, headers: res.headers });
+  try {
+    const res = await handleGet(request, true);
+    await res.body?.cancel().catch(() => {});
+    return new Response(null, { status: res.status, headers: res.headers });
+  } catch (err) {
+    console.error('[proxy/raw] HEAD упал:', err);
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: 'internal_error', message }, { status: 502 });
+  }
 }

@@ -42,6 +42,7 @@ interface RouteParams {
 async function handleGet(
   request: NextRequest,
   { params }: { params: RouteParams },
+  isHeadProbe: boolean,
 ): Promise<Response> {
   const contentType = params.contentType === 'cinema' ? 'cinema' : 'anime';
   const shikimoriId = Number(params.id);
@@ -80,12 +81,22 @@ async function handleGet(
     });
   }
 
-  return fetchAndProxy(request.headers.get('range'), resolved.url, resolved.headers);
+  let range = request.headers.get('range');
+  // HEAD (см. ниже) тянет и сразу отбрасывает тело — без явного Range это
+  // означало полную загрузку апстрима целиком через relay (проверено вживую:
+  // 300-мегабайтный Sibnet-файл — 28с и падение в голый платформенный 500).
+  // Для m3u8 не трогаем: он и так маленький текст, а не все апстримы
+  // адекватно отвечают на Range для него.
+  if (isHeadProbe && !range && !resolved.isHls) {
+    range = 'bytes=0-0';
+  }
+
+  return fetchAndProxy(range, resolved.url, resolved.headers);
 }
 
 export async function GET(request: NextRequest, ctx: { params: RouteParams }) {
   try {
-    return await handleGet(request, ctx);
+    return await handleGet(request, ctx, false);
   } catch (err) {
     // Ловим ВСЁ (не только resolveStream) — иначе браузер получает голый
     // платформенный 500 без тела, который вообще нечем диагностировать.
@@ -96,7 +107,13 @@ export async function GET(request: NextRequest, ctx: { params: RouteParams }) {
 }
 
 export async function HEAD(request: NextRequest, ctx: { params: RouteParams }) {
-  const res = await GET(request, ctx);
-  await res.body?.cancel().catch(() => {});
-  return new Response(null, { status: res.status, headers: res.headers });
+  try {
+    const res = await handleGet(request, ctx, true);
+    await res.body?.cancel().catch(() => {});
+    return new Response(null, { status: res.status, headers: res.headers });
+  } catch (err) {
+    console.error('[proxy] HEAD упал:', err);
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: 'internal_error', message }, { status: 502 });
+  }
 }

@@ -107,8 +107,25 @@ app.get('/relay', requireAuth, async (req, res) => {
     if (v) res.setHeader(key, v);
   }
   if (!upstream.body) return res.end();
-  const { Readable } = require('stream');
-  Readable.fromWeb(upstream.body).pipe(res);
+
+  // Readable.fromWeb(upstream.body).pipe(res) обрывал поток на фиксированной
+  // длине задолго до конца (проверено вживую на манифесте CVH: всегда ровно
+  // 5428 байт из ~40КБ) — известная неустойчивость этой связки в узле.
+  // Ручной цикл чтения через reader работает надёжно.
+  const reader = upstream.body.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!res.write(Buffer.from(value))) {
+        await new Promise((resolve) => res.once('drain', resolve));
+      }
+    }
+  } catch (err) {
+    console.error('[relay] Обрыв при чтении апстрима:', err);
+  } finally {
+    res.end();
+  }
 });
 
 app.post('/extract', requireAuth, async (req, res) => {

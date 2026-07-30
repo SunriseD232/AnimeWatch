@@ -9,9 +9,14 @@
  * Пайплайн (весь протокол реверс-инжинирен из их же плеерного бандла):
  * 1. GET embed-страницы (kodikplayer.com/season|serial/.../{hash}/{qual}) —
  *    в инлайн-скрипте лежат `urlParams` (подписанные d/pd/ref + их sign),
- *    `type` ("seria"/"video"/...) и `videoId`.
- * 2. POST на /ftor с этими параметрами + hash (из пути embed-URL) —
- *    отдаёт JSON с `links` по качествам, каждая ссылка обфусцирована.
+ *    `type` ("seria"/"video"/...) и `videoId`, а также `vInfo.hash` — ЕГО
+ *    и нужно слать в /ftor, НЕ hash из пути embed-URL! Для первой серии
+ *    сезона они случайно совпадают (так и нашли рабочий кейс изначально),
+ *    но для остальных серий расходятся — /ftor молча отдаёт 500
+ *    "Неправильный хэш", если передать hash из URL вместо vInfo.hash
+ *    (проверено вживую: серия 12 "Вайолет Эвергарден" ловилась именно так).
+ * 2. POST на /ftor с этими параметрами + vInfo.hash — отдаёт JSON с `links`
+ *    по качествам, каждая ссылка обфусцирована.
  * 3. Расшифровка ссылки: ROT18 по буквам (см. rot18Decode), затем base64.
  *    Тоже найдено в их бандле (не публичная документация, там раньше был
  *    другой алгоритм — видимо, тоже сменили вместе с /gvi→/ftor).
@@ -34,19 +39,9 @@ function decodeKodikSrc(src) {
   return Buffer.from(rot18, 'base64').toString('utf8');
 }
 
-function extractHash(embedUrl) {
-  const match = embedUrl.match(/\/([0-9a-f]{32})\//i);
-  return match ? match[1] : null;
-}
-
 async function extractKodik({ embedUrl }) {
   if (!embedUrl) {
     console.error('[kodik] embedUrl не задан');
-    return null;
-  }
-  const hash = extractHash(embedUrl);
-  if (!hash) {
-    console.error('[kodik] Не удалось извлечь hash из embedUrl:', embedUrl);
     return null;
   }
 
@@ -69,10 +64,14 @@ async function extractKodik({ embedUrl }) {
   const urlParamsMatch = html.match(/var urlParams = '([^']+)'/);
   const typeMatch = html.match(/var type = "([^"]+)"/);
   const videoIdMatch = html.match(/var videoId = "([^"]+)"/);
-  if (!urlParamsMatch || !typeMatch || !videoIdMatch) {
-    console.error('[kodik] Не нашли urlParams/type/videoId в разметке embed-страницы');
+  // vInfo.hash — ДИНАМИЧЕСКИЙ токен этой конкретной загрузки страницы, не
+  // путать со статичным hash в пути embed-URL (см. комментарий модуля).
+  const hashMatch = html.match(/vInfo\.hash = '([^']+)'/);
+  if (!urlParamsMatch || !typeMatch || !videoIdMatch || !hashMatch) {
+    console.error('[kodik] Не нашли urlParams/type/videoId/vInfo.hash в разметке embed-страницы');
     return null;
   }
+  const hash = hashMatch[1];
 
   let params;
   try {
