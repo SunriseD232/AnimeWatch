@@ -189,13 +189,28 @@ export default function OwnPlayer({
   }, [episode]);
 
   // --- Громкость: восстановление/сохранение ---------------------------------
+  // Читаем сохранённое значение сразу (до монтирования <video> — он рисуется
+  // только в ветке loadState==='ready', см. ниже), применяем к самому
+  // элементу отдельным эффектом ниже, когда он реально появится в DOM.
   useEffect(() => {
     const stored = Number(window.localStorage.getItem(VOLUME_KEY));
     if (Number.isFinite(stored) && stored >= 0 && stored <= 1) {
       setVolume(stored);
-      if (videoRef.current) videoRef.current.volume = stored;
+      setMuted(stored === 0);
     }
   }, []);
+
+  // <video> монтируется только при loadState==='ready' — до этого момента
+  // videoRef.current пуст, и присвоение volume/muted в эффекте восстановления
+  // выше молча не срабатывает (сам элемент по умолчанию volume=1). Синхронно
+  // применяем текущие volume/muted, как только элемент реально появляется.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.volume = volume;
+    v.muted = muted;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadState]);
 
   const applyVolume = useCallback((next: number) => {
     const clamped = Math.min(1, Math.max(0, next));
@@ -354,13 +369,22 @@ export default function OwnPlayer({
     const video = videoRef.current;
     if (!video) return;
 
-    const onLoadedMetadata = () => {
-      if (Number.isFinite(video.duration)) setDuration(video.duration);
+    // Идемпотентно — можно дёргать из нескольких событий подряд (см. ниже),
+    // не только из loadedmetadata: если тот сработал раньше, чем реально
+    // применился seek (например, до готовности буфера у HLS), повтор на
+    // canplay/playing подхватит пропущенный сброс, а не оставит с позиции 0.
+    const applyResumeSeek = () => {
       const target = seekTargetRef.current;
-      if (target && target > 1 && (!video.duration || target < video.duration)) {
+      if (target == null || target <= 1) return;
+      if (Number.isFinite(video.duration) && target >= video.duration) return;
+      if (Math.abs(video.currentTime - target) > 1) {
         video.currentTime = target;
       }
       seekTargetRef.current = null;
+    };
+    const onLoadedMetadata = () => {
+      if (Number.isFinite(video.duration)) setDuration(video.duration);
+      applyResumeSeek();
     };
     const onPlay = () => {
       playingRef.current = true;
@@ -407,7 +431,10 @@ export default function OwnPlayer({
       }
     };
     const onWaiting = () => setBuffering(true);
-    const onCanPlay = () => setBuffering(false);
+    const onCanPlay = () => {
+      setBuffering(false);
+      applyResumeSeek();
+    };
     const onError = () => setLoadState('failed');
 
     video.addEventListener('loadedmetadata', onLoadedMetadata);
