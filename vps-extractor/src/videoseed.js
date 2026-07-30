@@ -97,15 +97,19 @@ async function interceptVideoUrl(rawEmbedUrl, referer) {
   }
 }
 
-async function extractVideoseed({ shikimoriId, season, episode }) {
-  const embedUrl = buildEmbedUrl(shikimoriId, season, episode);
-  if (!embedUrl) return null;
-
-  const referer = `https://${videoseedHost()}/`;
-  const url = await interceptVideoUrl(embedUrl, referer);
+async function extractVideoseed({ shikimoriId, season, episode, embedUrl }) {
+  // embedUrl — конкретная озвучка (embed/embed_serial с default_audio_id),
+  // выбранная на основном сайте, см. getVideoseedOwnPlayerTranslations().
+  // Без него — старое поведение: embed_auto по kinopoisk_id (сайт сам решает
+  // озвучку по умолчанию).
+  const url = embedUrl || buildEmbedUrl(shikimoriId, season, episode);
   if (!url) return null;
 
-  return { url, headers: { Referer: referer }, isHls: url.includes('.m3u8') };
+  const referer = `https://${videoseedHost()}/`;
+  const resultUrl = await interceptVideoUrl(url, referer);
+  if (!resultUrl) return null;
+
+  return { url: resultUrl, headers: { Referer: referer }, isHls: resultUrl.includes('.m3u8') };
 }
 
 module.exports = { extractVideoseed };

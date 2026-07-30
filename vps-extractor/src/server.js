@@ -179,7 +179,7 @@ app.post('/extract', requireAuth, async (req, res) => {
       result = await serialized(() =>
         source === 'alloha'
           ? extractAlloha({ shikimoriId: id, episode: ep, embedUrl: safeEmbedUrl })
-          : extractVideoseed({ shikimoriId: id, season: se, episode: ep }),
+          : extractVideoseed({ shikimoriId: id, season: se, episode: ep, embedUrl: safeEmbedUrl }),
       );
     }
     if (!result) {
