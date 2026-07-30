@@ -143,6 +143,7 @@ const RELAY_HOSTS = [
   /(^|\.)sibnet\.ru$/i,
   /(^|\.)okcdn\.ru$/i, // CVH (через cdnvideohub.com) — тот же srcIp-замок у Odnoklassniki.
   /(^|\.)solodcdn\.com$/i, // Kodik — превентивно, не проверяли вживую с Vercel.
+  /(^|\.)videoseedcdn\.com$/i, // Проверено вживую: тот же URL, что 404 с Vercel, отдаёт 200 с обычного IP.
 ];
 
 function needsVpsRelay(url: string): boolean {

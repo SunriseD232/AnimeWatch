@@ -56,6 +56,7 @@ const RELAY_ALLOWED_HOSTS = [
   /(^|\.)sibnet\.ru$/i,
   /(^|\.)okcdn\.ru$/i,
   /(^|\.)solodcdn\.com$/i,
+  /(^|\.)videoseedcdn\.com$/i,
 ];
 
 function isRelayHostAllowed(hostname) {
