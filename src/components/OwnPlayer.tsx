@@ -38,6 +38,12 @@ interface Props {
   /** Озвучка, сохранённая с прошлого раза (по названию — id Yummy не
    *  стабилен между сериями, см. миграцию 0008). null — берём первую. */
   initialTranslationTitle: string | null;
+  /** То же самое, но по id — для кино (Videoseed/Kodik) id озвучки стабилен
+   *  и между сериями, и между визитами (в отличие от Yummy у аниме), поэтому
+   *  надёжнее строкового сопоставления по названию: не ломается, если
+   *  каталог чуть переименует/переформатирует подпись озвучки. Пробуем
+   *  ПЕРВЫМ (только contentType==='cinema' — у аниме этот id нестабилен). */
+  savedTranslationId?: number | null;
   skipOpening?: SkipSegment | null;
   skipEnding?: SkipSegment | null;
   /** Ссылка на следующую серию — кнопка внутри плеера. null — некуда. */
@@ -84,6 +90,7 @@ export default function OwnPlayer({
   resumeFrom,
   translations,
   initialTranslationTitle,
+  savedTranslationId,
   skipOpening,
   skipEnding,
   nextHref,
@@ -91,14 +98,19 @@ export default function OwnPlayer({
   onEnded,
   onTimeUpdate,
 }: Props) {
-  // Выбор озвучки: сперва пробуем сохранённую (по названию), иначе первую
-  // из списка. video_id Yummy меняется от серии к серии, поэтому именно
-  // название — стабильный ключ сопоставления (см. миграцию 0008).
+  // Выбор озвучки: сперва пробуем сохранённую по id (только кино — там он
+  // стабилен, см. Props.savedTranslationId), затем по названию (аниме —
+  // video_id Yummy меняется от серии к серии, см. миграцию 0008), иначе
+  // первую из списка.
   const [translationId, setTranslationId] = useState<number | null>(() => {
-    const saved = initialTranslationTitle
+    const savedById =
+      contentType === 'cinema' && savedTranslationId != null
+        ? translations.find((t) => t.id === savedTranslationId)
+        : undefined;
+    const savedByTitle = initialTranslationTitle
       ? translations.find((t) => t.title === initialTranslationTitle)
       : undefined;
-    return saved?.id ?? translations[0]?.id ?? null;
+    return savedById?.id ?? savedByTitle?.id ?? translations[0]?.id ?? null;
   });
   const activeTranslation =
     translations.find((t) => t.id === translationId) ?? translations[0] ?? null;
@@ -224,13 +236,23 @@ export default function OwnPlayer({
     window.localStorage.setItem(VOLUME_KEY, String(clamped));
   }, []);
 
+  // seekTargetRef сбрасываем к серверному resumeFrom ТОЛЬКО при смене
+  // серии/сезона (реальная навигация) — НЕ при каждой смене src, иначе это
+  // затирает то, что только что выставили changeTranslation()/retry() (текущая
+  // позиция при смене озвучки или повторе), и переключение дорожки на
+  // середине просмотра откатывало бы на изначальную точку резюма вместо
+  // продолжения с того же места.
+  useEffect(() => {
+    seekTargetRef.current = resumeFrom;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [episode, season, resumeFrom]);
+
   // --- Определение типа потока (HLS/mp4) и подключение источника -----------
   useEffect(() => {
     let cancelled = false;
     setLoadState('probing');
     setBuffering(true);
     setIsEnded(false);
-    seekTargetRef.current = resumeFrom;
 
     (async () => {
       let contentType: string | null = null;

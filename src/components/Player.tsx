@@ -45,6 +45,12 @@ interface Props {
   durationSeconds: number | null;
   translations: Translation[];
   initialTranslationId: number | null;
+  /** Тот же translation_id из прогресса, но БЕЗ фолбэка на первую озвучку
+   *  Kodik (initialTranslationId выше — с ним, для нативного селектора
+   *  Kodik-вкладки) — OwnPlayer.tsx должен знать, была ли озвучка РЕАЛЬНО
+   *  сохранена, а не подставлена по умолчанию, иначе первый визит без
+   *  прогресса мог бы случайно "восстановить" произвольную первую озвучку. */
+  savedTranslationId: number | null;
   /** Озвучки для селектора «Наш плеер» (Videoseed + Kodik по kinopoisk_id) —
    *  отдельно от `translations` выше (те — только для нативного Kodik-плеера,
    *  без прямых embed-ссылок на КАЖДУЮ озвучку). См. §12 ARCHITECTURE.md. */
@@ -128,6 +134,7 @@ export default function Player({
   durationSeconds,
   translations,
   initialTranslationId,
+  savedTranslationId,
   ownPlayerTranslations,
   savedTranslationTitle,
   resumeFrom,
@@ -742,6 +749,7 @@ export default function Player({
           resumeFrom={resumeFrom}
           translations={ownPlayerTranslations}
           initialTranslationTitle={savedTranslationTitle}
+          savedTranslationId={savedTranslationId}
           nextHref={next ? linkFor(next) : null}
           nextLabel={
             next && next.season !== activeSeason

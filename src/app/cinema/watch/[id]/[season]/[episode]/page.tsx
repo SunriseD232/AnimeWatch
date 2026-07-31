@@ -151,6 +151,7 @@ export default async function CinemaWatchPage({
       initialTranslationId={resolvedTranslationId}
       ownPlayerTranslations={ownPlayerTranslations}
       savedTranslationTitle={savedTranslationTitle}
+      savedTranslationId={initialTranslationId}
       resumeFrom={resumeFrom}
       otherSeason={otherSeason}
       otherEpisode={otherEpisode}
