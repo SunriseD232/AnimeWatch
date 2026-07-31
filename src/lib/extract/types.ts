@@ -1,16 +1,22 @@
-export type ExtractSource = 'alloha' | 'videoseed' | 'sibnet' | 'kodik' | 'cvh';
+export type ExtractSource = 'alloha' | 'videoseed' | 'sibnet' | 'kodik' | 'cvh' | 'aksor';
 
 export interface ResolvedStream {
-  /** Прямая ссылка на .mp4 или .m3u8, перехваченная у эмбед-плеера источника. */
+  /** Прямая ссылка на .mp4/.m3u8/.mpd, перехваченная у эмбед-плеера источника. */
   url: string;
   /** Заголовки, с которыми upstream отдаёт этот URL (обычно только Referer). */
   headers: Record<string, string>;
   isHls: boolean;
-  /** Kodik отдаёт отдельные m3u8 на каждое качество (не один master.m3u8 с
-   *  вариантами) — если задано (>1 элемент), /api/proxy синтезирует master
-   *  playlist из этих ссылок, чтобы hls.js/OwnPlayer видели обычный ABR-стрим
-   *  с выбором качества. `url` при этом — просто лучшее качество, для
-   *  совместимости с источниками без этого поля. */
+  /** Aksor отдаёт DASH (.mpd), а не HLS — /api/proxy проксирует манифест
+   *  иначе (rewriteDashManifest, не rewriteM3U8), и OwnPlayer подключает
+   *  dash.js вместо hls.js. Взаимоисключающе с isHls (оба false — plain mp4). */
+  isDash?: boolean;
+  /** Kodik/Aksor отдают отдельный манифест на каждое качество (не один
+   *  master с ABR-вариантами) — если задано (>1 элемент), /api/proxy либо
+   *  синтезирует HLS master (Kodik/Videoseed), либо позволяет запросить
+   *  конкретное качество через ?q=<height> (Aksor, см. rewriteDashManifest —
+   *  DASH-манифесты по разным качествам живут в РАЗНЫХ директориях, слить в
+   *  один ABR-манифест сложнее и рискованнее, чем просто перезапросить). `url`
+   *  при этом — лучшее качество по умолчанию, для источников без этого поля. */
   qualities?: { height: number; url: string }[];
   /** Внешние субтитры (сейчас только Videoseed отдаёт реальные .vtt — Alloha/
    *  Sibnet/Kodik/CVH ничего подобного не предоставляют, см. коммит). */

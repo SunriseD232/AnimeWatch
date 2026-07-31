@@ -132,6 +132,81 @@ function isM3U8(url: string, contentType: string | null): boolean {
   );
 }
 
+function isDashManifest(url: string, contentType: string | null): boolean {
+  return url.includes('.mpd') || (contentType ?? '').includes('dash+xml');
+}
+
+/**
+ * Подписывает БАЗОВУЮ директорию (не конкретный файл) сегментов DASH — в
+ * отличие от signRawUrl (один файл на одну подпись), тут один токен на ВСЮ
+ * директорию, потому что имена сегментов вычисляет сам dash.js по
+ * SegmentTemplate из манифеста ($RepresentationID$/$Number%05d$ и т.п.), а
+ * не идут явным списком, как в HLS. Токен — часть URL-ПУТИ (не query), чтобы
+ * относительное разрешение <BaseURL> в браузере просто дописывало имя
+ * сегмента после него, как обычный path segment.
+ */
+export function signDashBase(baseDirUrl: string, headers: Record<string, string>): string {
+  const payload = base64url(
+    JSON.stringify({ u: baseDirUrl, h: headers, exp: Date.now() + RAW_TOKEN_TTL_MS }),
+  );
+  const sig = createHmac('sha256', secret()).update(payload).digest('hex');
+  // payload — base64url (алфавит без точки), sig — hex (тоже без точки) —
+  // разделитель '.' однозначно отделяет одно от другого при разборе.
+  return `${payload}.${sig}`;
+}
+
+/** Проверяет и разворачивает токен из /api/proxy/dash-seg/[token]/... */
+export function verifyDashBaseToken(
+  token: string,
+): { baseDirUrl: string; headers: Record<string, string> } | null {
+  const dot = token.lastIndexOf('.');
+  if (dot < 0) return null;
+  const payload = token.slice(0, dot);
+  const sig = token.slice(dot + 1);
+
+  const expected = createHmac('sha256', secret()).update(payload).digest('hex');
+  if (expected.length !== sig.length) return null;
+  try {
+    if (!timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(sig, 'hex'))) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  try {
+    const data = JSON.parse(fromBase64url(payload)) as {
+      u: string;
+      h: Record<string, string>;
+      exp: number;
+    };
+    if (!data.u || typeof data.exp !== 'number' || data.exp < Date.now()) return null;
+    return { baseDirUrl: data.u, headers: data.h ?? {} };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Переписывает DASH-манифест (.mpd): вставляет <BaseURL> сразу после
+ * открывающего <MPD ...>, указывающий на подписанный /api/proxy/dash-seg/ —
+ * SegmentTemplate внутри (init-stream$RepresentationID$.m4s,
+ * chunk-stream$RepresentationID$-$Number%05d$.m4s у Aksor) остаётся как
+ * есть и резолвится браузером/dash.js ОТНОСИТЕЛЬНО этого BaseURL, как того
+ * требует спецификация DASH — переписывать каждый сегмент по отдельности
+ * (как в HLS) тут не нужно и не нужно знать конкретные имена сегментов.
+ */
+export function rewriteDashManifest(
+  text: string,
+  baseUrl: string,
+  headers: Record<string, string>,
+): string {
+  const baseDir = baseUrl.slice(0, baseUrl.lastIndexOf('/') + 1);
+  const token = signDashBase(baseDir, headers);
+  const proxyBase = `/api/proxy/dash-seg/${token}/`;
+  return text.replace(/(<MPD\b[^>]*>)/, `$1<BaseURL>${proxyBase}</BaseURL>`);
+}
+
 /**
  * Некоторые апстримы блокируют IP-диапазоны serverless-платформ (Vercel/
  * AWS) на уровне CDN, а не заголовков — проверено вживую для Sibnet: тот же
@@ -144,6 +219,7 @@ const RELAY_HOSTS = [
   /(^|\.)okcdn\.ru$/i, // CVH (через cdnvideohub.com) — тот же srcIp-замок у Odnoklassniki.
   /(^|\.)solodcdn\.com$/i, // Kodik — превентивно, не проверяли вживую с Vercel.
   /(^|\.)videoseedcdn\.com$/i, // Проверено вживую: тот же URL, что 404 с Vercel, отдаёт 200 с обычного IP.
+  /(^|\.)takehost-cdn\.aksor\.tv$/i, // Aksor — превентивно, не проверяли вживую с Vercel.
 ];
 
 function needsVpsRelay(url: string): boolean {
@@ -214,6 +290,17 @@ export async function fetchAndProxy(
       status: 200,
       headers: {
         'Content-Type': 'application/vnd.apple.mpegurl',
+        'Cache-Control': 'private, no-store',
+      },
+    });
+  }
+  if (isDashManifest(url, contentType)) {
+    const text = await upstream.text();
+    const rewritten = rewriteDashManifest(text, url, headers);
+    return new Response(rewritten, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/dash+xml',
         'Cache-Control': 'private, no-store',
       },
     });

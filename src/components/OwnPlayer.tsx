@@ -8,6 +8,7 @@ import type { ContentType } from '@/lib/types';
 import type { ExtractSource, Subtitle } from '@/lib/extract/types';
 import type { YummyTranslation } from '@/lib/video/yummy';
 import type HlsType from 'hls.js';
+import type { MediaPlayerClass } from 'dashjs';
 
 interface SkipSegment {
   time: number;
@@ -64,6 +65,7 @@ const SOURCE_LABELS: Record<ExtractSource, string> = {
   sibnet: 'Sibnet',
   kodik: 'Kodik',
   cvh: 'CVH',
+  aksor: 'Aksor',
 };
 
 type LoadState = 'probing' | 'ready' | 'unavailable' | 'failed';
@@ -122,17 +124,33 @@ export default function OwnPlayer({
   // ...) — используем его, а extractSource остаётся дефолтом только когда
   // список переводов пуст (раздел «Фильмы и сериалы», см. Player.tsx).
   const effectiveSource = activeTranslation?.source ?? extractSource;
+  // Aksor — единственный DASH-источник: качество там не ABR-уровень внутри
+  // одного манифеста (как у HLS), а отдельный .mpd на каждую высоту (см.
+  // ResolvedStream.qualities/rewriteDashManifest) — поэтому смена качества
+  // идёт через query-параметр ?q=, который меняет src и перезагружает
+  // источник (как смена озвучки), а не через currentLevel без перезагрузки.
+  const isDashSource = effectiveSource === 'aksor';
+  const [dashQualityHeight, setDashQualityHeight] = useState<number | null>(null);
 
+  const query = new URLSearchParams();
+  if (translationId != null) query.set('t', String(translationId));
+  if (dashQualityHeight != null) query.set('q', String(dashQualityHeight));
+  const queryStr = query.toString();
   const src = `/api/proxy/${contentType}/${shikimoriId}/${season}/${episode}/${effectiveSource}${
-    translationId != null ? `?t=${translationId}` : ''
+    queryStr ? `?${queryStr}` : ''
   }`;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<HlsType | null>(null);
+  const dashRef = useRef<MediaPlayerClass | null>(null);
   // Content-Type из проверочного HEAD (см. эффект резолва ниже) — переносится
   // во второй эффект (подключение к <video>), чтобы не запрашивать HEAD дважды.
   const upstreamContentTypeRef = useRef<string | null>(null);
+  // X-Video-Qualities из того же HEAD (см. /api/proxy/.../route.ts) — список
+  // доступных высот DASH через запятую, читаем один раз вместо отдельного
+  // запроса (у HLS вместо этого — hls.js сам парсит master.m3u8).
+  const dashQualitiesRef = useRef<string | null>(null);
   const playingRef = useRef(false);
   const seekTargetRef = useRef<number | null>(resumeFrom);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -247,6 +265,13 @@ export default function OwnPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [episode, season, resumeFrom]);
 
+  // Явно выбранное DASH-качество (Aksor) не переносится между сериями и
+  // сменой озвучки — новый эпизод/дорожка снова стартует с лучшего качества
+  // по умолчанию (см. src выше — dashQualityHeight===null означает "без ?q=").
+  useEffect(() => {
+    setDashQualityHeight(null);
+  }, [episode, translationId]);
+
   // --- Определение типа потока (HLS/mp4) и подключение источника -----------
   useEffect(() => {
     let cancelled = false;
@@ -261,6 +286,7 @@ export default function OwnPlayer({
         const res = await fetch(src, { method: 'HEAD' });
         ok = res.ok;
         contentType = res.headers.get('content-type');
+        dashQualitiesRef.current = res.headers.get('x-video-qualities');
         if (!res.ok) {
           if (cancelled) return;
           setLoadState(res.status === 404 ? 'unavailable' : 'failed');
@@ -285,6 +311,10 @@ export default function OwnPlayer({
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
+      if (dashRef.current) {
+        dashRef.current.destroy();
+        dashRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src, reloadKey]);
@@ -297,10 +327,16 @@ export default function OwnPlayer({
     if (!video) return;
 
     (async () => {
-      const isHls = (upstreamContentTypeRef.current ?? '').includes('mpegurl');
+      const upstreamType = upstreamContentTypeRef.current ?? '';
+      const isHls = upstreamType.includes('mpegurl');
+      const isDash = upstreamType.includes('dash+xml');
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
+      }
+      if (dashRef.current) {
+        dashRef.current.destroy();
+        dashRef.current = null;
       }
       setQualityLevels([]);
       setCurrentLevel(-1);
@@ -332,6 +368,28 @@ export default function OwnPlayer({
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
           video.src = src; // Safari/iOS — нативный HLS, свой выбор качества
         }
+      } else if (isDash) {
+        const { MediaPlayer } = await import('dashjs');
+        if (cancelled) return;
+        const player = MediaPlayer().create();
+        dashRef.current = player;
+        // Качества Aksor — отдельные .mpd (см. ResolvedStream.qualities), не
+        // ABR-варианты внутри одного манифеста — список высот пришёл вместе
+        // с HEAD-пробой (X-Video-Qualities, см. эффект резолва выше), не из
+        // самого dash.js/манифеста.
+        const heights = (dashQualitiesRef.current ?? '')
+          .split(',')
+          .map((h) => Number(h))
+          .filter((h) => Number.isFinite(h) && h > 0)
+          .sort((a, b) => b - a);
+        if (heights.length > 1) {
+          const levels = heights.map((height, index) => ({ index, height }));
+          setQualityLevels(levels);
+          const activeHeight = dashQualityHeight ?? heights[0];
+          const activeIndex = levels.findIndex((l) => l.height === activeHeight);
+          setCurrentLevel(activeIndex >= 0 ? activeIndex : 0);
+        }
+        player.initialize(video, src, true);
       } else {
         video.src = src;
       }
@@ -342,6 +400,10 @@ export default function OwnPlayer({
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
+      }
+      if (dashRef.current) {
+        dashRef.current.destroy();
+        dashRef.current = null;
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -552,10 +614,25 @@ export default function OwnPlayer({
 
   // Смена качества — hls.js переключает уровень на лету, без перезагрузки
   // src и без потери позиции (в отличие от смены серии/озвучки).
-  const changeQuality = useCallback((index: number) => {
-    if (hlsRef.current) hlsRef.current.currentLevel = index;
-    setCurrentLevel(index);
-  }, []);
+  const changeQuality = useCallback(
+    (index: number) => {
+      if (hlsRef.current) {
+        hlsRef.current.currentLevel = index;
+        setCurrentLevel(index);
+        return;
+      }
+      // DASH (Aksor): качество — отдельный манифест (?q=<height>), а не
+      // ABR-уровень внутри одного, как у hls.js — меняем src через
+      // dashQualityHeight, что перезапускает резолв (как смена озвучки),
+      // сохраняя позицию через seekTargetRef (см. фикс выше).
+      const lvl = qualityLevels[index];
+      if (!lvl) return;
+      seekTargetRef.current = currentTime > 1 ? currentTime : resumeFrom;
+      setDashQualityHeight(lvl.height);
+      setCurrentLevel(index);
+    },
+    [qualityLevels, currentTime, resumeFrom],
+  );
 
   // --- Автоскрытие контролов ----------------------------------------------------
   const showControls = useCallback(() => {
@@ -868,18 +945,20 @@ export default function OwnPlayer({
         {qualityLevels.length > 1 && (
           <>
             <span className="ml-1 text-gray-400">Качество:</span>
-            <button
-              type="button"
-              onClick={() => changeQuality(-1)}
-              className={[
-                'rounded-md px-3 py-1.5 text-sm font-medium transition',
-                currentLevel === -1
-                  ? 'bg-accent text-white'
-                  : 'bg-bg-card text-gray-200 hover:bg-bg-soft',
-              ].join(' ')}
-            >
-              Авто
-            </button>
+            {!isDashSource && (
+              <button
+                type="button"
+                onClick={() => changeQuality(-1)}
+                className={[
+                  'rounded-md px-3 py-1.5 text-sm font-medium transition',
+                  currentLevel === -1
+                    ? 'bg-accent text-white'
+                    : 'bg-bg-card text-gray-200 hover:bg-bg-soft',
+                ].join(' ')}
+              >
+                Авто
+              </button>
+            )}
             {qualityLevels.map((lvl) => (
               <button
                 key={lvl.index}

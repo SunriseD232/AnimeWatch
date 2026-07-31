@@ -20,7 +20,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const ALLOWED_SOURCES = new Set<ExtractSource>(['alloha', 'videoseed', 'sibnet', 'kodik', 'cvh']);
+const ALLOWED_SOURCES = new Set<ExtractSource>(['alloha', 'videoseed', 'sibnet', 'kodik', 'cvh', 'aksor']);
 
 interface RouteParams {
   contentType: string;

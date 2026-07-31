@@ -61,9 +61,8 @@ export type YummyTranslation = OwnPlayerTranslation;
  * Балансер Yummy (it.data?.player) → наш ExtractSource, если для него есть
  * извлечение на VPS. Порядок проверки не важен — подстроки не пересекаются.
  *
- * Aksor НАРОЧНО не сюда — извлекается не менее легко, чем Sibnet/CVH, но
- * отдаёт только DASH (.mpd), а OwnPlayer/hls.js умеет только HLS. Добавить
- * можно, когда появится поддержка dash.js (или конвертация на VPS).
+ * Aksor отдаёт DASH (.mpd), а не HLS — OwnPlayer подключает dash.js
+ * параллельно с hls.js специально для него (см. OwnPlayer.tsx).
  */
 function detectSource(player: string | undefined, iframeUrl: string): ExtractSource | null {
   const p = (player || '').toLowerCase();
@@ -72,6 +71,7 @@ function detectSource(player: string | undefined, iframeUrl: string): ExtractSou
   if (p.includes('sibnet') || u.includes('sibnet')) return 'sibnet';
   if (p.includes('kodik') || u.includes('kodik')) return 'kodik';
   if (p.includes('cvh') || u.includes('cvh')) return 'cvh';
+  if (p.includes('aksor') || u.includes('aksor')) return 'aksor';
   return null;
 }
 

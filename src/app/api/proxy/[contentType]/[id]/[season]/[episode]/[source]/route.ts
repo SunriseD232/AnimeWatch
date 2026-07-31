@@ -29,7 +29,7 @@ export const dynamic = 'force-dynamic';
 // vpsExtractor.ts, чуть меньше этого значения).
 export const maxDuration = 60;
 
-const ALLOWED_SOURCES = new Set<ExtractSource>(['alloha', 'videoseed', 'sibnet', 'kodik', 'cvh']);
+const ALLOWED_SOURCES = new Set<ExtractSource>(['alloha', 'videoseed', 'sibnet', 'kodik', 'cvh', 'aksor']);
 
 interface RouteParams {
   contentType: string;
@@ -37,6 +37,37 @@ interface RouteParams {
   season: string;
   episode: string;
   source: string;
+}
+
+/** Aksor отдаёт отдельный .mpd на каждое качество (см. ResolvedStream.qualities
+ *  комментарий) — ?q=<height> выбирает нужный, иначе берём resolved.url
+ *  (лучшее по умолчанию, как выбрал VPS). */
+function pickDashUrl(
+  resolved: { url: string; qualities?: { height: number; url: string }[] },
+  qHeight: number | undefined,
+): string {
+  if (qHeight != null) {
+    const match = resolved.qualities?.find((q) => q.height === qHeight);
+    if (match) return match.url;
+  }
+  return resolved.url;
+}
+
+/** X-Video-Qualities — список доступных высот через запятую, читает клиент
+ *  на HEAD-пробе (OwnPlayer.tsx), чтобы построить селектор качества для DASH
+ *  без ABR-уровней hls.js (см. rewriteDashManifest — тут одно качество на
+ *  манифест, не один multi-variant master). */
+async function respondDash(
+  range: string | null,
+  url: string,
+  headers: Record<string, string>,
+  qualities: { height: number; url: string }[] | undefined,
+): Promise<Response> {
+  const proxied = await fetchAndProxy(range, url, headers);
+  if (!qualities || qualities.length === 0) return proxied;
+  const respHeaders = new Headers(proxied.headers);
+  respHeaders.set('X-Video-Qualities', qualities.map((q) => q.height).join(','));
+  return new Response(proxied.body, { status: proxied.status, headers: respHeaders });
 }
 
 async function handleGet(
@@ -70,8 +101,10 @@ async function handleGet(
 
   // Kodik отдаёт отдельный m3u8 на каждое качество, а не один master.m3u8 с
   // вариантами (см. ResolvedStream.qualities) — синтезируем master сами,
-  // чтобы hls.js/наш селектор качества видели обычный ABR-стрим.
-  if (resolved.qualities && resolved.qualities.length > 1) {
+  // чтобы hls.js/наш селектор качества видели обычный ABR-стрим. Aksor тоже
+  // отдаёт качества по одному, но это DASH — обрабатывается отдельной веткой
+  // ниже (без synthesizeMasterPlaylist — тот собирает HLS, а не DASH).
+  if (!resolved.isDash && resolved.qualities && resolved.qualities.length > 1) {
     const text = synthesizeMasterPlaylist(resolved.qualities, resolved.headers);
     return new Response(text, {
       status: 200,
@@ -86,10 +119,21 @@ async function handleGet(
   // HEAD (см. ниже) тянет и сразу отбрасывает тело — без явного Range это
   // означало полную загрузку апстрима целиком через relay (проверено вживую:
   // 300-мегабайтный Sibnet-файл — 28с и падение в голый платформенный 500).
-  // Для m3u8 не трогаем: он и так маленький текст, а не все апстримы
+  // Для m3u8/DASH-манифеста не трогаем: маленький текст, не все апстримы
   // адекватно отвечают на Range для него.
-  if (isHeadProbe && !range && !resolved.isHls) {
+  if (isHeadProbe && !range && !resolved.isHls && !resolved.isDash) {
     range = 'bytes=0-0';
+  }
+
+  if (resolved.isDash) {
+    // ?q=<height> — выбор конкретного качества (см. pickDashUrl); каждое
+    // качество Aksor — отдельный .mpd в своей директории, не ABR-вариант
+    // внутри одного манифеста, поэтому смена качества — новый запрос, а не
+    // hls.js-подобное переключение уровня без реолда.
+    const qRaw = request.nextUrl.searchParams.get('q');
+    const qHeight = qRaw != null && Number.isFinite(Number(qRaw)) ? Number(qRaw) : undefined;
+    const dashUrl = pickDashUrl(resolved, qHeight);
+    return respondDash(range, dashUrl, resolved.headers, resolved.qualities);
   }
 
   const proxied = await fetchAndProxy(range, resolved.url, resolved.headers);
