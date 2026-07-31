@@ -185,6 +185,11 @@ export default function OwnPlayer({
   // всегда пуст, и селектор просто не рендерится.
   const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
   const [activeSubtitleIndex, setActiveSubtitleIndex] = useState<number | null>(null); // null = выкл
+  // Меню качества/субтитров — внутри контейнера фуллскрина (см. containerRef
+  // ниже), а не отдельным блоком под видео: снаружи он был недоступен в
+  // полноэкранном режиме (фуллскрин берётся на containerRef, а не на всю
+  // страницу).
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // --- Прогресс просмотра ---------------------------------------------------
   const getState = useCallback(() => {
@@ -271,6 +276,12 @@ export default function OwnPlayer({
   useEffect(() => {
     setDashQualityHeight(null);
   }, [episode, translationId]);
+
+  // Закрываем меню настроек при смене серии/озвучки/качества — иначе может
+  // остаться открытым поверх уже другой серии после навигации.
+  useEffect(() => {
+    setSettingsOpen(false);
+  }, [src]);
 
   // --- Определение типа потока (HLS/mp4) и подключение источника -----------
   useEffect(() => {
@@ -754,6 +765,12 @@ export default function OwnPlayer({
     nextHref !== null && dur > 0 && (isEnded || dur - currentTime <= NEXT_BUTTON_WINDOW_S);
   const progressPct = dur > 0 ? (currentTime / dur) * 100 : 0;
   const bufferedPct = dur > 0 ? Math.min(100, (buffered / dur) * 100) : 0;
+  const hasSettings = qualityLevels.length > 1 || subtitles.length > 0;
+  const settingsOptionClass = (active: boolean) =>
+    [
+      'block w-full rounded-md px-2 py-1.5 text-left transition hover:bg-white/10',
+      active ? 'text-accent' : 'text-gray-200',
+    ].join(' ');
 
   return (
     <div className="flex flex-col gap-3">
@@ -763,6 +780,7 @@ export default function OwnPlayer({
         onKeyDown={onKeyDown}
         onMouseMove={showControls}
         onTouchStart={showControls}
+        onClick={() => setSettingsOpen(false)}
         className="group relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10 outline-none focus:ring-accent/40"
       >
         <video
@@ -918,6 +936,97 @@ export default function OwnPlayer({
               }}
             />
 
+            {hasSettings && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSettingsOpen((v) => !v);
+                  }}
+                  aria-label="Настройки"
+                  className={[
+                    'rounded-md p-1.5 transition hover:bg-white/10',
+                    settingsOpen ? 'bg-white/10' : '',
+                  ].join(' ')}
+                >
+                  <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
+                    <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.61l-1.92-3.32a.5.5 0 0 0-.58-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.5.5 0 0 0-.58.22L2.74 8.87a.5.5 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.5.5 0 0 0-.12.61l1.92 3.32c.14.24.44.34.68.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.28.27.42.5.42h3.84c.24 0 .46-.14.5-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.24.09.54 0 .68-.22l1.92-3.32a.5.5 0 0 0-.12-.61l-2.01-1.58zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z" />
+                  </svg>
+                </button>
+
+                {settingsOpen && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute bottom-full right-0 z-20 mb-2 max-h-72 w-56 overflow-y-auto rounded-xl bg-black/90 p-2 text-sm text-white ring-1 ring-white/10 backdrop-blur"
+                  >
+                    {qualityLevels.length > 1 && (
+                      <div className="mb-1">
+                        <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-gray-400">
+                          Качество
+                        </div>
+                        {!isDashSource && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              changeQuality(-1);
+                              setSettingsOpen(false);
+                            }}
+                            className={settingsOptionClass(currentLevel === -1)}
+                          >
+                            Авто
+                          </button>
+                        )}
+                        {qualityLevels.map((lvl) => (
+                          <button
+                            key={lvl.index}
+                            type="button"
+                            onClick={() => {
+                              changeQuality(lvl.index);
+                              setSettingsOpen(false);
+                            }}
+                            className={settingsOptionClass(currentLevel === lvl.index)}
+                          >
+                            {lvl.height}p
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {subtitles.length > 0 && (
+                      <div>
+                        <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-gray-400">
+                          Субтитры
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveSubtitleIndex(null);
+                            setSettingsOpen(false);
+                          }}
+                          className={settingsOptionClass(activeSubtitleIndex === null)}
+                        >
+                          Выкл
+                        </button>
+                        {subtitles.map((s, i) => (
+                          <button
+                            key={s.lang}
+                            type="button"
+                            onClick={() => {
+                              setActiveSubtitleIndex(i);
+                              setSettingsOpen(false);
+                            }}
+                            className={settingsOptionClass(activeSubtitleIndex === i)}
+                          >
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             <button
               type="button"
               onClick={toggleFullscreen}
@@ -942,72 +1051,6 @@ export default function OwnPlayer({
         <span className="rounded-md bg-sky-500/15 px-2.5 py-1 text-xs font-medium text-sky-300">
           Наш плеер · {SOURCE_LABELS[effectiveSource]}
         </span>
-        {qualityLevels.length > 1 && (
-          <>
-            <span className="ml-1 text-gray-400">Качество:</span>
-            {!isDashSource && (
-              <button
-                type="button"
-                onClick={() => changeQuality(-1)}
-                className={[
-                  'rounded-md px-3 py-1.5 text-sm font-medium transition',
-                  currentLevel === -1
-                    ? 'bg-accent text-white'
-                    : 'bg-bg-card text-gray-200 hover:bg-bg-soft',
-                ].join(' ')}
-              >
-                Авто
-              </button>
-            )}
-            {qualityLevels.map((lvl) => (
-              <button
-                key={lvl.index}
-                type="button"
-                onClick={() => changeQuality(lvl.index)}
-                className={[
-                  'rounded-md px-3 py-1.5 text-sm font-medium transition',
-                  currentLevel === lvl.index
-                    ? 'bg-accent text-white'
-                    : 'bg-bg-card text-gray-200 hover:bg-bg-soft',
-                ].join(' ')}
-              >
-                {lvl.height}p
-              </button>
-            ))}
-          </>
-        )}
-        {subtitles.length > 0 && (
-          <>
-            <span className="ml-1 text-gray-400">Субтитры:</span>
-            <button
-              type="button"
-              onClick={() => setActiveSubtitleIndex(null)}
-              className={[
-                'rounded-md px-3 py-1.5 text-sm font-medium transition',
-                activeSubtitleIndex === null
-                  ? 'bg-accent text-white'
-                  : 'bg-bg-card text-gray-200 hover:bg-bg-soft',
-              ].join(' ')}
-            >
-              Выкл
-            </button>
-            {subtitles.map((s, i) => (
-              <button
-                key={s.lang}
-                type="button"
-                onClick={() => setActiveSubtitleIndex(i)}
-                className={[
-                  'rounded-md px-3 py-1.5 text-sm font-medium transition',
-                  activeSubtitleIndex === i
-                    ? 'bg-accent text-white'
-                    : 'bg-bg-card text-gray-200 hover:bg-bg-soft',
-                ].join(' ')}
-              >
-                {s.label}
-              </button>
-            ))}
-          </>
-        )}
       </div>
     </div>
   );
