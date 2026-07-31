@@ -7,6 +7,7 @@ const { extractVideoseed } = require('./videoseed');
 const { extractSibnet } = require('./sibnet');
 const { extractKodik } = require('./kodik');
 const { extractCVH } = require('./cvh');
+const { extractAksor } = require('./aksor');
 
 const PORT = Number(process.env.PORT) || 3300;
 const AUTH_TOKEN = process.env.EXTRACTOR_AUTH_TOKEN;
@@ -137,7 +138,7 @@ app.post('/extract', requireAuth, async (req, res) => {
   const ep = Number(episode);
   const se = Number(season) || 1;
 
-  const NO_BROWSER_SOURCES = ['sibnet', 'kodik', 'cvh'];
+  const NO_BROWSER_SOURCES = ['sibnet', 'kodik', 'cvh', 'aksor'];
   if (
     !['alloha', 'videoseed', ...NO_BROWSER_SOURCES].includes(source) ||
     !Number.isFinite(id) ||
@@ -175,6 +176,8 @@ app.post('/extract', requireAuth, async (req, res) => {
       result = await extractKodik({ embedUrl: safeEmbedUrl });
     } else if (source === 'cvh') {
       result = await extractCVH({ embedUrl: safeEmbedUrl });
+    } else if (source === 'aksor') {
+      result = await extractAksor({ embedUrl: safeEmbedUrl });
     } else {
       result = await serialized(() =>
         source === 'alloha'
