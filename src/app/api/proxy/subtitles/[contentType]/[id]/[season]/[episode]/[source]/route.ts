@@ -1,19 +1,26 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { resolveStream } from '@/lib/extract/resolve';
 import { signRawUrl } from '@/lib/extract/proxy';
+import { getCachedSubtitle } from '@/lib/subtitles/opensubtitles';
+import { getCinemaById } from '@/lib/videoseed-catalog';
+import { getAnime } from '@/lib/shikimori';
 import type { ExtractSource } from '@/lib/extract/types';
 
 /**
  * GET /api/proxy/subtitles/[contentType]/[id]/[season]/[episode]/[source]
  *
  * Отдельная лёгкая ручка (не встроена в основной /api/proxy/.../[source]):
- * субтитры — не часть m3u8/mp4-потока, а самостоятельные .vtt-файлы (сейчас
- * реально отдаёт только Videoseed, см. vps-extractor/src/videoseed.js) —
+ * субтитры — не часть m3u8/mp4-потока, а самостоятельные .vtt-файлы.
  * OwnPlayer запрашивает их отдельно и добавляет <track> в <video>.
  *
- * Использует тот же resolveStream() (кэш-first) — если основной плеер уже
- * зарезолвил эту серию/озвучку, здесь просто попадание в кэш без повторного
- * извлечения на VPS.
+ * Два независимых источника субтитров:
+ *  1. Videoseed отдаёт реальные .vtt при извлечении видео (см.
+ *     vps-extractor/src/videoseed.js) — используем resolveStream() (кэш-
+ *     first, попадёт в уже тёплый кэш видео без повторного извлечения).
+ *  2. OpenSubtitles (см. lib/subtitles/opensubtitles.ts) — не привязан к
+ *     видео-извлечению вообще, матчится по imdb_id (кино) или названию
+ *     (аниме). Проверяем ТОЛЬКО если (1) ничего не дал — иначе на каждый
+ *     визит тратили бы небольшую (100/сутки) квоту API впустую.
  */
 
 export const runtime = 'nodejs';
@@ -28,6 +35,13 @@ interface RouteParams {
   season: string;
   episode: string;
   source: string;
+}
+
+/** Данные-VTT прямо в URL — избегает отдельного роута/подписи: контент уже
+ *  полностью зарезолвлен на сервере (и закэширован в subtitle_cache), а
+ *  <track src> прекрасно принимает data: URL. */
+function vttDataUrl(vtt: string): string {
+  return `data:text/vtt;charset=utf-8,${encodeURIComponent(vtt)}`;
 }
 
 export async function GET(request: NextRequest, { params }: { params: RouteParams }) {
@@ -46,17 +60,41 @@ export async function GET(request: NextRequest, { params }: { params: RouteParam
 
   try {
     const resolved = await resolveStream({ contentType, shikimoriId, season, episode, source, translationId });
-    if (!resolved?.subtitles?.length) {
-      return NextResponse.json({ subtitles: [] });
+    if (resolved?.subtitles?.length) {
+      // Реальный домен Videoseed наружу не отдаём — те же подписанные
+      // /api/proxy/raw ссылки, что и для сегментов (см. lib/extract/proxy.ts).
+      const subtitles = resolved.subtitles.map((s) => ({
+        lang: s.lang,
+        label: s.label,
+        url: signRawUrl(s.url, resolved.headers),
+      }));
+      return NextResponse.json({ subtitles });
     }
-    // Реальный домен Videoseed наружу не отдаём — те же подписанные
-    // /api/proxy/raw ссылки, что и для сегментов (см. lib/extract/proxy.ts).
-    const subtitles = resolved.subtitles.map((s) => ({
-      lang: s.lang,
-      label: s.label,
-      url: signRawUrl(s.url, resolved.headers),
-    }));
-    return NextResponse.json({ subtitles });
+
+    let vtt: string | null = null;
+    if (contentType === 'cinema') {
+      const item = await getCinemaById(shikimoriId);
+      if (item?.idImdb) {
+        vtt = await getCachedSubtitle({
+          contentType,
+          shikimoriId,
+          season,
+          episode,
+          imdbId: item.idImdb,
+          isSeries: item.isSerial,
+        });
+      }
+    } else {
+      const anime = await getAnime(shikimoriId).catch(() => null);
+      if (anime?.name) {
+        vtt = await getCachedSubtitle({ contentType, shikimoriId, season, episode, title: anime.name });
+      }
+    }
+
+    if (!vtt) return NextResponse.json({ subtitles: [] });
+    return NextResponse.json({
+      subtitles: [{ lang: 'ru', label: 'Русский', url: vttDataUrl(vtt) }],
+    });
   } catch (err) {
     console.error('[proxy/subtitles] Упало:', err);
     return NextResponse.json({ subtitles: [] });
