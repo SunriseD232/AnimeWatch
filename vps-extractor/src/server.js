@@ -58,6 +58,7 @@ const RELAY_ALLOWED_HOSTS = [
   /(^|\.)okcdn\.ru$/i,
   /(^|\.)solodcdn\.com$/i,
   /(^|\.)videoseedcdn\.com$/i,
+  /(^|\.)takehost-cdn\.aksor\.tv$/i, // Aksor — превентивно, симметрично RELAY_HOSTS в proxy.ts основного приложения.
 ];
 
 function isRelayHostAllowed(hostname) {
