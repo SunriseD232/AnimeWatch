@@ -182,7 +182,18 @@ async function extractVideoseed({ shikimoriId, season, episode, embedUrl }) {
   if (!url) return null;
 
   const referer = `https://${videoseedHost()}/`;
-  const intercepted = await interceptVideoUrl(url, referer);
+  // Изредка первый проход Puppeteer не находит видео-URL вообще (0 запросов
+  // с видео — вероятно, клик по плееру не попал в нужный момент рекламного
+  // прероллa). Раньше это сразу отдавалось пользователю как "серия
+  // недоступна" без единой повторной попытки. Один ретрай — полностью
+  // свежий браузер/страница — обычно решает: суммарно два прохода укладываются
+  // в районе 30-35с, с запасом от 55с/60с таймаутов по цепочке (vpsExtractor
+  // → /api/proxy).
+  let intercepted = await interceptVideoUrl(url, referer);
+  if (!intercepted?.videoUrl) {
+    console.error('[videoseed] Первая попытка не нашла видео — повтор с нуля...');
+    intercepted = await interceptVideoUrl(url, referer);
+  }
   if (!intercepted?.videoUrl) return null;
   const { videoUrl: resultUrl, subtitleUrls } = intercepted;
 
