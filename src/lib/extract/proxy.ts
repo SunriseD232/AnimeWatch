@@ -213,6 +213,14 @@ export function rewriteDashManifest(
  * подписанный URL с теми же Referer/User-Agent даёт 403 с Vercel, но 200/206
  * с обычного IP (включая наш VPS). Для них байты идут через /relay VPS
  * (см. vps-extractor/src/server.js) — Puppeteer там не нужен, только IP.
+ *
+ * ОТКЛЮЧЕНО ПО УМОЛЧАНИЮ (см. VPS_RELAY_ENABLED ниже): само приложение
+ * теперь тоже работает с VPS (self-host, см. ARCHITECTURE.md), а не с
+ * Vercel — его IP как раз тот самый "обычный", который эти CDN не
+ * блокировали, так что relay стал лишним двойным хопом на самого себя.
+ * Список хостов и код-путь оставлены как есть — понадобится relay снова
+ * (например, при переезде обратно на инфраструктуру с блокируемым IP),
+ * включается одной переменной окружения, без правок кода.
  */
 const RELAY_HOSTS = [
   /(^|\.)sibnet\.ru$/i,
@@ -223,6 +231,7 @@ const RELAY_HOSTS = [
 ];
 
 function needsVpsRelay(url: string): boolean {
+  if (process.env.VPS_RELAY_ENABLED !== 'true') return false;
   try {
     return RELAY_HOSTS.some((re) => re.test(new URL(url).hostname));
   } catch {
