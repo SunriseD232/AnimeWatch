@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { absoluteUrl } from '@/lib/site-url';
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
@@ -49,17 +50,14 @@ export async function updateSession(request: NextRequest) {
   const isPublicPage = PUBLIC_PAGES.has(pathname);
 
   if (!user && !isPublicPage && !isApiRoute) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/login';
+    const url = absoluteUrl('/login', request.url);
     url.searchParams.set('redirect', pathname);
     return NextResponse.redirect(url);
   }
 
   // Авторизованного не пускаем на страницы входа/регистрации.
   if (user && isPublicPage) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/';
-    return NextResponse.redirect(url);
+    return NextResponse.redirect(absoluteUrl('/', request.url));
   }
 
   return supabaseResponse;

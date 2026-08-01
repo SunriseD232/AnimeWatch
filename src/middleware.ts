@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { updateSession } from '@/lib/supabase/middleware';
+import { absoluteUrl } from '@/lib/site-url';
 
 export async function middleware(request: NextRequest) {
   // Открываем последний использованный раздел: если заходят на главную,
@@ -17,9 +18,7 @@ export async function middleware(request: NextRequest) {
     !request.headers.get('Next-Router-Prefetch') &&
     request.cookies.get('aw_mode')?.value === 'cinema'
   ) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/cinema';
-    return NextResponse.redirect(url);
+    return NextResponse.redirect(absoluteUrl('/cinema', request.url));
   }
 
   return await updateSession(request);
