@@ -15,21 +15,6 @@ function videoseedHost() {
   return process.env.VIDEOSEED_HOST || 'tv-1-kinoserial.net';
 }
 
-// Реальные сегменты/манифесты Videoseed всегда на этом CDN (см. RELAY_HOSTS в
-// lib/extract/proxy.ts). Рекламная сеть на странице (code.21wiz.com и т.п.)
-// иногда крутит СВОЙ видеоролик с URL, который тоже подходит под общие
-// паттерны (.mp4/.m3u8/...) — без этой проверки перехватчик мог поймать
-// рекламный ролик вместо настоящей серии.
-const VIDEOSEED_CDN_RE = /(^|\.)videoseedcdn\.com$/i;
-
-function isVideoseedCdnUrl(url) {
-  try {
-    return VIDEOSEED_CDN_RE.test(new URL(url).hostname);
-  } catch {
-    return false;
-  }
-}
-
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
@@ -144,15 +129,14 @@ async function interceptVideoUrl(rawEmbedUrl, referer) {
       if (/\.vtt(?:[?#]|$)/i.test(url)) {
         if (!subtitleUrls.includes(url)) subtitleUrls.push(url);
       } else if (
-        isVideoseedCdnUrl(url) &&
-        (url.includes('.mp4') ||
-          url.includes('.m3u8') ||
-          url.includes('playlist.m3u8') ||
-          url.includes('master.m3u8') ||
-          url.includes('.ts?') ||
-          url.includes('/video/') ||
-          url.includes('/stream/') ||
-          url.includes('/hls/'))
+        url.includes('.mp4') ||
+        url.includes('.m3u8') ||
+        url.includes('playlist.m3u8') ||
+        url.includes('master.m3u8') ||
+        url.includes('.ts?') ||
+        url.includes('/video/') ||
+        url.includes('/stream/') ||
+        url.includes('/hls/')
       ) {
         videoUrls.push(url);
       }
@@ -176,10 +160,16 @@ async function interceptVideoUrl(rawEmbedUrl, referer) {
       );
     }
 
-    const mp4 = videoUrls.find((u) => u.includes('.mp4'));
-    const m3u8 = videoUrls.find((u) => u.includes('.m3u8') || u.includes('playlist'));
-    const stream = videoUrls.find((u) => u.includes('/video/') || u.includes('/stream/') || u.includes('/hls/'));
-    const videoUrl = mp4 || m3u8 || stream || videoUrls[0] || null;
+    // Реклама на странице (preroll code.21wiz.com и т.п.) тоже иногда крутит
+    // СВОЙ видеоролик, чей URL совпадает с теми же паттернами (.mp4/.m3u8/...)
+    // — её запрос уходит РАНЬШЕ, до кликов, закрывающих её (см. ниже). Поэтому
+    // берём ПОСЛЕДНИЙ подходящий URL каждого типа, а не первый: настоящий
+    // плеер стартует уже после дизмисса рекламы, его запрос всегда позже.
+    const byRecency = [...videoUrls].reverse();
+    const mp4 = byRecency.find((u) => u.includes('.mp4'));
+    const m3u8 = byRecency.find((u) => u.includes('.m3u8') || u.includes('playlist'));
+    const stream = byRecency.find((u) => u.includes('/video/') || u.includes('/stream/') || u.includes('/hls/'));
+    const videoUrl = mp4 || m3u8 || stream || byRecency[0] || null;
     return { videoUrl, subtitleUrls };
   } catch (err) {
     console.error('[videoseed] Puppeteer упал:', err);
