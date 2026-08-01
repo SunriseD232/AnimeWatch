@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'crypto';
+import { getVpsRelayEnabled } from '@/lib/settings';
 
 /**
  * Range-прокси байтов апстрима + подписанные "сырые" ссылки для сегментов
@@ -214,13 +215,12 @@ export function rewriteDashManifest(
  * с обычного IP (включая наш VPS). Для них байты идут через /relay VPS
  * (см. vps-extractor/src/server.js) — Puppeteer там не нужен, только IP.
  *
- * ОТКЛЮЧЕНО ПО УМОЛЧАНИЮ (см. VPS_RELAY_ENABLED ниже): само приложение
- * теперь тоже работает с VPS (self-host, см. ARCHITECTURE.md), а не с
- * Vercel — его IP как раз тот самый "обычный", который эти CDN не
- * блокировали, так что relay стал лишним двойным хопом на самого себя.
- * Список хостов и код-путь оставлены как есть — понадобится relay снова
- * (например, при переезде обратно на инфраструктуру с блокируемым IP),
- * включается одной переменной окружения, без правок кода.
+ * Переключается живым флагом из БД (см. lib/settings.ts,
+ * components/RelayToggle.tsx в профиле — админ включает/выключает без
+ * редеплоя), а не .env: при self-host на самой VPS (см. ARCHITECTURE.md)
+ * relay избыточен (приложение и так стучится с "обычного" IP), но при
+ * переезде обратно на инфраструктуру с блокируемым IP включается одной
+ * кнопкой.
  */
 const RELAY_HOSTS = [
   /(^|\.)sibnet\.ru$/i,
@@ -230,8 +230,8 @@ const RELAY_HOSTS = [
   /(^|\.)takehost-cdn\.aksor\.tv$/i, // Aksor — превентивно, не проверяли вживую с Vercel.
 ];
 
-function needsVpsRelay(url: string): boolean {
-  if (process.env.VPS_RELAY_ENABLED !== 'true') return false;
+async function needsVpsRelay(url: string): Promise<boolean> {
+  if (!(await getVpsRelayEnabled())) return false;
   try {
     return RELAY_HOSTS.some((re) => re.test(new URL(url).hostname));
   } catch {
@@ -243,7 +243,7 @@ async function fetchUpstream(
   url: string,
   upstreamHeaders: Record<string, string>,
 ): Promise<Response> {
-  if (!needsVpsRelay(url)) {
+  if (!(await needsVpsRelay(url))) {
     return fetch(url, { headers: upstreamHeaders, redirect: 'follow' });
   }
 

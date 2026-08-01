@@ -1,9 +1,11 @@
 import { redirect } from 'next/navigation';
 import ProfileTabs from '@/components/ProfileTabs';
 import VibixTrialStatus from '@/components/VibixTrialStatus';
+import RelayToggle from '@/components/RelayToggle';
 import { isAdminEmail } from '@/lib/admin';
 import { createClient } from '@/lib/supabase/server';
 import { getTodaysSignupCode } from '@/lib/signupCode';
+import { getVpsRelayEnabled } from '@/lib/settings';
 import type { UserListItem } from '@/lib/types';
 
 export const metadata = { title: 'Профиль — MediaWatch' };
@@ -24,6 +26,7 @@ export default async function ProfilePage() {
 
   const items = (data ?? []) as UserListItem[];
   const isAdmin = isAdminEmail(user.email);
+  const relayEnabled = isAdmin ? await getVpsRelayEnabled() : false;
 
   return (
     <div className="flex flex-col gap-8">
@@ -43,6 +46,7 @@ export default async function ProfilePage() {
       </section>
 
       {isAdmin && <VibixTrialStatus />}
+      {isAdmin && <RelayToggle initialEnabled={relayEnabled} />}
 
       <ProfileTabs
         items={items}
