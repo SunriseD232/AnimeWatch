@@ -87,6 +87,37 @@ function subtitleLangFromUrl(url) {
   return match ? match[1].toLowerCase() : null;
 }
 
+/**
+ * Рекламная сеть на embed-странице (preroll) иногда крутит СВОЙ видеоролик,
+ * а не баннер/оверлей — его URL неотличим от настоящего по домену или пути
+ * (найдено вживую: оба на edge-*.kinescopecdn.net, одинаковая структура
+ * пути). Единственный надёжный сигнал — размер: рекламные ролики виденные
+ * вживую — ~1.2МБ на 15с, настоящая серия кратно больше на порядки. Порог
+ * с большим запасом, чтобы не отсечь честную серию низкого качества/короткий
+ * фрагмент, но отсечь любой правдоподобный рекламный ролик.
+ */
+const MIN_REAL_VIDEO_BYTES = 15_000_000;
+
+async function probeContentLength(url, referer) {
+  try {
+    const res = await fetch(url, {
+      headers: { Referer: referer, 'User-Agent': UA, Range: 'bytes=0-0' },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok && res.status !== 206) return null;
+    const range = res.headers.get('content-range'); // "bytes 0-0/1220664"
+    const total = range ? Number(range.split('/')[1]) : Number(res.headers.get('content-length'));
+    return Number.isFinite(total) ? total : null;
+  } catch {
+    return null;
+  }
+}
+
+async function isLikelyRealVideo(url, referer) {
+  const total = await probeContentLength(url, referer);
+  return total !== null && total >= MIN_REAL_VIDEO_BYTES;
+}
+
 function buildEmbedUrl(kinopoiskId, season, episode) {
   const token = process.env.VIDEOSEED_TOKEN;
   if (!token) return null;
@@ -151,7 +182,20 @@ async function interceptVideoUrl(rawEmbedUrl, referer) {
     await page.mouse.click(640, 360).catch(() => {});
     await new Promise((r) => setTimeout(r, 4_000));
     await page.mouse.click(640, 360).catch(() => {});
-    await new Promise((r) => setTimeout(r, 6_000));
+
+    // Ждём появления НАСТОЯЩЕГО видео (валидируем размером — см.
+    // isLikelyRealVideo), а не просто фиксированную паузу: реклама сама по
+    // себе иногда тоже видеоролик (см. коммент ниже), и если он ещё не
+    // закрылся ко второму клику, настоящий плеер стартует позже. Проверяем
+    // периодически, выходим раньше, если размер уже подтверждён.
+    const knownBad = new Set();
+    for (let i = 0; i < 5; i++) {
+      await new Promise((r) => setTimeout(r, 3_000));
+      const candidate = [...videoUrls].reverse().find((u) => u.includes('.mp4') && !knownBad.has(u));
+      if (!candidate) continue;
+      if (await isLikelyRealVideo(candidate, referer)) break;
+      knownBad.add(candidate);
+    }
     await page.close();
 
     if (videoUrls.length === 0) {
@@ -160,16 +204,32 @@ async function interceptVideoUrl(rawEmbedUrl, referer) {
       );
     }
 
-    // Реклама на странице (preroll code.21wiz.com и т.п.) тоже иногда крутит
-    // СВОЙ видеоролик, чей URL совпадает с теми же паттернами (.mp4/.m3u8/...)
-    // — её запрос уходит РАНЬШЕ, до кликов, закрывающих её (см. ниже). Поэтому
-    // берём ПОСЛЕДНИЙ подходящий URL каждого типа, а не первый: настоящий
-    // плеер стартует уже после дизмисса рекламы, его запрос всегда позже.
+    // Реклама на странице (preroll code.21wiz.com и т.п.) не всегда баннер —
+    // иногда сама крутит видеоролик, чей URL неотличим от настоящего домена/
+    // пути (найдено вживую: оба на kinescopecdn.net). Поэтому среди
+    // mp4-кандидатов (от новых к старым) берём первый, реально прошедший
+    // проверку размера, а не первый попавшийся — иначе гарантированно ловим
+    // рекламу, если её запрос вообще есть в списке.
     const byRecency = [...videoUrls].reverse();
-    const mp4 = byRecency.find((u) => u.includes('.mp4'));
+    const mp4Candidates = byRecency.filter((u) => u.includes('.mp4'));
+    let mp4 = null;
+    for (const candidate of mp4Candidates) {
+      if (await isLikelyRealVideo(candidate, referer)) {
+        mp4 = candidate;
+        break;
+      }
+    }
     const m3u8 = byRecency.find((u) => u.includes('.m3u8') || u.includes('playlist'));
     const stream = byRecency.find((u) => u.includes('/video/') || u.includes('/stream/') || u.includes('/hls/'));
-    const videoUrl = mp4 || m3u8 || stream || byRecency[0] || null;
+    // byRecency[0] как последний резерв — только если среди кандидатов вообще
+    // не было mp4 (т.е. это не тот случай рекламного ролика, который мы
+    // научились отличать по размеру, а какой-то другой формат URL).
+    const videoUrl = mp4 || m3u8 || stream || (mp4Candidates.length === 0 ? byRecency[0] : null) || null;
+    if (!videoUrl && mp4Candidates.length > 0) {
+      console.error(
+        `[videoseed] ${embedUrl}: все ${mp4Candidates.length} mp4-кандидата похожи на рекламу (< ${MIN_REAL_VIDEO_BYTES} байт)`,
+      );
+    }
     return { videoUrl, subtitleUrls };
   } catch (err) {
     console.error('[videoseed] Puppeteer упал:', err);
