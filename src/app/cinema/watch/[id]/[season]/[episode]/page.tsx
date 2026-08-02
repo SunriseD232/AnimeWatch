@@ -117,19 +117,22 @@ export default async function CinemaWatchPage({
   const seasonEpisodes =
     seasonInfo?.episodes ?? (item.isSerial ? item.episodesTotal : 1);
 
-  // «Наш плеер» для кино: все озвучки Videoseed (item=search отдаёт
-  // translation_iframe с готовым embed на каждую, см.
-  // getVideoseedOwnPlayerTranslations) первыми, затем все озвучки Kodik по
-  // kinopoisk_id. Если у Videoseed нет данных по озвучкам для тайтла —
-  // старое поведение: один синтетический трек (id=0 — слот "без явного
-  // выбора", VPS сам решает через embed_auto, см. resolve.ts).
+  // «Наш плеер» для кино: озвучки Kodik ПЕРВЫМИ (id=0-выбор по умолчанию) —
+  // его извлечение обычный fetch без Puppeteer, почти мгновенное; Videoseed
+  // (Puppeteer, обход preroll-рекламы, ~10-13с на непрогретый кэш, см.
+  // vps-extractor/src/videoseed.js) идёт следом, доступен через Озвучку в
+  // меню настроек. У Videoseed выше покрытие каталога/качество — если у
+  // конкретного тайтла Kodik-озвучек нет, порядок и так не важен. Если у
+  // Videoseed нет данных по озвучкам вовсе — старое поведение: один
+  // синтетический трек (id=0 — слот "без явного выбора", VPS сам решает
+  // через embed_auto, см. resolve.ts).
   const ownPlayerTranslations: OwnPlayerTranslation[] = [
+    ...kodikOwnPlayerTranslations,
     ...(videoseedOwnPlayerTranslations.length > 0
       ? videoseedOwnPlayerTranslations
       : videoseedUrl
         ? [{ id: 0, title: 'Videoseed', embedUrl: '', source: 'videoseed' as const }]
         : []),
-    ...kodikOwnPlayerTranslations,
   ];
 
   return (

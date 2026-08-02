@@ -118,6 +118,20 @@ async function isLikelyRealVideo(url, referer) {
   return total !== null && total >= MIN_REAL_VIDEO_BYTES;
 }
 
+// Сеть рекламной preroll-вставки на embed-странице (см. клики ниже — раньше
+// их приходилось эмулировать именно чтобы закрыть/пройти эту рекламу).
+// Блокируем её запросы совсем — не даём ей загрузиться, вместо того чтобы
+// ждать/кликать её насквозь.
+const AD_HOST_PATTERNS = [/(^|\.)21wiz\.com$/i];
+
+function isAdRequest(url) {
+  try {
+    return AD_HOST_PATTERNS.some((re) => re.test(new URL(url).hostname));
+  } catch {
+    return false;
+  }
+}
+
 function buildEmbedUrl(kinopoiskId, season, episode) {
   const token = process.env.VIDEOSEED_TOKEN;
   if (!token) return null;
@@ -160,6 +174,10 @@ async function interceptVideoUrl(rawEmbedUrl, referer) {
           .catch(() => {});
         return;
       }
+      if (isAdRequest(url)) {
+        request.abort().catch(() => {});
+        return;
+      }
       allUrls.push(url);
       if (/\.vtt(?:[?#]|$)/i.test(url)) {
         if (!subtitleUrls.includes(url)) subtitleUrls.push(url);
@@ -180,11 +198,16 @@ async function interceptVideoUrl(rawEmbedUrl, referer) {
 
     await page.setExtraHTTPHeaders({ Referer: referer });
     await page.goto(wrapperUrl, { waitUntil: 'networkidle2', timeout: 30_000 });
-    await new Promise((r) => setTimeout(r, 2_000));
-    // Первый клик закрывает preroll-рекламу (code.21wiz.com), второй
-    // реально стартует плеер — подтверждено вручную (diag.js), см. коммит.
+    await new Promise((r) => setTimeout(r, 500));
+    // Клики раньше были нужны, чтобы закрыть preroll-рекламу
+    // (code.21wiz.com) — теперь она блокируется на уровне сети (см.
+    // isAdRequest выше) и вообще не грузится, поэтому паузы можно держать
+    // короткими: клики нужны просто чтобы стартовать сам плеер (жест
+    // пользователя для автовоспроизведения), не для дизмисса рекламы.
+    // Проверено вживую на нескольких тайтлах — стабильно ~4-6.5с вместо
+    // прежних ~10-13с (и ~23с до блокировки рекламы), см. коммит.
     await page.mouse.click(640, 360).catch(() => {});
-    await new Promise((r) => setTimeout(r, 4_000));
+    await new Promise((r) => setTimeout(r, 1_000));
     await page.mouse.click(640, 360).catch(() => {});
 
     // Ждём появления НАСТОЯЩЕГО видео, а не просто фиксированную паузу:
