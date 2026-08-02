@@ -17,7 +17,14 @@ const DISCOVER_TABS = [
   { key: 'new', label: 'Новинки', href: '/cinema?tab=new' },
   { key: 'popular', label: 'Популярное', href: '/cinema?tab=popular' },
 ];
-const DISCOVER_PAGE_SIZE = 16;
+const DISCOVER_PAGE_SIZE = 24;
+
+function discoverPageHref(tab: string, page: number): string {
+  const params = new URLSearchParams();
+  if (tab !== 'new') params.set('tab', tab);
+  params.set('page', String(page));
+  return `/cinema?${params.toString()}`;
+}
 
 async function ContinueWatching() {
   const supabase = createClient();
@@ -60,15 +67,17 @@ async function ContinueWatching() {
   );
 }
 
-/** Новинки/Популярное — карусель на главной под «Продолжить просмотр»,
- *  переключается вкладками DiscoverTabs (см. searchParams.tab в CinemaHomePage). */
-async function DiscoverCarousel({ tab }: { tab: string }) {
+/** Новинки/Популярное — полноценная сетка с пагинацией на главной под
+ *  «Продолжить просмотр», переключается вкладками DiscoverTabs (см.
+ *  searchParams.tab в CinemaHomePage) — тот же грид, что у /cinema/new и
+ *  /cinema/catalog. */
+async function DiscoverGrid({ tab, page }: { tab: string; page: number }) {
   let data;
   try {
     data =
       tab === 'popular'
-        ? await getPopularCinemaRanked(1, DISCOVER_PAGE_SIZE)
-        : await getNewCinema(1, DISCOVER_PAGE_SIZE);
+        ? await getPopularCinemaRanked(page, DISCOVER_PAGE_SIZE)
+        : await getNewCinema(page, DISCOVER_PAGE_SIZE);
   } catch {
     return (
       <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
@@ -81,37 +90,67 @@ async function DiscoverCarousel({ tab }: { tab: string }) {
   if (data.items.length === 0) {
     return (
       <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
-        Каталог кино недоступен. Убедитесь, что задан{' '}
-        <code className="rounded bg-black/30 px-1">VIDEOSEED_API_TOKEN</code>.
+        {page > 1 ? (
+          'Дальше ничего нет.'
+        ) : (
+          <>
+            Каталог кино недоступен. Убедитесь, что задан{' '}
+            <code className="rounded bg-black/30 px-1">VIDEOSEED_API_TOKEN</code>.
+          </>
+        )}
       </div>
     );
   }
 
-  const seeAllHref = tab === 'popular' ? '/cinema/popular' : '/cinema/new';
+  const hasPrev = page > 1;
 
   return (
-    <ScrollCarousel className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2">
-      {data.items.map((item) => (
-        <div key={item.id} className="w-40 shrink-0 snap-start sm:w-48">
-          <CinemaCard item={item} />
-        </div>
-      ))}
-      <Link
-        href={seeAllHref}
-        className="flex w-40 shrink-0 snap-start items-center justify-center rounded-2xl bg-bg-card text-sm font-medium text-gray-300 ring-1 ring-white/5 transition hover:text-accent hover:ring-accent/60 sm:w-48"
-      >
-        Смотреть все →
-      </Link>
-    </ScrollCarousel>
+    <div className="flex flex-col gap-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+        {data.items.map((item) => (
+          <CinemaCard key={item.id} item={item} />
+        ))}
+      </div>
+
+      <div className="flex items-center justify-center gap-2">
+        <Link
+          href={hasPrev ? discoverPageHref(tab, page - 1) : '#'}
+          aria-disabled={!hasPrev}
+          className={[
+            'rounded-full px-4 py-2 text-sm font-medium ring-1 ring-white/10 transition',
+            hasPrev
+              ? 'bg-bg-card text-gray-100 hover:bg-bg-soft'
+              : 'pointer-events-none bg-bg-card/50 text-gray-600',
+          ].join(' ')}
+        >
+          ← Пред.
+        </Link>
+        <span className="px-2 text-sm text-gray-400">Стр. {page}</span>
+        <Link
+          href={data.hasMore ? discoverPageHref(tab, page + 1) : '#'}
+          aria-disabled={!data.hasMore}
+          className={[
+            'rounded-full px-4 py-2 text-sm font-medium ring-1 ring-white/10 transition',
+            data.hasMore
+              ? 'bg-bg-card text-gray-100 hover:bg-bg-soft'
+              : 'pointer-events-none bg-bg-card/50 text-gray-600',
+          ].join(' ')}
+        >
+          След. →
+        </Link>
+      </div>
+    </div>
   );
 }
 
 export default function CinemaHomePage({
   searchParams,
 }: {
-  searchParams: { tab?: string };
+  searchParams: { tab?: string; page?: string };
 }) {
   const tab = searchParams.tab === 'popular' ? 'popular' : 'new';
+  const pageParam = Number(searchParams.page);
+  const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
 
   return (
     <div className="flex flex-col gap-10">
@@ -129,8 +168,8 @@ export default function CinemaHomePage({
         style={{ animationDelay: '80ms' }}
       >
         <DiscoverTabs tabs={DISCOVER_TABS} activeKey={tab} catalogHref="/cinema/catalog" />
-        <Suspense key={tab} fallback={<CardGridSkeleton count={6} />}>
-          <DiscoverCarousel tab={tab} />
+        <Suspense key={`${tab}|${page}`} fallback={<CardGridSkeleton count={DISCOVER_PAGE_SIZE} />}>
+          <DiscoverGrid tab={tab} page={page} />
         </Suspense>
       </section>
     </div>

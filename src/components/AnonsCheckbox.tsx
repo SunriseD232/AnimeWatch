@@ -18,6 +18,9 @@ export default function AnonsCheckbox() {
     const params = new URLSearchParams(searchParams.toString());
     if (checked) params.delete('anons');
     else params.set('anons', '1');
+    // Смена фильтра — сбрасываем пагинацию (как и GenreFilterPanel): иначе
+    // можно остаться на пустой странице N нового набора.
+    params.delete('page');
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
