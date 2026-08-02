@@ -60,13 +60,13 @@ async function ContinueWatching() {
 
 /** Новинки/Популярное — карусель на главной под «Продолжить просмотр»,
  *  переключается вкладками DiscoverTabs (см. searchParams.tab в HomePage). */
-async function DiscoverCarousel({ tab }: { tab: string }) {
+async function DiscoverCarousel({ tab, showAnons }: { tab: string; showAnons: boolean }) {
   let data;
   try {
     data =
       tab === 'popular'
-        ? await getPopularRanked(1, DISCOVER_PAGE_SIZE)
-        : await getNewAnime(1, DISCOVER_PAGE_SIZE);
+        ? await getPopularRanked(1, DISCOVER_PAGE_SIZE, !showAnons)
+        : await getNewAnime(1, DISCOVER_PAGE_SIZE, !showAnons);
   } catch {
     return (
       <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
@@ -106,9 +106,10 @@ async function DiscoverCarousel({ tab }: { tab: string }) {
 export default function HomePage({
   searchParams,
 }: {
-  searchParams: { tab?: string };
+  searchParams: { tab?: string; anons?: string };
 }) {
   const tab = searchParams.tab === 'popular' ? 'popular' : 'new';
+  const showAnons = searchParams.anons === '1';
 
   return (
     <div className="flex flex-col gap-10">
@@ -125,9 +126,15 @@ export default function HomePage({
         className="animate-rise flex flex-col gap-4"
         style={{ animationDelay: '80ms' }}
       >
-        <DiscoverTabs tabs={DISCOVER_TABS} activeKey={tab} catalogHref="/catalog" />
-        <Suspense key={tab} fallback={<CardGridSkeleton count={6} />}>
-          <DiscoverCarousel tab={tab} />
+        <DiscoverTabs
+          tabs={DISCOVER_TABS}
+          activeKey={tab}
+          catalogHref="/catalog"
+          anonsToggle
+          showAnons={showAnons}
+        />
+        <Suspense key={`${tab}|${showAnons}`} fallback={<CardGridSkeleton count={6} />}>
+          <DiscoverCarousel tab={tab} showAnons={showAnons} />
         </Suspense>
       </section>
     </div>

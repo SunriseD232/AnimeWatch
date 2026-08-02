@@ -151,6 +151,7 @@ export interface PopularPage {
 export async function getPopularRanked(
   page = 1,
   limit = 24,
+  excludeAnons = true,
 ): Promise<PopularPage> {
   const year = new Date().getFullYear();
   const params = new URLSearchParams({
@@ -160,6 +161,7 @@ export async function getPopularRanked(
     limit: String(limit),
     page: String(page),
   });
+  if (excludeAnons) params.set('status', 'ongoing,released');
   const items = await shikimoriFetch<ShikimoriAnimeShort[]>(
     `/animes?${params.toString()}`,
     1800,
@@ -220,6 +222,8 @@ export interface AnimeCatalogParams {
   sort: AnimeCatalogSort;
   page: number;
   pageSize: number;
+  /** Скрыть тайтлы со статусом "анонс" (ещё не вышли, смотреть нечего). */
+  excludeAnons: boolean;
 }
 
 export interface AnimeCatalogPage {
@@ -256,7 +260,7 @@ const UPSTREAM_PAGE_SIZE = 50;
 export async function getAnimeCatalog(
   params: AnimeCatalogParams,
 ): Promise<AnimeCatalogPage> {
-  const { genresInclude, genresExclude, sort, page, pageSize } = params;
+  const { genresInclude, genresExclude, sort, page, pageSize, excludeAnons } = params;
   const needsFullFilter = genresExclude.length > 0 || genresInclude.length > 1;
 
   if (!needsFullFilter) {
@@ -267,6 +271,7 @@ export async function getAnimeCatalog(
       page: String(page),
     });
     if (genresInclude.length === 1) qp.set('genre', String(genresInclude[0]));
+    if (excludeAnons) qp.set('status', 'ongoing,released');
     const items = await shikimoriFetch<ShikimoriAnimeShort[]>(
       `/animes?${qp.toString()}`,
       1800,
@@ -290,6 +295,7 @@ export async function getAnimeCatalog(
       page: String(upstreamPage),
     });
     if (genresInclude.length > 0) qp.set('genre', genresInclude.join(','));
+    if (excludeAnons) qp.set('status', 'ongoing,released');
 
     const batch = await shikimoriFetch<ShikimoriAnimeShort[]>(
       `/animes?${qp.toString()}`,
@@ -336,6 +342,7 @@ export async function getAnimeCatalog(
 export async function getNewAnime(
   page = 1,
   pageSize = 24,
+  excludeAnons = true,
 ): Promise<AnimeCatalogPage> {
   return getAnimeCatalog({
     genresInclude: [],
@@ -343,6 +350,7 @@ export async function getNewAnime(
     sort: 'aired_on',
     page,
     pageSize,
+    excludeAnons,
   });
 }
 

@@ -11,6 +11,9 @@ interface Props {
   genres: FilterOption[];
   sorts: FilterOption[];
   defaultSort: string;
+  /** Показать чекбокс "Показывать анонсы" — сейчас только у каталога аниме,
+   *  у кино такого статуса тайтла нет (см. lib/videoseed-catalog.ts). */
+  anonsToggle?: boolean;
 }
 
 /**
@@ -25,7 +28,7 @@ interface Props {
  * значений (у аниме — числовой id жанра Shikimori, у кино — название
  * жанра текстом, см. lib/videoseed-catalog.ts).
  */
-export default function GenreFilterPanel({ genres, sorts, defaultSort }: Props) {
+export default function GenreFilterPanel({ genres, sorts, defaultSort, anonsToggle }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -33,12 +36,22 @@ export default function GenreFilterPanel({ genres, sorts, defaultSort }: Props) 
   const include = (searchParams.get('genres') ?? '').split(',').filter(Boolean);
   const exclude = (searchParams.get('exclude') ?? '').split(',').filter(Boolean);
   const sort = searchParams.get('sort') ?? defaultSort;
+  const showAnons = searchParams.get('anons') === '1';
 
-  function navigate(nextInclude: string[], nextExclude: string[], nextSort: string) {
+  // nextShowAnons по умолчанию = текущее значение — иначе смена жанра/
+  // сортировки молча сбрасывала бы чекбокс анонсов (см. navigate ниже:
+  // собирает URL с нуля, не наследуя от текущего).
+  function navigate(
+    nextInclude: string[],
+    nextExclude: string[],
+    nextSort: string,
+    nextShowAnons: boolean = showAnons,
+  ) {
     const params = new URLSearchParams();
     if (nextInclude.length > 0) params.set('genres', nextInclude.join(','));
     if (nextExclude.length > 0) params.set('exclude', nextExclude.join(','));
     if (nextSort !== defaultSort) params.set('sort', nextSort);
+    if (nextShowAnons) params.set('anons', '1');
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
@@ -66,20 +79,34 @@ export default function GenreFilterPanel({ genres, sorts, defaultSort }: Props) 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <label className="flex items-center gap-2 text-sm text-gray-400">
-          Сортировка:
-          <select
-            value={sort}
-            onChange={(e) => navigate(include, exclude, e.target.value)}
-            className="rounded-lg border border-white/10 bg-bg-card px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none"
-          >
-            {sorts.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-2 text-sm text-gray-400">
+            Сортировка:
+            <select
+              value={sort}
+              onChange={(e) => navigate(include, exclude, e.target.value)}
+              className="rounded-lg border border-white/10 bg-bg-card px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none"
+            >
+              {sorts.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {anonsToggle && (
+            <label className="flex items-center gap-2 text-sm text-gray-400">
+              <input
+                type="checkbox"
+                checked={showAnons}
+                onChange={(e) => navigate(include, exclude, sort, e.target.checked)}
+                className="h-4 w-4 rounded border-white/20 bg-bg-card accent-accent"
+              />
+              Показывать анонсы
+            </label>
+          )}
+        </div>
 
         {hasFilters && (
           <button

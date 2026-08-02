@@ -38,11 +38,13 @@ function pageHref(
   genresExclude: number[],
   sort: AnimeCatalogSort,
   page: number,
+  showAnons: boolean,
 ): string {
   const params = new URLSearchParams();
   if (genresInclude.length > 0) params.set('genres', genresInclude.join(','));
   if (genresExclude.length > 0) params.set('exclude', genresExclude.join(','));
   if (sort !== DEFAULT_SORT) params.set('sort', sort);
+  if (showAnons) params.set('anons', '1');
   params.set('page', String(page));
   return `/catalog?${params.toString()}`;
 }
@@ -59,6 +61,7 @@ async function GenresPanel() {
       genres={genres.map((g) => ({ value: String(g.id), label: g.russian }))}
       sorts={[...ANIME_CATALOG_SORTS]}
       defaultSort={DEFAULT_SORT}
+      anonsToggle
     />
   );
 }
@@ -68,11 +71,13 @@ async function CatalogGrid({
   genresExclude,
   sort,
   page,
+  showAnons,
 }: {
   genresInclude: number[];
   genresExclude: number[];
   sort: AnimeCatalogSort;
   page: number;
+  showAnons: boolean;
 }) {
   let data;
   try {
@@ -82,6 +87,7 @@ async function CatalogGrid({
       sort,
       page,
       pageSize: PAGE_SIZE,
+      excludeAnons: !showAnons,
     });
   } catch {
     return (
@@ -116,7 +122,7 @@ async function CatalogGrid({
         <Link
           href={
             hasPrev
-              ? pageHref(genresInclude, genresExclude, sort, page - 1)
+              ? pageHref(genresInclude, genresExclude, sort, page - 1, showAnons)
               : '#'
           }
           aria-disabled={!hasPrev}
@@ -133,7 +139,7 @@ async function CatalogGrid({
         <Link
           href={
             data.hasMore
-              ? pageHref(genresInclude, genresExclude, sort, page + 1)
+              ? pageHref(genresInclude, genresExclude, sort, page + 1, showAnons)
               : '#'
           }
           aria-disabled={!data.hasMore}
@@ -154,13 +160,14 @@ async function CatalogGrid({
 export default function CatalogPage({
   searchParams,
 }: {
-  searchParams: { genres?: string; exclude?: string; sort?: string; page?: string };
+  searchParams: { genres?: string; exclude?: string; sort?: string; page?: string; anons?: string };
 }) {
   const genresInclude = parseIds(searchParams.genres);
   const genresExclude = parseIds(searchParams.exclude);
   const sort = isValidSort(searchParams.sort) ? searchParams.sort : DEFAULT_SORT;
   const pageParam = Number(searchParams.page);
   const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
+  const showAnons = searchParams.anons === '1';
 
   return (
     <div className="flex flex-col gap-6">
@@ -179,7 +186,7 @@ export default function CatalogPage({
       </Suspense>
 
       <Suspense
-        key={`${searchParams.genres ?? ''}|${searchParams.exclude ?? ''}|${sort}|${page}`}
+        key={`${searchParams.genres ?? ''}|${searchParams.exclude ?? ''}|${sort}|${page}|${showAnons}`}
         fallback={<CardGridSkeleton count={PAGE_SIZE} />}
       >
         <CatalogGrid
@@ -187,6 +194,7 @@ export default function CatalogPage({
           genresExclude={genresExclude}
           sort={sort}
           page={page}
+          showAnons={showAnons}
         />
       </Suspense>
     </div>
