@@ -56,8 +56,10 @@ interface Props {
 }
 
 const VOLUME_KEY = 'aw:ownPlayerVolume';
+const SPEED_KEY = 'aw:ownPlayerSpeed';
 const NEXT_BUTTON_WINDOW_S = 45;
 const CONTROLS_HIDE_MS = 3_000;
+const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
 const SOURCE_LABELS: Record<ExtractSource, string> = {
   alloha: 'Alloha',
@@ -69,6 +71,74 @@ const SOURCE_LABELS: Record<ExtractSource, string> = {
 };
 
 type LoadState = 'probing' | 'ready' | 'unavailable' | 'failed';
+// Меню настроек — корневой список категорий или подменю выбора значения для
+// одной из них (см. рендер в конце компонента).
+type SettingsView = 'root' | 'quality' | 'audio' | 'subtitles' | 'speed';
+
+const SETTINGS_VIEW_TITLES: Record<Exclude<SettingsView, 'root'>, string> = {
+  quality: 'Качество',
+  audio: 'Озвучка',
+  subtitles: 'Субтитры',
+  speed: 'Скорость',
+};
+
+function speedLabel(rate: number): string {
+  return rate === 1 ? 'Обычная' : `${rate}×`;
+}
+
+/** Строка корневого меню настроек: категория + текущее значение + шеврон. */
+function SettingsRow({
+  label,
+  value,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-2 text-left transition hover:bg-white/10"
+    >
+      <span className="text-gray-200">{label}</span>
+      <span className="flex items-center gap-1 text-xs text-gray-400">
+        <span className="max-w-[8rem] truncate">{value}</span>
+        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-current">
+          <path d="M8.59 16.59 13.17 12 8.59 7.41 10 6l6 6-6 6z" />
+        </svg>
+      </span>
+    </button>
+  );
+}
+
+/** Пункт подменю (значение категории) — радио-кружок + подпись. */
+function RadioOption({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition hover:bg-white/10"
+    >
+      <span
+        className={[
+          'inline-block h-3.5 w-3.5 shrink-0 rounded-full border',
+          active ? 'border-accent bg-accent' : 'border-white/30',
+        ].join(' ')}
+      />
+      <span className={active ? 'text-accent' : 'text-gray-200'}>{label}</span>
+    </button>
+  );
+}
 
 /**
  * Собственный плеер MediaWatch. Источник байтов — /api/proxy: сервер сам
@@ -171,6 +241,7 @@ export default function OwnPlayer({
   const [buffered, setBuffered] = useState(0);
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
   const [fullscreen, setFullscreen] = useState(false);
   const [buffering, setBuffering] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -190,6 +261,7 @@ export default function OwnPlayer({
   // полноэкранном режиме (фуллскрин берётся на containerRef, а не на всю
   // страницу).
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsView, setSettingsView] = useState<SettingsView>('root');
 
   // --- Прогресс просмотра ---------------------------------------------------
   const getState = useCallback(() => {
@@ -235,6 +307,14 @@ export default function OwnPlayer({
     }
   }, []);
 
+  // --- Скорость: восстановление сохранённого значения ------------------------
+  useEffect(() => {
+    const stored = Number(window.localStorage.getItem(SPEED_KEY));
+    if (PLAYBACK_RATES.includes(stored)) {
+      setPlaybackRate(stored);
+    }
+  }, []);
+
   // <video> монтируется только при loadState==='ready' — до этого момента
   // videoRef.current пуст, и присвоение volume/muted в эффекте восстановления
   // выше молча не срабатывает (сам элемент по умолчанию volume=1). Синхронно
@@ -244,6 +324,7 @@ export default function OwnPlayer({
     if (!v) return;
     v.volume = volume;
     v.muted = muted;
+    v.playbackRate = playbackRate;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadState]);
 
@@ -278,9 +359,11 @@ export default function OwnPlayer({
   }, [episode, translationId]);
 
   // Закрываем меню настроек при смене серии/озвучки/качества — иначе может
-  // остаться открытым поверх уже другой серии после навигации.
+  // остаться открытым поверх уже другой серии после навигации. Возвращаем
+  // и на корневой список категорий, а не в оставшееся открытым подменю.
   useEffect(() => {
     setSettingsOpen(false);
+    setSettingsView('root');
   }, [src]);
 
   // --- Определение типа потока (HLS/mp4) и подключение источника -----------
@@ -645,6 +728,13 @@ export default function OwnPlayer({
     [qualityLevels, currentTime, resumeFrom],
   );
 
+  const changeSpeed = useCallback((rate: number) => {
+    setPlaybackRate(rate);
+    const v = videoRef.current;
+    if (v) v.playbackRate = rate;
+    window.localStorage.setItem(SPEED_KEY, String(rate));
+  }, []);
+
   // --- Автоскрытие контролов ----------------------------------------------------
   const showControls = useCallback(() => {
     setControlsVisible(true);
@@ -765,12 +855,6 @@ export default function OwnPlayer({
     nextHref !== null && dur > 0 && (isEnded || dur - currentTime <= NEXT_BUTTON_WINDOW_S);
   const progressPct = dur > 0 ? (currentTime / dur) * 100 : 0;
   const bufferedPct = dur > 0 ? Math.min(100, (buffered / dur) * 100) : 0;
-  const hasSettings = qualityLevels.length > 1 || subtitles.length > 0;
-  const settingsOptionClass = (active: boolean) =>
-    [
-      'block w-full rounded-md px-2 py-1.5 text-left transition hover:bg-white/10',
-      active ? 'text-accent' : 'text-gray-200',
-    ].join(' ');
 
   return (
     <div className="flex flex-col gap-3">
@@ -780,7 +864,10 @@ export default function OwnPlayer({
         onKeyDown={onKeyDown}
         onMouseMove={showControls}
         onTouchStart={showControls}
-        onClick={() => setSettingsOpen(false)}
+        onClick={() => {
+          setSettingsOpen(false);
+          setSettingsView('root');
+        }}
         className="group relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10 outline-none focus:ring-accent/40"
       >
         <video
@@ -801,7 +888,11 @@ export default function OwnPlayer({
           ))}
         </video>
 
-        {translationSelector}
+        {/* Озвучка в ready-состоянии переехала в единое меню настроек ниже
+            (см. Скорость/Качество/Субтитры) — translationSelector тут больше
+            не рендерим, оставили его только для probing/unavailable/failed
+            выше (возможность переключить озвучку до/после ошибки без него
+            недоступна). */}
 
         {buffering && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -936,96 +1027,159 @@ export default function OwnPlayer({
               }}
             />
 
-            {hasSettings && (
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSettingsOpen((v) => !v);
-                  }}
-                  aria-label="Настройки"
-                  className={[
-                    'rounded-md p-1.5 transition hover:bg-white/10',
-                    settingsOpen ? 'bg-white/10' : '',
-                  ].join(' ')}
-                >
-                  <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
-                    <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.61l-1.92-3.32a.5.5 0 0 0-.58-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.5.5 0 0 0-.58.22L2.74 8.87a.5.5 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.5.5 0 0 0-.12.61l1.92 3.32c.14.24.44.34.68.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.28.27.42.5.42h3.84c.24 0 .46-.14.5-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.24.09.54 0 .68-.22l1.92-3.32a.5.5 0 0 0-.12-.61l-2.01-1.58zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z" />
-                  </svg>
-                </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSettingsOpen((v) => !v);
+                }}
+                aria-label="Настройки"
+                className={[
+                  'rounded-md p-1.5 transition hover:bg-white/10',
+                  settingsOpen ? 'bg-white/10' : '',
+                ].join(' ')}
+              >
+                <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
+                  <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.61l-1.92-3.32a.5.5 0 0 0-.58-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.5.5 0 0 0-.58.22L2.74 8.87a.5.5 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.5.5 0 0 0-.12.61l1.92 3.32c.14.24.44.34.68.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.28.27.42.5.42h3.84c.24 0 .46-.14.5-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.24.09.54 0 .68-.22l1.92-3.32a.5.5 0 0 0-.12-.61l-2.01-1.58zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z" />
+                </svg>
+              </button>
 
-                {settingsOpen && (
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    className="absolute bottom-full right-0 z-20 mb-2 max-h-72 w-56 overflow-y-auto rounded-xl bg-black/90 p-2 text-sm text-white ring-1 ring-white/10 backdrop-blur"
-                  >
-                    {qualityLevels.length > 1 && (
-                      <div className="mb-1">
-                        <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-gray-400">
-                          Качество
-                        </div>
-                        {!isDashSource && (
-                          <button
-                            type="button"
+              {settingsOpen && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute bottom-full right-0 z-20 mb-2 max-h-80 w-64 overflow-y-auto rounded-xl bg-black/90 p-1 text-sm text-white ring-1 ring-white/10 backdrop-blur"
+                >
+                  {settingsView === 'root' ? (
+                    <>
+                      {qualityLevels.length > 1 && (
+                        <SettingsRow
+                          label="Качество"
+                          value={
+                            currentLevel === -1
+                              ? 'Авто'
+                              : `${qualityLevels.find((l) => l.index === currentLevel)?.height ?? ''}p`
+                          }
+                          onClick={() => setSettingsView('quality')}
+                        />
+                      )}
+                      {translations.length > 1 && (
+                        <SettingsRow
+                          label="Озвучка"
+                          value={activeTranslation?.title ?? '—'}
+                          onClick={() => setSettingsView('audio')}
+                        />
+                      )}
+                      {subtitles.length > 0 && (
+                        <SettingsRow
+                          label="Субтитры"
+                          value={
+                            activeSubtitleIndex === null
+                              ? 'Отключить'
+                              : (subtitles[activeSubtitleIndex]?.label ?? '')
+                          }
+                          onClick={() => setSettingsView('subtitles')}
+                        />
+                      )}
+                      <SettingsRow
+                        label="Скорость"
+                        value={speedLabel(playbackRate)}
+                        onClick={() => setSettingsView('speed')}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setSettingsView('root')}
+                        className="mb-1 flex w-full items-center gap-1.5 rounded-md px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-300 hover:bg-white/10"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-current">
+                          <path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+                        </svg>
+                        {SETTINGS_VIEW_TITLES[settingsView]}
+                      </button>
+
+                      {settingsView === 'quality' && (
+                        <>
+                          {!isDashSource && (
+                            <RadioOption
+                              label="Авто"
+                              active={currentLevel === -1}
+                              onClick={() => {
+                                changeQuality(-1);
+                                setSettingsOpen(false);
+                              }}
+                            />
+                          )}
+                          {qualityLevels.map((lvl) => (
+                            <RadioOption
+                              key={lvl.index}
+                              label={`${lvl.height}p`}
+                              active={currentLevel === lvl.index}
+                              onClick={() => {
+                                changeQuality(lvl.index);
+                                setSettingsOpen(false);
+                              }}
+                            />
+                          ))}
+                        </>
+                      )}
+
+                      {settingsView === 'audio' &&
+                        translations.map((t) => (
+                          <RadioOption
+                            key={t.id}
+                            label={t.title}
+                            active={t.id === translationId}
                             onClick={() => {
-                              changeQuality(-1);
+                              changeTranslation(t.id);
                               setSettingsOpen(false);
                             }}
-                            className={settingsOptionClass(currentLevel === -1)}
-                          >
-                            Авто
-                          </button>
-                        )}
-                        {qualityLevels.map((lvl) => (
-                          <button
-                            key={lvl.index}
-                            type="button"
-                            onClick={() => {
-                              changeQuality(lvl.index);
-                              setSettingsOpen(false);
-                            }}
-                            className={settingsOptionClass(currentLevel === lvl.index)}
-                          >
-                            {lvl.height}p
-                          </button>
+                          />
                         ))}
-                      </div>
-                    )}
-                    {subtitles.length > 0 && (
-                      <div>
-                        <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-gray-400">
-                          Субтитры
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveSubtitleIndex(null);
-                            setSettingsOpen(false);
-                          }}
-                          className={settingsOptionClass(activeSubtitleIndex === null)}
-                        >
-                          Выкл
-                        </button>
-                        {subtitles.map((s, i) => (
-                          <button
-                            key={s.lang}
-                            type="button"
+
+                      {settingsView === 'subtitles' && (
+                        <>
+                          <RadioOption
+                            label="Отключить"
+                            active={activeSubtitleIndex === null}
                             onClick={() => {
-                              setActiveSubtitleIndex(i);
+                              setActiveSubtitleIndex(null);
                               setSettingsOpen(false);
                             }}
-                            className={settingsOptionClass(activeSubtitleIndex === i)}
-                          >
-                            {s.label}
-                          </button>
+                          />
+                          {subtitles.map((s, i) => (
+                            <RadioOption
+                              key={s.lang}
+                              label={s.label}
+                              active={activeSubtitleIndex === i}
+                              onClick={() => {
+                                setActiveSubtitleIndex(i);
+                                setSettingsOpen(false);
+                              }}
+                            />
+                          ))}
+                        </>
+                      )}
+
+                      {settingsView === 'speed' &&
+                        PLAYBACK_RATES.map((rate) => (
+                          <RadioOption
+                            key={rate}
+                            label={speedLabel(rate)}
+                            active={rate === playbackRate}
+                            onClick={() => {
+                              changeSpeed(rate);
+                              setSettingsOpen(false);
+                            }}
+                          />
                         ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
 
             <button
               type="button"
