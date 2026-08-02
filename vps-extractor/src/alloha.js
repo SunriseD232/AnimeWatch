@@ -30,6 +30,59 @@ function getProxyConfig() {
   };
 }
 
+/**
+ * Общий Chromium + прокси-мост между запросами (тот же приём, что для
+ * Videoseed — см. browser.js/videoseed.js): ALLOHA_PROXY_* — статичные env,
+ * один и тот же RU-прокси на каждый запрос, поэтому и локальный анонимайзинг-
+ * мост (resolveProxy), и сам браузер можно поднять один раз и переиспользовать,
+ * вместо полного цикла запуск+закрытие моста и браузера на КАЖДОЕ извлечение.
+ */
+let sharedBrowserPromise = null;
+let sharedProxyBridge = null;
+
+async function getSharedAllohaBrowser() {
+  if (sharedBrowserPromise) {
+    const browser = await sharedBrowserPromise;
+    if (browser.isConnected()) return browser;
+    sharedBrowserPromise = null; // упал/закрылся — перезапустим ниже
+  }
+
+  const proxyConfig = getProxyConfig();
+  if (proxyConfig && !sharedProxyBridge) {
+    try {
+      sharedProxyBridge = await resolveProxy(proxyConfig);
+      console.error(`[alloha] Прокси-мост поднят (общий, на всё время процесса): ${sharedProxyBridge.launchArg}`);
+    } catch (err) {
+      console.error('[alloha] resolveProxy() упал, работаем без прокси:', err);
+    }
+  } else if (proxyConfig) {
+    console.error('[alloha] RU-прокси задан (переиспользуем ранее поднятый мост)');
+  } else {
+    console.error('[alloha] RU-прокси НЕ задан — работаем напрямую');
+  }
+
+  sharedBrowserPromise = launchBrowser(sharedProxyBridge?.launchArg);
+  return sharedBrowserPromise;
+}
+
+/** Закрытие при штатном завершении процесса — см. server.js. */
+async function closeSharedAllohaBrowser() {
+  if (sharedBrowserPromise) {
+    const promise = sharedBrowserPromise;
+    sharedBrowserPromise = null;
+    try {
+      const browser = await promise;
+      if (browser.isConnected()) await browser.close();
+    } catch {
+      /* процесс всё равно завершается */
+    }
+  }
+  if (sharedProxyBridge) {
+    await sharedProxyBridge.close().catch(() => {});
+    sharedProxyBridge = null;
+  }
+}
+
 async function getAllohaEmbedUrls(shikimoriId, episode) {
   const listRes = await fetch(`${YUMMY_BASE}/anime?shikimori_ids=${shikimoriId}&limit=1`, {
     headers: { Accept: 'application/json' },
@@ -161,40 +214,23 @@ async function extractAlloha({ shikimoriId, episode, embedUrl: forcedEmbedUrl })
     }
   }
 
-  const proxyConfig = getProxyConfig();
-  console.error(proxyConfig ? '[alloha] RU-прокси задан' : '[alloha] RU-прокси НЕ задан — работаем напрямую');
-  let resolvedProxy = null;
-  if (proxyConfig) {
-    try {
-      resolvedProxy = await resolveProxy(proxyConfig);
-      console.error(`[alloha] Прокси-мост поднят: ${resolvedProxy.launchArg}`);
-    } catch (err) {
-      console.error('[alloha] resolveProxy() упал, работаем без прокси:', err);
+  const browser = await getSharedAllohaBrowser();
+  for (const embedUrl of embedUrls) {
+    const result = await interceptVideoUrl(browser, embedUrl);
+    if (result) {
+      const { videoUrl, embedOrigin } = result;
+      // CDN проверяет Origin/Referer именно эмбед-страницы (alloha.yani.tv),
+      // а не внешней обёртки (yani.tv) — иначе отдаёт 403 x-vd:origin_mismatch
+      // при последующем проксировании байт с Vercel. См. ARCHITECTURE.md §12.6.
+      return {
+        url: videoUrl,
+        headers: { Referer: `${embedOrigin}/`, Origin: embedOrigin },
+        isHls: videoUrl.includes('.m3u8'),
+      };
     }
-  }
-
-  const browser = await launchBrowser(resolvedProxy?.launchArg);
-  try {
-    for (const embedUrl of embedUrls) {
-      const result = await interceptVideoUrl(browser, embedUrl);
-      if (result) {
-        const { videoUrl, embedOrigin } = result;
-        // CDN проверяет Origin/Referer именно эмбед-страницы (alloha.yani.tv),
-        // а не внешней обёртки (yani.tv) — иначе отдаёт 403 x-vd:origin_mismatch
-        // при последующем проксировании байт с Vercel. См. ARCHITECTURE.md §12.6.
-        return {
-          url: videoUrl,
-          headers: { Referer: `${embedOrigin}/`, Origin: embedOrigin },
-          isHls: videoUrl.includes('.m3u8'),
-        };
-      }
-    }
-  } finally {
-    await browser.close();
-    await resolvedProxy?.close().catch(() => {});
   }
 
   return null;
 }
 
-module.exports = { extractAlloha };
+module.exports = { extractAlloha, closeSharedAllohaBrowser };
