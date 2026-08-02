@@ -1,6 +1,6 @@
 'use strict';
 
-const { toAbsoluteUrl, launchBrowser } = require('./browser');
+const { toAbsoluteUrl, getSharedBrowser } = require('./browser');
 
 /**
  * embed_auto/{id} требует Sec-Fetch-Dest: iframe (браузер выставляет это
@@ -136,9 +136,13 @@ async function interceptVideoUrl(rawEmbedUrl, referer) {
 
   const wrapperUrl = `https://${videoseedHost()}/__mediawatch_wrapper__`;
 
-  const browser = await launchBrowser();
+  // Общий Chromium-процесс (см. browser.js) — Videoseed не требует
+  // per-request прокси, поэтому его браузер можно держать живым между
+  // запросами вместо запуска нового процесса на каждое извлечение.
+  const browser = await getSharedBrowser();
+  let page;
   try {
-    const page = await browser.newPage();
+    page = await browser.newPage();
     const videoUrls = [];
     const subtitleUrls = [];
     const allUrls = [];
@@ -183,14 +187,30 @@ async function interceptVideoUrl(rawEmbedUrl, referer) {
     await new Promise((r) => setTimeout(r, 4_000));
     await page.mouse.click(640, 360).catch(() => {});
 
-    // Ждём появления НАСТОЯЩЕГО видео (валидируем размером — см.
-    // isLikelyRealVideo), а не просто фиксированную паузу: реклама сама по
-    // себе иногда тоже видеоролик (см. коммент ниже), и если он ещё не
-    // закрылся ко второму клику, настоящий плеер стартует позже. Проверяем
-    // периодически, выходим раньше, если размер уже подтверждён.
+    // Ждём появления НАСТОЯЩЕГО видео, а не просто фиксированную паузу:
+    // реклама сама по себе иногда тоже видеоролик (см. коммент ниже), и если
+    // она ещё не закрылась ко второму клику, настоящий плеер стартует позже.
+    // Проверяем часто (POLL_INTERVAL_MS), выходим раньше при первом же
+    // надёжном сигнале:
+    //  - m3u8/HLS-манифест — сама реклама на этой странице ни разу не была
+    //    HLS (только mp4-видеоролик), так что его появление само по себе
+    //    достаточный сигнал, размер проверять незачем;
+    //  - mp4 — единственный формат, где реклама неотличима по URL, поэтому
+    //    для него нужна проверка размера (см. isLikelyRealVideo).
+    const POLL_INTERVAL_MS = 1_500;
+    const MAX_POLLS = 10; // тот же суммарный потолок ожидания, что был раньше (~15с)
     const knownBad = new Set();
-    for (let i = 0; i < 5; i++) {
-      await new Promise((r) => setTimeout(r, 3_000));
+    for (let i = 0; i < MAX_POLLS; i++) {
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+      const hasManifestOrStream = videoUrls.some(
+        (u) =>
+          u.includes('.m3u8') ||
+          u.includes('playlist') ||
+          u.includes('/video/') ||
+          u.includes('/stream/') ||
+          u.includes('/hls/'),
+      );
+      if (hasManifestOrStream) break;
       const candidate = [...videoUrls].reverse().find((u) => u.includes('.mp4') && !knownBad.has(u));
       if (!candidate) continue;
       if (await isLikelyRealVideo(candidate, referer)) break;
@@ -235,7 +255,13 @@ async function interceptVideoUrl(rawEmbedUrl, referer) {
     console.error('[videoseed] Puppeteer упал:', err);
     return null;
   } finally {
-    await browser.close();
+    // Браузер общий (см. getSharedBrowser) — НЕ закрываем его тут, только
+    // свою страницу. page уже закрыта выше в успешном пути; на ветке catch
+    // (или раннем throw до этого) она может остаться открытой — закрываем,
+    // если ещё не закрыта.
+    if (page && !page.isClosed()) {
+      await page.close().catch(() => {});
+    }
   }
 }
 

@@ -62,4 +62,46 @@ async function launchBrowser(proxyServerArg) {
   });
 }
 
-module.exports = { toAbsoluteUrl, resolveProxy, launchBrowser };
+/**
+ * Один общий Chromium-процесс для источников БЕЗ per-request прокси
+ * (сейчас — только Videoseed). Запуск браузера — реально измеримые ~0.4-0.9с
+ * на этой VPS (см. коммит), плюс на скромных 2ГБ RAM держать по отдельному
+ * Chromium-процессу на КАЖДЫЙ параллельный запрос расточительно. Держим один
+ * процесс живым между запросами, открываем/закрываем только страницы
+ * (вкладки) — это безопасно для параллельных запросов (Puppeteer поддерживает
+ * много страниц в одном браузере). Alloha сюда не переносим — её браузер
+ * привязан к per-request прокси-мосту (см. alloha.js), пул усложнил бы это
+ * без измеренной необходимости.
+ */
+let sharedBrowserPromise = null;
+
+async function getSharedBrowser() {
+  if (sharedBrowserPromise) {
+    const browser = await sharedBrowserPromise;
+    if (browser.isConnected()) return browser;
+    sharedBrowserPromise = null; // упал/закрылся — перезапустим ниже
+  }
+  sharedBrowserPromise = launchBrowser();
+  return sharedBrowserPromise;
+}
+
+/**
+ * Явное закрытие общего браузера — вызывается при штатном завершении
+ * процесса (см. server.js, SIGTERM/SIGINT от PM2 restart/stop). Без этого
+ * дочерний процесс Chromium рискует остаться висеть осиротевшим после
+ * `pm2 restart`, съедая память на и без того тесной VPS — раньше это было
+ * не нужно, каждый запрос сам закрывал свой браузер по завершении.
+ */
+async function closeSharedBrowser() {
+  if (!sharedBrowserPromise) return;
+  const promise = sharedBrowserPromise;
+  sharedBrowserPromise = null;
+  try {
+    const browser = await promise;
+    if (browser.isConnected()) await browser.close();
+  } catch {
+    /* процесс всё равно завершается */
+  }
+}
+
+module.exports = { toAbsoluteUrl, resolveProxy, launchBrowser, getSharedBrowser, closeSharedBrowser };

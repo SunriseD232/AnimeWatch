@@ -199,3 +199,13 @@ app.post('/extract', requireAuth, async (req, res) => {
 app.listen(PORT, () => {
   console.error(`[server] Слушаю на порту ${PORT}`);
 });
+
+// PM2 restart/stop шлёт SIGTERM — закрываем общий Chromium (см. browser.js),
+// иначе он рискует остаться осиротевшим процессом после каждого рестарта.
+async function shutdown() {
+  const { closeSharedBrowser } = require('./browser');
+  await closeSharedBrowser();
+  process.exit(0);
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
