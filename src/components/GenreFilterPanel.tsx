@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 export interface FilterOption {
@@ -18,10 +19,20 @@ interface Props {
 
 /**
  * Панель каталога: чипы жанров с тремя состояниями (нейтрально → включить →
- * исключить → нейтрально) + выбор сортировки + сброс. Читает/пишет ТОЛЬКО
- * URL searchParams (`genres`, `exclude`, `sort`) — состояние фильтров не
- * держим в React, оно и так живёт в адресной строке. Это даёт «сохранение
- * фильтров при возврате назад» само собой — обычная навигация браузера.
+ * исключить → нейтрально) + выбор сортировки + сброс. Читает/пишет URL
+ * searchParams (`genres`, `exclude`, `sort`) — применённое состояние живёт в
+ * адресной строке, что даёт «сохранение фильтров при возврате назад» само
+ * собой — обычная навигация браузера.
+ *
+ * Жанры — ЧЕРНОВОЕ состояние (pendingInclude/pendingExclude), не применяется
+ * сразу: у каталога с несколькими AND/exclude-жанрами медленный путь
+ * (см. getAnimeCatalog в lib/shikimori.ts — догружает десятки полных карточек
+ * по одной), и раньше каждый клик по чипу сразу дёргал этот медленный запрос
+ * — набрать 3-4 жанра означало 3-4 медленных перезагрузки подряд. Теперь
+ * клики по чипам только копят выбор локально, применяются одним запросом по
+ * кнопке «Применить». Сортировка и «Показывать анонсы» — быстрые сами по
+ * себе, остаются мгновенными (но подхватывают текущий черновой выбор жанров,
+ * чтобы не терять его молча).
  *
  * Одинаковый компонент для каталога аниме и каталога кино — genres/sorts
  * передаются снаружи, у каждого раздела свой список и своя семантика
@@ -38,14 +49,24 @@ export default function GenreFilterPanel({ genres, sorts, defaultSort, anonsTogg
   const sort = searchParams.get('sort') ?? defaultSort;
   const showAnons = searchParams.get('anons') === '1';
 
-  // nextShowAnons по умолчанию = текущее значение — иначе смена жанра/
-  // сортировки молча сбрасывала бы чекбокс анонсов (см. navigate ниже:
-  // собирает URL с нуля, не наследуя от текущего).
-  function navigate(
+  const [pendingInclude, setPendingInclude] = useState(include);
+  const [pendingExclude, setPendingExclude] = useState(exclude);
+
+  // Подхватываем применённое состояние, если URL изменился НЕ через нашу же
+  // applyNow ниже (переход назад/вперёд в браузере, прямой заход по ссылке
+  // с параметрами) — applyNow сам приводит URL ровно к pending-значению, так
+  // что после нашего собственного вызова этот эффект просто ничего не меняет.
+  useEffect(() => {
+    setPendingInclude(include);
+    setPendingExclude(exclude);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams.get('genres'), searchParams.get('exclude')]);
+
+  function applyNow(
     nextInclude: string[],
     nextExclude: string[],
     nextSort: string,
-    nextShowAnons: boolean = showAnons,
+    nextShowAnons: boolean,
   ) {
     const params = new URLSearchParams();
     if (nextInclude.length > 0) params.set('genres', nextInclude.join(','));
@@ -57,24 +78,26 @@ export default function GenreFilterPanel({ genres, sorts, defaultSort, anonsTogg
   }
 
   function cycleGenre(value: string) {
-    if (include.includes(value)) {
-      navigate(
-        include.filter((v) => v !== value),
-        [...exclude, value],
-        sort,
-      );
-    } else if (exclude.includes(value)) {
-      navigate(
-        include,
-        exclude.filter((v) => v !== value),
-        sort,
-      );
+    if (pendingInclude.includes(value)) {
+      setPendingInclude(pendingInclude.filter((v) => v !== value));
+      setPendingExclude([...pendingExclude, value]);
+    } else if (pendingExclude.includes(value)) {
+      setPendingExclude(pendingExclude.filter((v) => v !== value));
     } else {
-      navigate([...include, value], exclude, sort);
+      setPendingInclude([...pendingInclude, value]);
     }
   }
 
-  const hasFilters = include.length > 0 || exclude.length > 0;
+  function resetAll() {
+    setPendingInclude([]);
+    setPendingExclude([]);
+    applyNow([], [], sort, showAnons);
+  }
+
+  const hasPending =
+    pendingInclude.join(',') !== include.join(',') ||
+    pendingExclude.join(',') !== exclude.join(',');
+  const hasFilters = pendingInclude.length > 0 || pendingExclude.length > 0;
 
   return (
     <div className="flex flex-col gap-4">
@@ -84,7 +107,7 @@ export default function GenreFilterPanel({ genres, sorts, defaultSort, anonsTogg
             Сортировка:
             <select
               value={sort}
-              onChange={(e) => navigate(include, exclude, e.target.value)}
+              onChange={(e) => applyNow(pendingInclude, pendingExclude, e.target.value, showAnons)}
               className="rounded-lg border border-white/10 bg-bg-card px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none"
             >
               {sorts.map((s) => (
@@ -100,7 +123,7 @@ export default function GenreFilterPanel({ genres, sorts, defaultSort, anonsTogg
               <input
                 type="checkbox"
                 checked={showAnons}
-                onChange={(e) => navigate(include, exclude, sort, e.target.checked)}
+                onChange={(e) => applyNow(pendingInclude, pendingExclude, sort, e.target.checked)}
                 className="h-4 w-4 rounded border-white/20 bg-bg-card accent-accent"
               />
               Показывать анонсы
@@ -111,7 +134,7 @@ export default function GenreFilterPanel({ genres, sorts, defaultSort, anonsTogg
         {hasFilters && (
           <button
             type="button"
-            onClick={() => navigate([], [], sort)}
+            onClick={resetAll}
             className="press text-sm font-medium text-accent hover:text-accent-hover"
           >
             Сбросить фильтры
@@ -121,8 +144,8 @@ export default function GenreFilterPanel({ genres, sorts, defaultSort, anonsTogg
 
       <div className="-mx-4 flex flex-wrap gap-2 px-4">
         {genres.map((g) => {
-          const isIncluded = include.includes(g.value);
-          const isExcluded = exclude.includes(g.value);
+          const isIncluded = pendingInclude.includes(g.value);
+          const isExcluded = pendingExclude.includes(g.value);
           return (
             <button
               key={g.value}
@@ -144,6 +167,18 @@ export default function GenreFilterPanel({ genres, sorts, defaultSort, anonsTogg
           );
         })}
       </div>
+
+      {hasPending && (
+        <div className="sticky bottom-4 z-10 flex items-center justify-center">
+          <button
+            type="button"
+            onClick={() => applyNow(pendingInclude, pendingExclude, sort, showAnons)}
+            className="press animate-rise rounded-full bg-accent px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-accent/40 transition hover:bg-accent-hover"
+          >
+            Применить
+          </button>
+        </div>
+      )}
     </div>
   );
 }
