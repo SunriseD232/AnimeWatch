@@ -45,16 +45,36 @@ export default function ScrollCarousel({ children, className }: Props) {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    let snapRestoreTimer: ReturnType<typeof setTimeout> | null = null;
     const onWheel = (e: WheelEvent) => {
       if (el.scrollWidth <= el.clientWidth) return;
       // Только доминирующий вертикальный скролл (обычное колесо) — трекпад
       // сам шлёт горизонтальный deltaX, его перехватывать не нужно.
       if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      // CSS scroll-snap (snap-x у карточек, см. использование этого
+      // компонента) гасит инкрементальные scrollLeft += из колеса — браузер
+      // синхронно откатывает позицию назад к текущей snap-точке раньше, чем
+      // следующий тик колеса успевает накопить сдвиг, и карусель выглядит
+      // залипшей (проверено вживую: 3 подряд += без отключения snap не
+      // сдвигали scrollLeft вообще, с отключением — сдвигали штатно).
+      // Драг мышью (см. onPointerMove) этим не страдает — там абсолютное
+      // присваивание, а не инкремент, поэтому snap его не откатывает.
+      // Отключаем snap на время активной прокрутки колесом, возвращаем
+      // после паузы — чтобы карточки всё равно аккуратно доезжали до snap
+      // после того, как пользователь перестал крутить колесо.
+      el.style.scrollSnapType = 'none';
       el.scrollLeft += e.deltaY;
       e.preventDefault();
+      if (snapRestoreTimer) clearTimeout(snapRestoreTimer);
+      snapRestoreTimer = setTimeout(() => {
+        el.style.scrollSnapType = '';
+      }, 150);
     };
     el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      if (snapRestoreTimer) clearTimeout(snapRestoreTimer);
+    };
   }, []);
 
   const onPointerDown = useCallback((e: PointerEvent<HTMLDivElement>) => {
