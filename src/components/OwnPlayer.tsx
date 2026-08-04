@@ -214,6 +214,10 @@ export default function OwnPlayer({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<HlsType | null>(null);
   const dashRef = useRef<MediaPlayerClass | null>(null);
+  // Счётчик подряд идущих фатальных network-ошибок hls.js в рамках ТЕКУЩЕГО
+  // подключения — см. Hls.Events.ERROR ниже. Сбрасывается на каждый новый
+  // коннект (новый src/reloadKey) и на успешный MANIFEST_PARSED.
+  const hlsErrorRecoveryRef = useRef(0);
   // Content-Type из проверочного HEAD (см. эффект резолва ниже) — переносится
   // во второй эффект (подключение к <video>), чтобы не запрашивать HEAD дважды.
   const upstreamContentTypeRef = useRef<string | null>(null);
@@ -466,12 +470,14 @@ export default function OwnPlayer({
         if (Hls.isSupported()) {
           const hls = new Hls({ enableWorker: true });
           hlsRef.current = hls;
+          hlsErrorRecoveryRef.current = 0;
           // master.m3u8 может содержать несколько ABR-вариантов (см. §12
           // ARCHITECTURE.md) — показываем выбор только когда их больше одного,
           // иначе (как сейчас почти всегда у Alloha — один уровень) селектор
           // просто не рендерится.
           hls.on(Hls.Events.MANIFEST_PARSED, (_evt, data) => {
             if (cancelled) return;
+            hlsErrorRecoveryRef.current = 0;
             const levels = data.levels
               .map((lvl, index) => ({ index, height: lvl.height }))
               .filter((l) => l.height > 0)
@@ -481,6 +487,31 @@ export default function OwnPlayer({
           });
           hls.on(Hls.Events.LEVEL_SWITCHED, (_evt, data) => {
             if (!cancelled) setCurrentLevel(data.level);
+          });
+          // Без этого обработчика фатальная ошибка hls.js (протухшая
+          // подписанная ссылка на сегмент, сетевой сбой) молча вешала плеер
+          // намертво: буфер доигрывался до конца, дальше ничего не грузилось
+          // и не менялось, обычный reload не помогал (сервер отдавал тот же
+          // закэшированный URL), помогала только полная пересборка через
+          // смену серии и возврат обратно — то же самое делает retry() ниже.
+          hls.on(Hls.Events.ERROR, (_evt, data) => {
+            if (cancelled || !data.fatal) return;
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                hlsErrorRecoveryRef.current += 1;
+                if (hlsErrorRecoveryRef.current <= 2) {
+                  hls.startLoad();
+                } else {
+                  retryRef.current();
+                }
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                hls.recoverMediaError();
+                break;
+              default:
+                setLoadState('failed');
+                break;
+            }
           });
           hls.loadSource(src);
           hls.attachMedia(video);
@@ -756,6 +787,13 @@ export default function OwnPlayer({
     seekTargetRef.current = currentTime > 1 ? currentTime : resumeFrom;
     setReloadKey((k) => k + 1);
   }, [currentTime, resumeFrom]);
+  // retry() пересоздаётся на каждый тик currentTime (см. deps выше) — hls.js
+  // ERROR-обработчик в эффекте подключения источника захватывает retry ОДИН
+  // раз при коннекте и не видит более поздних версий, иначе после долгого
+  // разрыва retry() откатывал бы позицию на момент коннекта, а не на момент
+  // сбоя. retryRef всегда свежий — читаем именно его.
+  const retryRef = useRef(retry);
+  retryRef.current = retry;
 
   // Ручная смена озвучки — переносим текущую позицию (src меняется вместе с
   // translationId, что уже само по себе перезапускает эффект резолва).
