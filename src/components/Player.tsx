@@ -814,30 +814,36 @@ export default function Player({
       {/* Панель управления */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Link
-            href={hasPrev && prev ? linkFor(prev) : '#'}
-            aria-disabled={!hasPrev}
-            className={[
-              'rounded-lg px-4 py-2 text-sm font-medium ring-1 ring-white/10 transition',
-              hasPrev
-                ? 'bg-bg-card text-gray-100 hover:bg-bg-soft'
-                : 'pointer-events-none bg-bg-card/50 text-gray-600',
-            ].join(' ')}
-          >
-            ← Пред.
-          </Link>
-          <Link
-            href={hasNext && next ? linkFor(next) : '#'}
-            aria-disabled={!hasNext}
-            className={[
-              'rounded-lg px-4 py-2 text-sm font-medium ring-1 ring-white/10 transition',
-              hasNext
-                ? 'bg-bg-card text-gray-100 hover:bg-bg-soft'
-                : 'pointer-events-none bg-bg-card/50 text-gray-600',
-            ].join(' ')}
-          >
-            След. →
-          </Link>
+          {hasPrev && prev ? (
+            <Link
+              href={linkFor(prev)}
+              className="rounded-lg bg-bg-card px-4 py-2 text-sm font-medium text-gray-100 ring-1 ring-white/10 transition hover:bg-bg-soft"
+            >
+              ← Пред.
+            </Link>
+          ) : (
+            <span
+              aria-disabled="true"
+              className="rounded-lg bg-bg-card/50 px-4 py-2 text-sm font-medium text-gray-400 ring-1 ring-white/10"
+            >
+              ← Пред.
+            </span>
+          )}
+          {hasNext && next ? (
+            <Link
+              href={linkFor(next)}
+              className="rounded-lg bg-bg-card px-4 py-2 text-sm font-medium text-gray-100 ring-1 ring-white/10 transition hover:bg-bg-soft"
+            >
+              След. →
+            </Link>
+          ) : (
+            <span
+              aria-disabled="true"
+              className="rounded-lg bg-bg-card/50 px-4 py-2 text-sm font-medium text-gray-400 ring-1 ring-white/10"
+            >
+              След. →
+            </span>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-3">

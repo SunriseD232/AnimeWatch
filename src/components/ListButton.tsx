@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
 import type { ContentType, UserListStatus } from '@/lib/types';
@@ -35,8 +35,29 @@ export default function ListButton({
   );
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const current = STATUS_OPTIONS.find((o) => o.value === status);
+
+  // Закрытие дропдауна по клику вовне и по Escape (см. NotificationBell —
+  // тот же паттерн раскрывающегося меню).
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
 
   async function choose(next: UserListStatus | null) {
     setOpen(false);
@@ -85,15 +106,17 @@ export default function ListButton({
   }
 
   return (
-    <div className="relative">
+    <div ref={rootRef} className="relative">
       <button
         type="button"
         disabled={saving}
         onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
         className="press flex items-center gap-2 rounded-full border border-white/10 bg-bg-card px-4 py-2.5 text-sm font-medium text-gray-100 hover:bg-bg-soft disabled:opacity-60"
       >
         <span>{current ? current.label : '+ В список'}</span>
-        <span className="text-gray-500">▾</span>
+        <span className="text-gray-400">▾</span>
       </button>
 
       {open && (

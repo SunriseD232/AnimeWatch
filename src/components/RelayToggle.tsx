@@ -68,7 +68,7 @@ export default function RelayToggle({ initialEnabled }: Props) {
           />
           Выключено
         </label>
-        {saving && <span className="text-xs text-gray-500">Сохраняем…</span>}
+        {saving && <span className="text-xs text-gray-400">Сохраняем…</span>}
       </div>
       {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
     </div>

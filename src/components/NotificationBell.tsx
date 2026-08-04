@@ -39,7 +39,7 @@ export default function NotificationBell({
 
   const unread = items.filter((n) => !n.read_at).length;
 
-  // Закрытие дропдауна по клику вовне.
+  // Закрытие дропдауна по клику вовне и по Escape.
   useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {
@@ -47,8 +47,15 @@ export default function NotificationBell({
         setOpen(false);
       }
     };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
     document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('keydown', onKeyDown);
+    };
   }, [open]);
 
   useEffect(() => {
@@ -119,6 +126,8 @@ export default function NotificationBell({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-label="Уведомления"
+        aria-haspopup="menu"
+        aria-expanded={open}
         className="press relative grid h-9 w-9 place-items-center rounded-full text-gray-300 hover:bg-white/5 hover:text-white"
       >
         <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5">
@@ -159,7 +168,7 @@ export default function NotificationBell({
 
           <div className="max-h-96 overflow-y-auto">
             {items.length === 0 ? (
-              <p className="px-4 py-6 text-center text-sm text-gray-500">
+              <p className="px-4 py-6 text-center text-sm text-gray-400">
                 Пока нет уведомлений
               </p>
             ) : (
@@ -182,7 +191,7 @@ export default function NotificationBell({
                         {n.title}
                       </p>
                       <p className="text-xs text-gray-400">{n.message}</p>
-                      <p className="mt-0.5 text-[11px] text-gray-500">
+                      <p className="mt-0.5 text-[11px] text-gray-400">
                         {timeAgo(n.created_at)}
                       </p>
                     </div>
@@ -221,7 +230,7 @@ export default function NotificationBell({
                       <p className="text-xs text-gray-400">
                         Новая серия — теперь их {n.episode}
                       </p>
-                      <p className="mt-0.5 text-[11px] text-gray-500">
+                      <p className="mt-0.5 text-[11px] text-gray-400">
                         {timeAgo(n.created_at)}
                       </p>
                     </div>

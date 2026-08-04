@@ -1,8 +1,8 @@
-import Link from 'next/link';
 import { Suspense } from 'react';
 import CinemaCard from '@/components/CinemaCard';
 import GenreFilterPanel from '@/components/GenreFilterPanel';
 import ModeSwitch from '@/components/ModeSwitch';
+import Pagination from '@/components/Pagination';
 import { CardGridSkeleton } from '@/components/Skeletons';
 import {
   CINEMA_CATALOG_SORTS,
@@ -96,41 +96,11 @@ async function CatalogGrid({
         ))}
       </div>
 
-      <div className="flex items-center justify-center gap-2">
-        <Link
-          href={
-            hasPrev
-              ? pageHref(genresInclude, genresExclude, sort, page - 1)
-              : '#'
-          }
-          aria-disabled={!hasPrev}
-          className={[
-            'rounded-full px-4 py-2 text-sm font-medium ring-1 ring-white/10 transition',
-            hasPrev
-              ? 'bg-bg-card text-gray-100 hover:bg-bg-soft'
-              : 'pointer-events-none bg-bg-card/50 text-gray-600',
-          ].join(' ')}
-        >
-          ← Пред.
-        </Link>
-        <span className="px-2 text-sm text-gray-400">Стр. {page}</span>
-        <Link
-          href={
-            data.hasMore
-              ? pageHref(genresInclude, genresExclude, sort, page + 1)
-              : '#'
-          }
-          aria-disabled={!data.hasMore}
-          className={[
-            'rounded-full px-4 py-2 text-sm font-medium ring-1 ring-white/10 transition',
-            data.hasMore
-              ? 'bg-bg-card text-gray-100 hover:bg-bg-soft'
-              : 'pointer-events-none bg-bg-card/50 text-gray-600',
-          ].join(' ')}
-        >
-          След. →
-        </Link>
-      </div>
+      <Pagination
+        page={page}
+        prevHref={hasPrev ? pageHref(genresInclude, genresExclude, sort, page - 1) : null}
+        nextHref={data.hasMore ? pageHref(genresInclude, genresExclude, sort, page + 1) : null}
+      />
     </div>
   );
 }

@@ -54,7 +54,7 @@ function ListCard({ item }: { item: UserListItem }) {
               className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105"
             />
           ) : (
-            <div className="grid h-full w-full place-items-center text-gray-600">
+            <div className="grid h-full w-full place-items-center text-gray-400">
               нет постера
             </div>
           )}

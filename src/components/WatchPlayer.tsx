@@ -451,7 +451,7 @@ export default function WatchPlayer({
             )}
           </div>
           {switching && (
-            <span className="text-xs text-gray-500">переключаем…</span>
+            <span className="text-xs text-gray-400">переключаем…</span>
           )}
         </div>
       )}
@@ -459,7 +459,7 @@ export default function WatchPlayer({
       {/* Медиа */}
       {resolving ? (
         <div className="skeleton flex aspect-video w-full items-center justify-center">
-          <span className="text-sm text-gray-500">Подбираем источник…</span>
+          <span className="text-sm text-gray-400">Подбираем источник…</span>
         </div>
       ) : source === 'hls' && aniQualities ? (
         <HlsPlayer
@@ -534,30 +534,36 @@ export default function WatchPlayer({
 
       {/* Навигация по сериям */}
       <div className="flex items-center gap-2">
-        <Link
-          href={hasPrev ? `${watchBase}/${shikimoriId}/${activeEpisode - 1}` : '#'}
-          aria-disabled={!hasPrev}
-          className={[
-            'rounded-lg px-4 py-2 text-sm font-medium ring-1 ring-white/10 transition',
-            hasPrev
-              ? 'bg-bg-card text-gray-100 hover:bg-bg-soft'
-              : 'pointer-events-none bg-bg-card/50 text-gray-600',
-          ].join(' ')}
-        >
-          ← Пред.
-        </Link>
-        <Link
-          href={hasNext ? `${watchBase}/${shikimoriId}/${activeEpisode + 1}` : '#'}
-          aria-disabled={!hasNext}
-          className={[
-            'rounded-lg px-4 py-2 text-sm font-medium ring-1 ring-white/10 transition',
-            hasNext
-              ? 'bg-bg-card text-gray-100 hover:bg-bg-soft'
-              : 'pointer-events-none bg-bg-card/50 text-gray-600',
-          ].join(' ')}
-        >
-          След. →
-        </Link>
+        {hasPrev ? (
+          <Link
+            href={`${watchBase}/${shikimoriId}/${activeEpisode - 1}`}
+            className="rounded-lg bg-bg-card px-4 py-2 text-sm font-medium text-gray-100 ring-1 ring-white/10 transition hover:bg-bg-soft"
+          >
+            ← Пред.
+          </Link>
+        ) : (
+          <span
+            aria-disabled="true"
+            className="rounded-lg bg-bg-card/50 px-4 py-2 text-sm font-medium text-gray-400 ring-1 ring-white/10"
+          >
+            ← Пред.
+          </span>
+        )}
+        {hasNext ? (
+          <Link
+            href={`${watchBase}/${shikimoriId}/${activeEpisode + 1}`}
+            className="rounded-lg bg-bg-card px-4 py-2 text-sm font-medium text-gray-100 ring-1 ring-white/10 transition hover:bg-bg-soft"
+          >
+            След. →
+          </Link>
+        ) : (
+          <span
+            aria-disabled="true"
+            className="rounded-lg bg-bg-card/50 px-4 py-2 text-sm font-medium text-gray-400 ring-1 ring-white/10"
+          >
+            След. →
+          </span>
+        )}
       </div>
 
       {/* Плашка окончания серии */}

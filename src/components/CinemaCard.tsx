@@ -27,7 +27,7 @@ export default function CinemaCard({ item }: { item: CinemaShort }) {
               className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
             />
           ) : (
-            <div className="grid h-full w-full place-items-center text-gray-600">
+            <div className="grid h-full w-full place-items-center text-gray-400">
               нет постера
             </div>
           )}
@@ -47,7 +47,7 @@ export default function CinemaCard({ item }: { item: CinemaShort }) {
           >
             {item.title}
           </h3>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-gray-400">
             {[item.kind, item.year].filter(Boolean).join(' · ')}
           </p>
         </div>

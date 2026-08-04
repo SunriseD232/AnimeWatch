@@ -151,7 +151,7 @@ export default function GenreFilterPanel({ genres, sorts, defaultSort, anonsTogg
               key={g.value}
               type="button"
               onClick={() => cycleGenre(g.value)}
-              aria-pressed={isIncluded}
+              aria-pressed={isIncluded ? true : isExcluded ? 'mixed' : false}
               className={[
                 'press rounded-full px-3.5 py-1.5 text-sm font-medium transition',
                 isIncluded

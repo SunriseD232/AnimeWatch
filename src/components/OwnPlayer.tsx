@@ -915,7 +915,7 @@ export default function OwnPlayer({
       <div className="skeleton relative flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-2xl">
         {translationSelector}
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/15 border-t-accent" />
-        <span className="text-sm text-gray-500">Извлекаем видео из {SOURCE_LABELS[effectiveSource]}…</span>
+        <span className="text-sm text-gray-400">Извлекаем видео из {SOURCE_LABELS[effectiveSource]}…</span>
       </div>
     );
   }

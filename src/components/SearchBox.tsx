@@ -47,7 +47,7 @@ export default function SearchBox() {
         aria-hidden="true"
         viewBox="0 0 20 20"
         fill="none"
-        className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500"
+        className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
       >
         <circle cx="8.5" cy="8.5" r="6" stroke="currentColor" strokeWidth="1.6" />
         <path d="M13 13L17.5 17.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -60,7 +60,7 @@ export default function SearchBox() {
         onChange={(e) => setValue(e.target.value)}
         placeholder={isCinema ? 'Поиск фильмов и сериалов…' : 'Поиск аниме…'}
         aria-label={isCinema ? 'Поиск фильмов и сериалов' : 'Поиск аниме'}
-        className="w-full rounded-full border border-white/10 bg-bg-card py-2 pl-10 pr-4 text-base text-gray-100 placeholder:text-gray-500 transition focus:border-accent/60 focus:outline-none focus:ring-2 focus:ring-accent/40"
+        className="w-full rounded-full border border-white/10 bg-bg-card py-2 pl-10 pr-4 text-base text-gray-100 placeholder:text-gray-400 transition focus:border-accent/60 focus:outline-none focus:ring-2 focus:ring-accent/40"
       />
     </form>
   );

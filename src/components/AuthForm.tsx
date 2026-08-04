@@ -76,6 +76,8 @@ export default function AuthForm({ mode }: { mode: Mode }) {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            aria-invalid={error ? 'true' : undefined}
+            aria-describedby={error ? 'auth-error' : undefined}
             className="rounded-lg border border-white/10 bg-bg-card px-3 py-2.5 text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </label>
@@ -89,6 +91,8 @@ export default function AuthForm({ mode }: { mode: Mode }) {
             autoComplete={isLogin ? 'current-password' : 'new-password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            aria-invalid={error ? 'true' : undefined}
+            aria-describedby={error ? 'auth-error' : undefined}
             className="rounded-lg border border-white/10 bg-bg-card px-3 py-2.5 text-gray-100 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </label>
@@ -108,7 +112,7 @@ export default function AuthForm({ mode }: { mode: Mode }) {
         )}
 
         {error && (
-          <p className="rounded-lg bg-red-950/60 px-3 py-2 text-sm text-red-200">
+          <p id="auth-error" role="alert" className="rounded-lg bg-red-950/60 px-3 py-2 text-sm text-red-200">
             {error}
             {remaining !== null && (
               <span className="mt-1 block text-xs text-red-300/80">
@@ -123,13 +127,12 @@ export default function AuthForm({ mode }: { mode: Mode }) {
         <button
           type="submit"
           disabled={loading}
-          className="rounded-full press bg-accent px-4 py-2.5 font-medium text-white transition hover:bg-accent-hover disabled:opacity-60"
+          className="rounded-full press flex items-center justify-center gap-2 bg-accent px-4 py-2.5 font-medium text-white transition hover:bg-accent-hover disabled:opacity-60"
         >
-          {loading
-            ? 'Подождите…'
-            : isLogin
-              ? 'Войти'
-              : 'Зарегистрироваться'}
+          {loading && (
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+          )}
+          {isLogin ? 'Войти' : 'Зарегистрироваться'}
         </button>
       </form>
 

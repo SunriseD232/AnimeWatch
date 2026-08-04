@@ -54,7 +54,10 @@ export default function ExpandTitleButton({
         onToggle();
       }}
       aria-label={expanded ? 'Свернуть название' : 'Показать полное название'}
-      className="press absolute bottom-1.5 right-1.5 z-10 grid h-6 w-6 place-items-center rounded-full bg-black/70 text-xs font-bold italic leading-none text-white backdrop-blur transition hover:bg-black/90"
+      // Видимый значок остаётся 24×24 (WCAG-минимум впритык), но область
+      // нажатия расширена до ~40×40 псевдоэлементом — карточки в основном
+      // листают с телефона, а на границе минимума нет запаса на неточный тап.
+      className="press absolute bottom-1.5 right-1.5 z-10 grid h-6 w-6 place-items-center rounded-full bg-black/70 text-xs font-bold italic leading-none text-white backdrop-blur transition before:absolute before:inset-[-8px] before:content-[''] hover:bg-black/90"
     >
       {expanded ? '×' : 'i'}
     </button>

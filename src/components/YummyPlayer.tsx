@@ -226,7 +226,7 @@ export default function YummyPlayer({
       </div>
 
       {!trackable && (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-gray-400">
           Резервный источник: точная позиция просмотра не сохраняется.
         </p>
       )}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface Props {
   /** Готовый embed-URL — для аниме он уже есть из Shikimori, без доп. запроса. */
@@ -24,6 +24,26 @@ export default function TrailerButton({ embedUrl, fetchUrl, label = 'Трейл�
   const [loading, setLoading] = useState(false);
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(embedUrl ?? null);
   const [notFound, setNotFound] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Модалка: фокус на панель при открытии, Escape закрывает, фокус
+  // возвращается на кнопку-триггер при закрытии — иначе клавиатурный
+  // пользователь проваливается табом сквозь оверлей на страницу под ним и
+  // не может закрыть его без мыши.
+  useEffect(() => {
+    if (!open) return;
+    const trigger = triggerRef.current;
+    panelRef.current?.focus();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      trigger?.focus();
+    };
+  }, [open]);
 
   async function handleClick() {
     if (resolvedUrl) {
@@ -53,6 +73,7 @@ export default function TrailerButton({ embedUrl, fetchUrl, label = 'Трейл�
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={handleClick}
         disabled={loading}
@@ -68,9 +89,22 @@ export default function TrailerButton({ embedUrl, fetchUrl, label = 'Трейл�
           onClick={() => setOpen(false)}
         >
           <div
-            className="aspect-video w-full max-w-3xl overflow-hidden rounded-2xl bg-black shadow-2xl"
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label={label}
+            tabIndex={-1}
+            className="relative aspect-video w-full max-w-3xl overflow-hidden rounded-2xl bg-black shadow-2xl outline-none"
             onClick={(e) => e.stopPropagation()}
           >
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Закрыть"
+              className="press absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+            >
+              ✕
+            </button>
             <iframe
               src={`${resolvedUrl}?autoplay=1`}
               title={label}

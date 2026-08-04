@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
 import ExpandTitleButton from '@/components/ExpandTitleButton';
@@ -23,13 +23,6 @@ export default function ContinueCard({
   const [confirming, setConfirming] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const titleRef = useRef<HTMLHeadingElement>(null);
-
-  // Авто-сброс подтверждения, если пользователь передумал и ничего не нажал.
-  useEffect(() => {
-    if (!confirming) return;
-    const t = setTimeout(() => setConfirming(false), 4000);
-    return () => clearTimeout(t);
-  }, [confirming]);
 
   const percent = watchPercent(
     progress.position_seconds,
@@ -79,7 +72,7 @@ export default function ContinueCard({
               className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
             />
           ) : (
-            <div className="grid h-full w-full place-items-center text-gray-600">
+            <div className="grid h-full w-full place-items-center text-gray-400">
               нет постера
             </div>
           )}

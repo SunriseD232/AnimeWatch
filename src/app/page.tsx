@@ -1,10 +1,10 @@
-import Link from 'next/link';
 import { Suspense } from 'react';
 import AnimeCard from '@/components/AnimeCard';
 import ContinueCard from '@/components/ContinueCard';
 import DiscoverTabs from '@/components/DiscoverTabs';
 import LoginBanner from '@/components/LoginBanner';
 import ModeSwitch from '@/components/ModeSwitch';
+import Pagination from '@/components/Pagination';
 import ScrollCarousel from '@/components/ScrollCarousel';
 import { CardGridSkeleton } from '@/components/Skeletons';
 import { getNewAnime, getPopularRanked } from '@/lib/shikimori';
@@ -111,33 +111,11 @@ async function DiscoverGrid({
         ))}
       </div>
 
-      <div className="flex items-center justify-center gap-2">
-        <Link
-          href={hasPrev ? discoverPageHref(tab, showAnons, page - 1) : '#'}
-          aria-disabled={!hasPrev}
-          className={[
-            'rounded-full px-4 py-2 text-sm font-medium ring-1 ring-white/10 transition',
-            hasPrev
-              ? 'bg-bg-card text-gray-100 hover:bg-bg-soft'
-              : 'pointer-events-none bg-bg-card/50 text-gray-600',
-          ].join(' ')}
-        >
-          ← Пред.
-        </Link>
-        <span className="px-2 text-sm text-gray-400">Стр. {page}</span>
-        <Link
-          href={data.hasMore ? discoverPageHref(tab, showAnons, page + 1) : '#'}
-          aria-disabled={!data.hasMore}
-          className={[
-            'rounded-full px-4 py-2 text-sm font-medium ring-1 ring-white/10 transition',
-            data.hasMore
-              ? 'bg-bg-card text-gray-100 hover:bg-bg-soft'
-              : 'pointer-events-none bg-bg-card/50 text-gray-600',
-          ].join(' ')}
-        >
-          След. →
-        </Link>
-      </div>
+      <Pagination
+        page={page}
+        prevHref={hasPrev ? discoverPageHref(tab, showAnons, page - 1) : null}
+        nextHref={data.hasMore ? discoverPageHref(tab, showAnons, page + 1) : null}
+      />
     </div>
   );
 }

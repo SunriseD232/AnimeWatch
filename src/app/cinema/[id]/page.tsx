@@ -74,7 +74,7 @@ export default async function CinemaPage({
               className="h-full w-full object-cover"
             />
           ) : (
-            <div className="grid h-full w-full place-items-center text-gray-600">
+            <div className="grid h-full w-full place-items-center text-gray-400">
               нет постера
             </div>
           )}

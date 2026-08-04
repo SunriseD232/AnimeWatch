@@ -45,7 +45,7 @@ export default function AnimeCard({
               className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105"
             />
           ) : (
-            <div className="grid h-full w-full place-items-center text-gray-600">
+            <div className="grid h-full w-full place-items-center text-gray-400">
               нет постера
             </div>
           )}
@@ -70,7 +70,7 @@ export default function AnimeCard({
           >
             {title}
           </h3>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-gray-400">
             {[kind, year].filter(Boolean).join(' · ')}
           </p>
         </div>

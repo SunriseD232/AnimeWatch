@@ -116,7 +116,7 @@ export default async function AnimePage({
               className="absolute inset-0 h-full w-full object-cover"
             />
           ) : (
-            <div className="grid h-full w-full place-items-center text-gray-600">
+            <div className="grid h-full w-full place-items-center text-gray-400">
               нет постера
             </div>
           )}
@@ -126,7 +126,7 @@ export default async function AnimePage({
           <div>
             <h1 className="text-2xl font-bold leading-tight">{title}</h1>
             {anime.name !== title && (
-              <p className="text-sm text-gray-500">{anime.name}</p>
+              <p className="text-sm text-gray-400">{anime.name}</p>
             )}
           </div>
 

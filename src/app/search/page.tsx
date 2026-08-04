@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { Suspense } from 'react';
 import AnimeCard from '@/components/AnimeCard';
 import CinemaCard from '@/components/CinemaCard';
@@ -13,7 +14,10 @@ async function AnimeResults({ query }: { query: string }) {
     if (animes.length === 0) {
       return (
         <p className="text-sm text-gray-400">
-          По запросу «{query}» ничего не найдено.
+          По запросу «{query}» ничего не найдено.{' '}
+          <Link href="/catalog" className="text-accent hover:underline">
+            Посмотрите каталог
+          </Link>
         </p>
       );
     }
@@ -39,7 +43,10 @@ async function CinemaResults({ query }: { query: string }) {
     if (items.length === 0) {
       return (
         <p className="text-sm text-gray-400">
-          По запросу «{query}» ничего не найдено.
+          По запросу «{query}» ничего не найдено.{' '}
+          <Link href="/cinema/catalog" className="text-accent hover:underline">
+            Посмотрите каталог
+          </Link>
         </p>
       );
     }
