@@ -34,7 +34,15 @@ interface Args {
   playingRef: MutableRefObject<boolean>;
 }
 
-const SAVE_INTERVAL_MS = 10_000;
+// Клиентские переходы по Link (например, клик по логотипу в шапке) не ждут
+// сохранения: Next.js сначала фетчит данные ЦЕЛЕВОЙ страницы и только потом
+// размонтирует текущую — flush на unmount/beforeunload физически не
+// успевает попасть в БД раньше, чем главная уже отрисовала «Продолжить
+// просмотр» по старым данным (воспроизведено вживую: без ручного reload
+// показывает позицию из последнего интервального сохранения). Полностью
+// убрать эту гонку без глобального перехвата навигации нельзя — вместо
+// этого просто сузили окно устаревания частым интервалом.
+const SAVE_INTERVAL_MS = 5_000;
 const MIN_POSITION = 5; // не сохраняем случайные открытия (< 5 сек)
 
 /**
@@ -105,15 +113,21 @@ export function useProgressSaver({
   }, [save, playingRef]);
 
   // Флаш при уходе со страницы / скрытии вкладки / размонтировании.
+  // pagehide — вместе с beforeunload: часть браузеров не гарантируют
+  // beforeunload (особенно на мобильных при сворачивании), pagehide надёжнее
+  // ловит и полный уход, и переход в bfcache.
   useEffect(() => {
     const onBeforeUnload = () => save(true);
+    const onPageHide = () => save(true);
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') save(true);
     };
     window.addEventListener('beforeunload', onBeforeUnload);
+    window.addEventListener('pagehide', onPageHide);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       window.removeEventListener('beforeunload', onBeforeUnload);
+      window.removeEventListener('pagehide', onPageHide);
       document.removeEventListener('visibilitychange', onVisibility);
       save(true);
     };

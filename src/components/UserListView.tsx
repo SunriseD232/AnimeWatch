@@ -98,7 +98,11 @@ export default function UserListView({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap gap-2">
+      {/* Раздел (аниме/кино) — трек-переключатель, тот же паттерн, что и
+          ModeSwitch на главной. Визуально отличается от ряда фильтров
+          статуса ниже — раньше оба ряда были одинаковыми плоскими пилюлями,
+          и было сложно с ходу понять, что это два разных уровня. */}
+      <div className="inline-flex w-fit rounded-full border border-white/10 bg-bg-card p-1">
         {TYPE_TABS.map((t) => {
           const count = items.filter(
             (i) => i.content_type === t.value,
@@ -109,10 +113,10 @@ export default function UserListView({
               type="button"
               onClick={() => setType(t.value)}
               className={[
-                'rounded-lg px-4 py-2 text-sm font-semibold transition',
+                'press rounded-full px-4 py-2 text-sm font-medium transition',
                 type === t.value
                   ? 'bg-accent text-white'
-                  : 'bg-bg-card text-gray-300 hover:bg-bg-soft',
+                  : 'text-gray-300 hover:bg-bg-soft hover:text-white',
               ].join(' ')}
             >
               {t.label}
@@ -134,7 +138,7 @@ export default function UserListView({
               type="button"
               onClick={() => setFilter(f.value)}
               className={[
-                'rounded-lg px-3 py-1.5 text-sm font-medium transition',
+                'press rounded-lg px-3 py-1.5 text-sm font-medium transition',
                 filter === f.value
                   ? 'bg-accent/20 text-accent ring-1 ring-accent/40'
                   : 'bg-bg-card text-gray-300 hover:bg-bg-soft',
@@ -148,7 +152,18 @@ export default function UserListView({
       </div>
 
       {visible.length === 0 ? (
-        <p className="text-sm text-gray-400">Здесь пока пусто.</p>
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/5 bg-bg-card px-6 py-10 text-center">
+          <span className="text-3xl" aria-hidden="true">
+            🗂️
+          </span>
+          <p className="text-sm text-gray-400">Здесь пока пусто.</p>
+          <Link
+            href={type === 'cinema' ? '/cinema/catalog' : '/catalog'}
+            className="press rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-hover"
+          >
+            Найти что посмотреть →
+          </Link>
+        </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
           {visible.map((item) => (

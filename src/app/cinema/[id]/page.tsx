@@ -1,9 +1,10 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import CinemaCard from '@/components/CinemaCard';
 import CinemaEpisodes from '@/components/CinemaEpisodes';
 import ListButton from '@/components/ListButton';
 import TrailerButton from '@/components/TrailerButton';
-import { getCinemaById } from '@/lib/videoseed-catalog';
+import { getCinemaById, getCinemaCatalog, type CinemaShort } from '@/lib/videoseed-catalog';
 import { createClient } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
@@ -57,14 +58,46 @@ export default async function CinemaPage({
     watched = (w ?? []) as { season: number; episode: number }[];
   }
 
+  // Похожее — по первому жанру тайтла (у Videoseed нет отдельного API
+  // "похожих", в отличие от Shikimori для аниме, см. lib/shikimori.ts).
+  let similar: CinemaShort[] = [];
+  if (item.genres.length > 0) {
+    try {
+      const catalogPage = await getCinemaCatalog({
+        type: 'both',
+        genresInclude: [item.genres[0]],
+        genresExclude: [],
+        sort: 'rating',
+        page: 1,
+        pageSize: 13,
+      });
+      similar = catalogPage.items.filter((s) => s.id !== id).slice(0, 12);
+    } catch {
+      similar = [];
+    }
+  }
+
   const resumeSeason = progress?.season ?? 1;
   const resumeEpisode = progress?.episode ?? 1;
   const resumePos = progress?.position_seconds ?? 0;
 
   return (
     <div className="flex flex-col gap-8">
-      {/* Шапка */}
-      <div className="flex flex-col gap-5 sm:flex-row">
+      {/* Шапка — постер как размытая подложка на весь блок (см. ту же
+          обёртку на странице аниме). */}
+      <div className="relative overflow-hidden rounded-3xl">
+        {item.poster && (
+          <div aria-hidden="true" className="absolute inset-0 -z-10">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={item.poster}
+              alt=""
+              className="h-full w-full scale-110 object-cover object-top opacity-40 blur-3xl"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/70 to-bg/30" />
+          </div>
+        )}
+        <div className="flex flex-col gap-5 p-5 sm:flex-row sm:p-8">
         <div className="relative mx-auto aspect-[2/3] w-40 shrink-0 overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 sm:mx-0 sm:w-48">
           {item.poster ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -115,9 +148,17 @@ export default async function CinemaPage({
           </div>
 
           {item.genres.length > 0 && (
-            <p className="text-sm text-gray-400">
-              {item.genres.slice(0, 5).join(', ')}
-            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {item.genres.slice(0, 5).map((g) => (
+                <Link
+                  key={g}
+                  href={`/cinema/catalog?genres=${encodeURIComponent(g)}`}
+                  className="rounded-full bg-bg-card px-2.5 py-1 text-xs text-gray-300 ring-1 ring-white/5 transition hover:text-white hover:ring-accent/60"
+                >
+                  {g}
+                </Link>
+              ))}
+            </div>
           )}
 
           <div className="mt-1 flex flex-wrap items-center gap-3">
@@ -148,6 +189,7 @@ export default async function CinemaPage({
           </div>
         </div>
       </div>
+      </div>
 
       {/* Описание */}
       {item.description && (
@@ -171,6 +213,18 @@ export default async function CinemaPage({
             watched={watched}
             idImdb={item.idImdb}
           />
+        </section>
+      )}
+
+      {/* Похожее */}
+      {similar.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold">Похожее</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {similar.map((s) => (
+              <CinemaCard key={s.id} item={s} />
+            ))}
+          </div>
         </section>
       )}
     </div>

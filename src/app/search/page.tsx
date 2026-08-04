@@ -74,9 +74,42 @@ export default function SearchPage({
   const query = (searchParams.q ?? '').trim();
   const isCinema = searchParams.type === 'cinema';
   const noun = isCinema ? 'фильмов и сериалов' : 'аниме';
+  // Все остальные страницы сайта показывают переключатель Аниме/Кино
+  // (ModeSwitch) — на поиске его не было вообще, переключить тип запроса
+  // можно было только вручную правкой ?type= в адресной строке.
+  const typeHref = (type: 'anime' | 'cinema') => {
+    const params = new URLSearchParams();
+    if (query) params.set('q', query);
+    if (type === 'cinema') params.set('type', 'cinema');
+    const qs = params.toString();
+    return qs ? `/search?${qs}` : '/search';
+  };
 
   return (
     <div className="flex flex-col gap-5">
+      <div className="inline-flex w-fit rounded-full border border-white/10 bg-bg-card p-1">
+        <Link
+          href={typeHref('anime')}
+          aria-current={!isCinema ? 'page' : undefined}
+          className={[
+            'press rounded-full px-4 py-2 text-sm font-medium transition',
+            !isCinema ? 'bg-accent text-white' : 'text-gray-300 hover:bg-bg-soft hover:text-white',
+          ].join(' ')}
+        >
+          Аниме
+        </Link>
+        <Link
+          href={typeHref('cinema')}
+          aria-current={isCinema ? 'page' : undefined}
+          className={[
+            'press rounded-full px-4 py-2 text-sm font-medium transition',
+            isCinema ? 'bg-accent text-white' : 'text-gray-300 hover:bg-bg-soft hover:text-white',
+          ].join(' ')}
+        >
+          Фильмы и сериалы
+        </Link>
+      </div>
+
       <h1 className="text-xl font-bold">
         {query ? (
           <>

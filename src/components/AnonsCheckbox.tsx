@@ -1,6 +1,7 @@
 'use client';
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import Checkbox from '@/components/Checkbox';
 
 /**
  * Чекбокс "Показывать анонсы" для главной (см. DiscoverTabs) — переключает
@@ -25,15 +26,5 @@ export default function AnonsCheckbox() {
     router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
 
-  return (
-    <label className="flex items-center gap-2 text-sm text-gray-400">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={toggle}
-        className="h-4 w-4 rounded border-white/20 bg-bg-card accent-accent"
-      />
-      Показывать анонсы
-    </label>
-  );
+  return <Checkbox checked={checked} onChange={toggle} label="Показывать анонсы" />;
 }

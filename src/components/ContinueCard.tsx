@@ -111,19 +111,19 @@ export default function ContinueCard({
       {/* Убрать из «Продолжить просмотр» — с подтверждением. Кнопка всегда
           видима (не по hover): на тач-устройствах hover не срабатывает. */}
       {confirming ? (
-        <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-black/85 p-1">
+        <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-black/85 p-1 backdrop-blur">
           <button
             type="button"
             onClick={remove}
             disabled={removing}
-            className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+            className="press rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
           >
             {removing ? 'Убираем…' : 'Убрать'}
           </button>
           <button
             type="button"
             onClick={() => setConfirming(false)}
-            className="rounded-md px-2 py-1 text-xs text-gray-300 hover:text-white"
+            className="press rounded-md px-2 py-1 text-xs text-gray-300 hover:text-white"
           >
             Отмена
           </button>
@@ -134,7 +134,7 @@ export default function ContinueCard({
           onClick={() => setConfirming(true)}
           aria-label="Убрать из просмотра"
           title="Убрать из просмотра"
-          className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full bg-black/70 text-sm text-white transition hover:bg-red-600"
+          className="press absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full bg-black/70 text-sm text-white backdrop-blur transition hover:bg-red-600"
         >
           ✕
         </button>

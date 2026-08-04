@@ -68,11 +68,15 @@ body {
   animation: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* Ховер-лифт карточек: подъём + свечение акцентом (Apple-синий) */
+/* Ховер-лифт карточек: подъём + свечение акцентом (Apple-синий).
+   Базовая тень (не только на hover) — раньше карточки отличались от фона
+   только тонким ring-white/5, из-за чего плоская чёрная палитра читалась
+   совсем без глубины. */
 .card-lift {
   transition:
     transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
     box-shadow 0.3s ease;
+  box-shadow: 0 4px 16px -10px rgba(0, 0, 0, 0.7);
 }
 .card-lift:hover {
   transform: translateY(-4px);
@@ -81,9 +85,14 @@ body {
     0 0 0 1px rgba(41, 151, 255, 0.25);
 }
 
-/* Тонкий скроллбар для горизонтальных каруселей */
+/* Тонкий скроллбар для горизонтальных каруселей — прозрачный трек (без
+   этого наследовал сплошной чёрный трек глобального правила выше и выглядел
+   как обычная нестилизованная браузерная полоса). */
 .overflow-x-auto::-webkit-scrollbar {
   height: 6px;
+}
+.overflow-x-auto::-webkit-scrollbar-track {
+  background: transparent;
 }
 .overflow-x-auto::-webkit-scrollbar-thumb {
   background: #2c2c2e;

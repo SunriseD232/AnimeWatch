@@ -393,14 +393,17 @@ export default function WatchPlayer({
       {/* Переключатель источника — когда есть альтернатива Kodik */}
       {!resolving && (aniQualities || hasYummy) && (
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-gray-400">Плеер:</span>
-          <div className="inline-flex rounded-full bg-bg-card p-0.5 ring-1 ring-white/5">
+          <span className="shrink-0 text-gray-400">Плеер:</span>
+          {/* overflow-x-auto + whitespace-nowrap — до 4 вкладок (включая
+              длинную «AniLibria · 720p») не влезают в строку на мобильном
+              без этого, подписи переносились внутри своих же пилюль. */}
+          <div className="inline-flex max-w-full overflow-x-auto rounded-full bg-bg-card p-0.5 ring-1 ring-white/5">
             {aniQualities && (
               <button
                 type="button"
                 onClick={() => switchTo('hls')}
                 className={[
-                  'rounded-full px-3 py-1.5 text-sm font-medium transition',
+                  'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
                   source === 'hls'
                     ? 'bg-accent text-white'
                     : 'text-gray-300 hover:text-white',
@@ -413,7 +416,7 @@ export default function WatchPlayer({
               type="button"
               onClick={() => switchTo('kodik')}
               className={[
-                'rounded-full px-3 py-1.5 text-sm font-medium transition',
+                'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
                 source === 'kodik'
                   ? 'bg-accent text-white'
                   : 'text-gray-300 hover:text-white',
@@ -426,7 +429,7 @@ export default function WatchPlayer({
                 type="button"
                 onClick={() => switchTo('yummy')}
                 className={[
-                  'rounded-full px-3 py-1.5 text-sm font-medium transition',
+                  'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
                   source === 'yummy'
                     ? 'bg-accent text-white'
                     : 'text-gray-300 hover:text-white',
@@ -440,7 +443,7 @@ export default function WatchPlayer({
                 type="button"
                 onClick={() => switchTo('own')}
                 className={[
-                  'rounded-full px-3 py-1.5 text-sm font-medium transition',
+                  'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
                   source === 'own'
                     ? 'bg-accent text-white'
                     : 'text-gray-300 hover:text-white',

@@ -103,26 +103,41 @@ export default async function AnimePage({
 
   return (
     <div className="flex flex-col gap-8">
-      {/* Шапка */}
-      <div className="flex flex-col gap-5 sm:flex-row">
-        <div className="relative mx-auto aspect-[2/3] w-40 shrink-0 overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 sm:mx-0 sm:w-48">
-          {poster ? (
-            // <img> + no-referrer: хотлинк-защита Shikimori (см. AnimeCard).
-            // eslint-disable-next-line @next/next/no-img-element
+      {/* Шапка — постер как размытая подложка на весь блок: без этого на
+          широких экранах справа от небольшого постера была просто пустая
+          чёрная область. */}
+      <div className="relative overflow-hidden rounded-3xl">
+        {poster && (
+          <div aria-hidden="true" className="absolute inset-0 -z-10">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={poster}
-              alt={title}
+              alt=""
               referrerPolicy="no-referrer"
-              className="absolute inset-0 h-full w-full object-cover"
+              className="h-full w-full scale-110 object-cover object-top opacity-40 blur-3xl"
             />
-          ) : (
-            <div className="grid h-full w-full place-items-center text-gray-400">
-              нет постера
-            </div>
-          )}
-        </div>
+            <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/70 to-bg/30" />
+          </div>
+        )}
+        <div className="flex flex-col gap-5 p-5 sm:flex-row sm:p-8">
+          <div className="relative mx-auto aspect-[2/3] w-40 shrink-0 overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 sm:mx-0 sm:w-48">
+            {poster ? (
+              // <img> + no-referrer: хотлинк-защита Shikimori (см. AnimeCard).
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={poster}
+                alt={title}
+                referrerPolicy="no-referrer"
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+            ) : (
+              <div className="grid h-full w-full place-items-center text-gray-400">
+                нет постера
+              </div>
+            )}
+          </div>
 
-        <div className="flex flex-1 flex-col gap-3">
+          <div className="flex flex-1 flex-col gap-3">
           <div>
             <h1 className="text-2xl font-bold leading-tight">{title}</h1>
             {anime.name !== title && (
@@ -183,6 +198,7 @@ export default async function AnimePage({
             {trailerUrl && <TrailerButton embedUrl={trailerUrl} />}
           </div>
         </div>
+      </div>
       </div>
 
       {/* Описание */}

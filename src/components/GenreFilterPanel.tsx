@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import Checkbox from '@/components/Checkbox';
 
 export interface FilterOption {
   value: string;
@@ -119,15 +120,11 @@ export default function GenreFilterPanel({ genres, sorts, defaultSort, anonsTogg
           </label>
 
           {anonsToggle && (
-            <label className="flex items-center gap-2 text-sm text-gray-400">
-              <input
-                type="checkbox"
-                checked={showAnons}
-                onChange={(e) => applyNow(pendingInclude, pendingExclude, sort, e.target.checked)}
-                className="h-4 w-4 rounded border-white/20 bg-bg-card accent-accent"
-              />
-              Показывать анонсы
-            </label>
+            <Checkbox
+              checked={showAnons}
+              onChange={(v) => applyNow(pendingInclude, pendingExclude, sort, v)}
+              label="Показывать анонсы"
+            />
           )}
         </div>
 

@@ -706,8 +706,11 @@ export default function Player({
       {/* Переключатель плеера — когда есть альтернативы Kodik */}
       {(hasVibix || hasVideoseed || hasOwnPlayer) && (
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-gray-400">Плеер:</span>
-          <div className="inline-flex rounded-full bg-bg-card p-0.5 ring-1 ring-white/5">
+          <span className="shrink-0 text-gray-400">Плеер:</span>
+          {/* overflow-x-auto + whitespace-nowrap — на узких экранах 4 вкладки
+              (Vibix/Videoseed/Kodik/Наш плеер) не влезают в строку без этого:
+              «Наш плеер» переносился на два ряда внутри своей же пилюли. */}
+          <div className="inline-flex max-w-full overflow-x-auto rounded-full bg-bg-card p-0.5 ring-1 ring-white/5">
             {(
               [
                 hasVibix ? (['vibix', 'Vibix'] as const) : null,
@@ -721,7 +724,7 @@ export default function Player({
                 type="button"
                 onClick={() => switchPlayer(kind)}
                 className={[
-                  'rounded-full px-3 py-1.5 text-sm font-medium transition',
+                  'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
                   player === kind
                     ? 'bg-accent text-white'
                     : 'text-gray-300 hover:text-white',
