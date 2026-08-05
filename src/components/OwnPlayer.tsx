@@ -665,14 +665,25 @@ export default function OwnPlayer({
     // не только из loadedmetadata: если тот сработал раньше, чем реально
     // применился seek (например, до готовности буфера у HLS), повтор на
     // canplay/playing подхватит пропущенный сброс, а не оставит с позиции 0.
+    // seekPending — сик на сохранённую позицию реально запущен, но браузер
+    // ещё не отчитался о его завершении (событие seeked ниже): canplay не
+    // гарантирует, что к этому моменту сик уже доехал (замечено вживую —
+    // воспроизведение стартовало ДО применения позиции, будто плеер ещё не
+    // успел загрузиться). attemptPlay ждёт seekPending, чтобы не запускать
+    // play() поверх ещё не завершённой перемотки.
+    let seekPending = false;
     const applyResumeSeek = () => {
       const target = seekTargetRef.current;
       if (target == null || target <= 1) return;
-      if (Number.isFinite(video.duration) && target >= video.duration) return;
-      if (Math.abs(video.currentTime - target) > 1) {
-        video.currentTime = target;
+      if (Number.isFinite(video.duration) && target >= video.duration) {
+        seekTargetRef.current = null;
+        return;
       }
       seekTargetRef.current = null;
+      if (Math.abs(video.currentTime - target) > 1) {
+        seekPending = true;
+        video.currentTime = target;
+      }
     };
     // Запускаем воспроизведение сами (вместо атрибута autoPlay на <video>,
     // см. ниже) — так у нас есть доступ к промису play() и можно поймать
@@ -684,7 +695,7 @@ export default function OwnPlayer({
     // БЕЗ звука — это браузеры разрешают практически всегда — с явным
     // индикатором «выкл. звук» в панели, который и так уже есть.
     const attemptPlay = () => {
-      if (autoplayTriedRef.current) return;
+      if (autoplayTriedRef.current || seekPending) return;
       autoplayTriedRef.current = true;
       video.play().catch(() => {
         video.muted = true;
@@ -772,6 +783,14 @@ export default function OwnPlayer({
       applyResumeSeek();
       attemptPlay();
     };
+    // Само событие завершения перемотки — снимаем seekPending и пробуем
+    // запустить воспроизведение, если canplay уже отстрелялся раньше и
+    // attemptPlay тогда молча вышел из-за незавершённого сика (см. выше).
+    const onSeeked = () => {
+      if (!seekPending) return;
+      seekPending = false;
+      attemptPlay();
+    };
     const onError = () => setLoadState('failed');
 
     video.addEventListener('loadedmetadata', onLoadedMetadata);
@@ -783,6 +802,7 @@ export default function OwnPlayer({
     video.addEventListener('waiting', onWaiting);
     video.addEventListener('canplay', onCanPlay);
     video.addEventListener('playing', onCanPlay);
+    video.addEventListener('seeked', onSeeked);
     video.addEventListener('error', onError);
     return () => {
       video.removeEventListener('loadedmetadata', onLoadedMetadata);
@@ -794,6 +814,7 @@ export default function OwnPlayer({
       video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('canplay', onCanPlay);
       video.removeEventListener('playing', onCanPlay);
+      video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('error', onError);
     };
   }, [save, onEnded, loadState, performAutoSkip]);
