@@ -57,8 +57,13 @@ export async function POST(request: NextRequest) {
           poster_url: body.poster_url ?? null,
         },
         {
+          // Было ignoreDuplicates: true (ON CONFLICT DO NOTHING) — из-за
+          // этого строки, отмеченные ДО того, как сюда добавили title/
+          // poster_url (миграция 0017), никогда не получали их: конфликт по
+          // тому же (user, content_type, shikimori_id, season, episode)
+          // просто молча игнорировался. Теперь конфликт обновляет title/
+          // poster_url — новый повтор той же серии их подтянет.
           onConflict: 'user_id,content_type,shikimori_id,season,episode',
-          ignoreDuplicates: true,
         },
       );
       if (error) {
