@@ -1,11 +1,9 @@
 import { notFound } from 'next/navigation';
 import Player from '@/components/Player';
-import { getCinemaById, getVideoseedOwnPlayerTranslations } from '@/lib/videoseed-catalog';
+import { getCinemaById } from '@/lib/videoseed-catalog';
 import { createClient } from '@/lib/supabase/server';
-import { createVideoSource, getKodikOwnPlayerTranslations } from '@/lib/video/kodik';
-import { buildVideoseedEmbedUrl } from '@/lib/video/videoseed';
 import { getVibixEmbed } from '@/lib/video/vibix';
-import type { OwnPlayerTranslation } from '@/lib/extract/types';
+import { resolveCinemaEpisodeSources } from '@/lib/watch/resolveCinemaEpisode';
 import type { WatchProgress } from '@/lib/types';
 
 export const metadata = { title: 'Просмотр — MediaWatch' };
@@ -79,61 +77,25 @@ export default async function CinemaWatchPage({
   // единообразия с OwnPlayer.tsx (там персистентность всегда по title).
   const savedTranslationTitle = progress?.translation_title ?? null;
 
-  // Kodik (второстепенный плеер + список для «Наш плеер») и Vibix (основной,
-  // точный трекинг) — параллельно.
-  const source = createVideoSource();
-  const [embed, vibixEmbed, kodikOwnPlayerTranslations, videoseedOwnPlayerTranslations] =
-    await Promise.all([
-      source.getEmbedUrl({
-        kinopoiskId,
-        season,
-        episode,
-        translationId: initialTranslationId ?? undefined,
-        startFrom: resumeFrom ?? undefined,
-      }),
-      getVibixEmbed(kinopoiskId),
-      getKodikOwnPlayerTranslations(kinopoiskId, season, episode),
-      getVideoseedOwnPlayerTranslations(kinopoiskId, season, episode),
-    ]);
-
-  const resolvedTranslationId =
-    initialTranslationId ?? embed.translations[0]?.id ?? null;
-
-  // Videoseed (основной) — embed_auto по kinopoisk_id, video=sСЕЗОНvСЕРИЯ.
-  // Стартуем на 15 сек раньше сохранённой позиции: позиция с Videoseed
-  // приблизительная (оценщик), а начать чуть раньше приятнее, чем позже.
-  const videoseedStart =
-    resumeFrom !== null ? Math.max(0, resumeFrom - 15) : 0;
-  const videoseedUrl = buildVideoseedEmbedUrl({
-    kinopoiskId,
-    season,
-    episode,
-    isSerial: item.isSerial,
-    startFrom: videoseedStart > 0 ? videoseedStart : undefined,
-  });
+  // Vibix — заголовок-уровня (один и тот же embed на весь тайтл, серию/сезон
+  // передаём прямо в его iframe-SDK, см. VibixPlayer.tsx) — не часть общего
+  // резолвера серии (resolveCinemaEpisodeSources), т.к. не завязан на неё.
+  const [vibixEmbed, sources] = await Promise.all([
+    getVibixEmbed(kinopoiskId),
+    resolveCinemaEpisodeSources({
+      kinopoiskId,
+      season,
+      episode,
+      isSerial: item.isSerial,
+      translationId: initialTranslationId,
+      resumeFrom,
+    }),
+  ]);
 
   // Число серий в текущем сезоне (для «Серия X из Y»).
   const seasonInfo = item.seasons.find((s) => s.season === season);
   const seasonEpisodes =
     seasonInfo?.episodes ?? (item.isSerial ? item.episodesTotal : 1);
-
-  // «Наш плеер» для кино: озвучки Kodik ПЕРВЫМИ (id=0-выбор по умолчанию) —
-  // его извлечение обычный fetch без Puppeteer, почти мгновенное; Videoseed
-  // (Puppeteer, обход preroll-рекламы, ~10-13с на непрогретый кэш, см.
-  // vps-extractor/src/videoseed.js) идёт следом, доступен через Озвучку в
-  // меню настроек. У Videoseed выше покрытие каталога/качество — если у
-  // конкретного тайтла Kodik-озвучек нет, порядок и так не важен. Если у
-  // Videoseed нет данных по озвучкам вовсе — старое поведение: один
-  // синтетический трек (id=0 — слот "без явного выбора", VPS сам решает
-  // через embed_auto, см. resolve.ts).
-  const ownPlayerTranslations: OwnPlayerTranslation[] = [
-    ...kodikOwnPlayerTranslations,
-    ...(videoseedOwnPlayerTranslations.length > 0
-      ? videoseedOwnPlayerTranslations
-      : videoseedUrl
-        ? [{ id: 0, title: 'Videoseed', embedUrl: '', source: 'videoseed' as const }]
-        : []),
-  ];
 
   return (
     <Player
@@ -145,20 +107,20 @@ export default async function CinemaWatchPage({
       total={seasonEpisodes}
       animeTitle={title}
       posterUrl={posterUrl}
-      initialEmbedUrl={embed.embedUrl}
+      initialEmbedUrl={sources.kodikEmbedUrl}
       vibixEmbed={vibixEmbed}
-      videoseedUrl={videoseedUrl}
-      videoseedStart={videoseedStart}
+      videoseedUrl={sources.videoseedUrl}
+      videoseedStart={sources.videoseedStart}
       durationSeconds={item.durationSeconds}
-      translations={embed.translations}
-      initialTranslationId={resolvedTranslationId}
-      ownPlayerTranslations={ownPlayerTranslations}
+      translations={sources.kodikTranslations}
+      initialTranslationId={sources.kodikInitialTranslationId}
+      ownPlayerTranslations={sources.ownPlayerTranslations}
       savedTranslationTitle={savedTranslationTitle}
       savedTranslationId={initialTranslationId}
       resumeFrom={resumeFrom}
       otherSeason={otherSeason}
       otherEpisode={otherEpisode}
-      fallback={embed.fallback}
+      fallback={sources.kodikFallback}
       isAuthed={!!user}
     />
   );

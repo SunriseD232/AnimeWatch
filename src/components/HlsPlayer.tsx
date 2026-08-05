@@ -48,6 +48,12 @@ export default function HlsPlayer({
   const playingRef = useRef(false);
   // Куда перемотать после загрузки манифеста (восстановление / смена качества).
   const seekTargetRef = useRef<number | null>(resumeFrom);
+  // Смена серии — resumeFrom теперь относится к НОВОЙ серии (без этого при
+  // бесшовном переключении, см. WatchPlayer.tsx switchEpisode, компонент не
+  // remount'ится — seekTargetRef остался бы со значением от старой серии).
+  useEffect(() => {
+    seekTargetRef.current = resumeFrom;
+  }, [episode, resumeFrom]);
   const onTimeUpdateRef = useRef(onTimeUpdate);
   onTimeUpdateRef.current = onTimeUpdate;
   const skipOpeningRef = useRef(skipOpening);

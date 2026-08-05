@@ -35,7 +35,9 @@ interface Props {
   posterUrl: string | null;
   /** Kodik embed (второстепенный плеер). */
   initialEmbedUrl: string;
-  /** Vibix embed (основной плеер: точный трекинг позиции) или null. */
+  /** Vibix embed (основной плеер: точный трекинг позиции) или null. Один на
+   *  весь тайтл — сезон/серия передаются прямо в VibixPlayer, без похода на
+   *  сервер за новым embed при смене серии (см. switchEpisode). */
   vibixEmbed: VibixEmbed | null;
   /** Videoseed embed или null, если токен не задан. */
   videoseedUrl: string | null;
@@ -71,6 +73,10 @@ const SAVE_INTERVAL_MS = 10_000;
 const PLAYER_PREF_KEY = 'aw:cinemaPlayer';
 /** Задержка автоперехода на следующую серию после окончания текущей. */
 const AUTO_NEXT_DELAY_MS = 3_000;
+/** Прогрев «Наш плеер» следующей серии — насколько раньше конца текущей
+ *  (титры/аутро пользователь часто пропускает сам, не дожидаясь конца). */
+const PREWARM_WINDOW_S = 300;
+const PREWARM_POLL_MS = 15_000;
 
 type PlayerKind = 'vibix' | 'videoseed' | 'kodik' | 'own';
 
@@ -89,6 +95,18 @@ interface VibixPlayerEvent {
 interface StepTarget {
   season: number;
   episode: number;
+}
+
+/** Ответ /api/watch/cinema/[id]/[season]/[episode] — см. switchEpisode. */
+interface EpisodeSourcesResponse {
+  kodikEmbedUrl: string;
+  kodikTranslations: Translation[];
+  kodikInitialTranslationId: number | null;
+  kodikFallback: boolean;
+  videoseedUrl: string | null;
+  videoseedStart: number;
+  ownPlayerTranslations: OwnPlayerTranslation[];
+  resumeFrom: number | null;
 }
 
 /**
@@ -129,18 +147,18 @@ export default function Player({
   posterUrl,
   initialEmbedUrl,
   vibixEmbed,
-  videoseedUrl,
-  videoseedStart,
+  videoseedUrl: initialVideoseedUrl,
+  videoseedStart: initialVideoseedStart,
   durationSeconds,
-  translations,
+  translations: initialTranslations,
   initialTranslationId,
   savedTranslationId,
-  ownPlayerTranslations,
+  ownPlayerTranslations: initialOwnPlayerTranslations,
   savedTranslationTitle,
-  resumeFrom,
+  resumeFrom: initialResumeFrom,
   otherSeason,
   otherEpisode,
-  fallback,
+  fallback: initialFallback,
   isAuthed,
 }: Props) {
   const router = useRouter();
@@ -150,6 +168,7 @@ export default function Player({
   const isCinema = contentType === 'cinema';
   const detailHref = `${isCinema ? '/cinema' : '/anime'}/${shikimoriId}`;
   const watchBase = isCinema ? '/cinema/watch' : '/watch';
+  const isSerial = seasons.length > 0;
 
   // Список сезонов: если детализации нет — один сезон с `total` серий.
   const seasonsList: SeasonInfo[] = useMemo(
@@ -157,6 +176,25 @@ export default function Player({
     [seasons, season, total],
   );
   const multiSeason = seasonsList.length > 1;
+
+  // Источники серии — локальное состояние поверх начальных пропов: при
+  // бесшовном переключении (см. switchEpisode) обновляются из ответа
+  // /api/watch/cinema/..., а не через полную навигацию/перерендер страницы.
+  const [embedUrl, setEmbedUrl] = useState(initialEmbedUrl);
+  const [translationId, setTranslationId] = useState<number | null>(
+    initialTranslationId,
+  );
+  const [translations, setTranslations] = useState(initialTranslations);
+  const [videoseedUrl, setVideoseedUrl] = useState(initialVideoseedUrl);
+  const [videoseedStart, setVideoseedStart] = useState(initialVideoseedStart);
+  const [ownPlayerTranslations, setOwnPlayerTranslations] = useState(
+    initialOwnPlayerTranslations,
+  );
+  const [fallback, setFallback] = useState(initialFallback);
+  const [resumeFrom, setResumeFrom] = useState(initialResumeFrom);
+  // Переключение серии в процессе — маленький индикатор поверх видео, а не
+  // замена всей страницы (см. switchEpisode).
+  const [switchingEpisode, setSwitchingEpisode] = useState(false);
 
   // Плееры по приоритету: Наш плеер (свой проксирующий стрим, без стороннего
   // iframe/рекламы) → Vibix (точный трекинг позиции) → Videoseed → Kodik.
@@ -168,10 +206,6 @@ export default function Player({
     hasOwnPlayer ? 'own' : hasVibix ? 'vibix' : hasVideoseed ? 'videoseed' : 'kodik',
   );
 
-  const [embedUrl, setEmbedUrl] = useState(initialEmbedUrl);
-  const [translationId, setTranslationId] = useState<number | null>(
-    initialTranslationId,
-  );
   const [playing, setPlaying] = useState(false);
   const [ended, setEnded] = useState(false);
   // Автопереход на следующую серию: цель и таймер (null — отменён/неактивен).
@@ -204,6 +238,9 @@ export default function Player({
   // Держим playing в ref, чтобы realtime-подписка не пересоздавалась.
   const playingRef = useRef(false);
   playingRef.current = playing;
+  // Прогрели ли уже следующую серию «Наш плеер» — сброс на каждую новую
+  // активную серию (см. switchEpisode и эффект прогрева ниже).
+  const prewarmedRef = useRef(false);
 
   // Синхронизируем активные сезон/серию при смене маршрута.
   useEffect(() => {
@@ -213,10 +250,11 @@ export default function Player({
     setActiveEpisode(episode);
   }, [episode]);
 
-  // Актуализируем ожидающий seek Vibix при смене серии/позиции с сервера.
+  // Актуализируем ожидающий seek Vibix при обновлении resumeFrom (полная
+  // навигация ИЛИ бесшовное переключение — см. switchEpisode).
   useEffect(() => {
     vibixSeekRef.current = resumeFrom;
-  }, [resumeFrom, season, episode]);
+  }, [resumeFrom]);
 
   // При навигации по маршруту сервер отдаёт новый embed — обновляем iframe.
   useEffect(() => {
@@ -274,6 +312,8 @@ export default function Player({
   // Videoseed (основной плеер) не сообщает странице позицию, поэтому для
   // сериалов фиксируем хотя бы «на какой серии остановился». Точная секунда
   // пишется отдельно, когда работает Kodik (он шлёт события времени).
+  // Завязано на activeSeason/activeEpisode (а не на пропы season/episode) —
+  // при бесшовном переключении (см. switchEpisode) пропы не меняются.
   useEffect(() => {
     if (!isAuthed || seasons.length === 0) return;
     fetch('/api/progress', {
@@ -284,14 +324,14 @@ export default function Player({
         shikimori_id: shikimoriId,
         anime_title: animeTitle,
         poster_url: posterUrl,
-        season,
-        episode,
+        season: activeSeason,
+        episode: activeEpisode,
         mark: true,
       }),
       keepalive: true,
     }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthed, shikimoriId, season, episode]);
+  }, [isAuthed, shikimoriId, activeSeason, activeEpisode]);
 
   // --- Сохранение прогресса ---------------------------------------------
   const saveProgress = useCallback(
@@ -405,7 +445,7 @@ export default function Player({
       setAutoNext(step);
       if (autoNextTimerRef.current) clearTimeout(autoNextTimerRef.current);
       autoNextTimerRef.current = setTimeout(() => {
-        router.push(`${watchBase}/${shikimoriId}/${step.season}/${step.episode}`);
+        switchEpisodeRef.current(step);
       }, AUTO_NEXT_DELAY_MS);
     }
   }, [
@@ -415,8 +455,6 @@ export default function Player({
     shikimoriId,
     animeTitle,
     posterUrl,
-    router,
-    watchBase,
   ]);
 
   // Отмена автоперехода (кнопка в плашке).
@@ -592,6 +630,9 @@ export default function Player({
   }, []);
 
   // --- Realtime: синхронизация между устройствами (last-write-wins) -------
+  // Подписка держится СТАБИЛЬНОЙ через бесшовные переключения серии (не в
+  // deps ниже) — сравнение идёт по свежим activeSeasonRef/activeEpisodeRef,
+  // а не по пропам season/episode (которые не меняются при switchEpisode).
   useEffect(() => {
     if (!isAuthed) return;
     const supabase = createClient();
@@ -616,7 +657,8 @@ export default function Player({
           const isBackground =
             document.visibilityState === 'hidden' || !playingRef.current;
           const elsewhere =
-            row.episode !== episode || (row.season ?? 1) !== season;
+            row.episode !== activeEpisodeRef.current ||
+            (row.season ?? 1) !== activeSeasonRef.current;
           if (isBackground && elsewhere) {
             const where = multiSeason
               ? `сезон ${row.season ?? 1}, серию ${row.episode}`
@@ -630,7 +672,140 @@ export default function Player({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isAuthed, shikimoriId, episode, season, multiSeason, toast]);
+  }, [isAuthed, shikimoriId, multiSeason, toast]);
+
+  // --- Бесшовное переключение серии ---------------------------------------
+  // Вместо полной Next-навигации: флашим прогресс старой серии, оптимистично
+  // обновляем текст/номер серии, тянем ТОЛЬКО нужные для новой серии
+  // источники с /api/watch/cinema/... (без тайтл-уровневых данных — постер/
+  // сезоны/похожее и т.п. не перезапрашиваются), обновляем адресную строку
+  // через history.pushState (без полного роутинга Next). При сбое —
+  // настоящая навигация как раньше, чтобы пользователь не застрял.
+  const switchEpisode = useCallback(
+    async (target: StepTarget, pushHistory = true) => {
+      saveProgress(true);
+
+      setSwitchingEpisode(true);
+      setShowOtherBanner(false);
+      setEnded(false);
+      setAutoNext(null);
+      if (autoNextTimerRef.current) {
+        clearTimeout(autoNextTimerRef.current);
+        autoNextTimerRef.current = null;
+      }
+      setActiveSeason(target.season);
+      setActiveEpisode(target.episode);
+      currentTimeRef.current = 0;
+      durationRef.current = null;
+      vibixSeekRef.current = null;
+      prewarmedRef.current = false;
+
+      try {
+        const params = new URLSearchParams({ isSerial: isSerial ? '1' : '0' });
+        if (translationRef.current != null) {
+          params.set('translationId', String(translationRef.current));
+        }
+        const res = await fetch(
+          `/api/watch/cinema/${shikimoriId}/${target.season}/${target.episode}?${params.toString()}`,
+        );
+        if (!res.ok) throw new Error('bad response');
+        const data = (await res.json()) as EpisodeSourcesResponse;
+
+        setEmbedUrl(data.kodikEmbedUrl);
+        setTranslations(data.kodikTranslations);
+        setTranslationId(data.kodikInitialTranslationId);
+        setFallback(data.kodikFallback);
+        setVideoseedUrl(data.videoseedUrl);
+        setVideoseedStart(data.videoseedStart);
+        setOwnPlayerTranslations(data.ownPlayerTranslations);
+        setResumeFrom(data.resumeFrom);
+        vibixSeekRef.current = data.resumeFrom;
+
+        if (pushHistory) {
+          window.history.pushState(null, '', linkForTarget(watchBase, shikimoriId, target));
+        }
+        document.title = `${animeTitle} — MediaWatch`;
+      } catch {
+        toast('Не удалось переключить серию, открываю страницу заново', 'error');
+        router.push(linkForTarget(watchBase, shikimoriId, target));
+      } finally {
+        setSwitchingEpisode(false);
+      }
+    },
+    [saveProgress, isSerial, shikimoriId, watchBase, animeTitle, toast, router],
+  );
+  // Всегда-свежая ссылка на switchEpisode — для замыканий, живущих дольше её
+  // собственной идентичности (автопереход в onEpisodeEnded, объявленный выше).
+  const switchEpisodeRef = useRef(switchEpisode);
+  switchEpisodeRef.current = switchEpisode;
+
+  // Кнопка «Назад»/«Вперёд» браузера — история двигалась через pushState в
+  // switchEpisode, без участия роутера Next, поэтому ловим её сами.
+  useEffect(() => {
+    const titleBase = `${watchBase}/${shikimoriId}/`;
+    const onPopState = () => {
+      const path = window.location.pathname;
+      if (!path.startsWith(titleBase)) return; // ушли с этого тайтла вовсе
+      const parts = path.split('/').filter(Boolean);
+      const s = Number(parts[parts.length - 2]);
+      const e = Number(parts[parts.length - 1]);
+      if (
+        Number.isFinite(s) &&
+        Number.isFinite(e) &&
+        (s !== activeSeasonRef.current || e !== activeEpisodeRef.current)
+      ) {
+        switchEpisode({ season: s, episode: e }, false);
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [switchEpisode, watchBase, shikimoriId]);
+
+  // --- Прогрев «Наш плеер» следующей серии --------------------------------
+  // За 5 минут до конца текущей (не позже — титры/аутро часто пропускают
+  // сами, не дожидаясь конца, см. обсуждение). Два шага: сперва лёгкий
+  // /api/watch/cinema/... за списком озвучек следующей серии (обычный fetch
+  // каталога, дёшево), затем HEAD на /api/proxy/.../{source}?t=<id> для
+  // ПЕРВОЙ из них — тот самый роут, что реально вызывает resolveStream() и
+  // кладёт результат в кэш (resolved_streams); первый шаг сам по себе ничего
+  // не прогревает, только даёт знать, какой source/id пробовать. Если ссылка
+  // успеет протухнуть у апстрима раньше реального переключения — есть штатный
+  // forceFresh-фоллбэк в /api/proxy, прогрев в этом случае просто не даст
+  // выигрыша, не ломает ничего.
+  useEffect(() => {
+    if (player !== 'own' || !hasOwnPlayer) return;
+    const id = setInterval(() => {
+      if (prewarmedRef.current) return;
+      const dur = durationRef.current;
+      if (!dur || dur - currentTimeRef.current > PREWARM_WINDOW_S) return;
+      const step = computeStep(
+        seasonsList,
+        activeSeasonRef.current,
+        activeEpisodeRef.current,
+        1,
+      );
+      if (!step) return;
+      prewarmedRef.current = true;
+      const params = new URLSearchParams({ isSerial: isSerial ? '1' : '0' });
+      if (translationRef.current != null) {
+        params.set('translationId', String(translationRef.current));
+      }
+      fetch(
+        `/api/watch/cinema/${shikimoriId}/${step.season}/${step.episode}?${params.toString()}`,
+      )
+        .then((r) => (r.ok ? (r.json() as Promise<EpisodeSourcesResponse>) : null))
+        .then((data) => {
+          const t = data?.ownPlayerTranslations[0];
+          if (!t?.source) return;
+          return fetch(
+            `/api/proxy/cinema/${shikimoriId}/${step.season}/${step.episode}/${t.source}?t=${t.id}`,
+            { method: 'HEAD' },
+          );
+        })
+        .catch(() => {});
+    }, PREWARM_POLL_MS);
+    return () => clearInterval(id);
+  }, [player, hasOwnPlayer, seasonsList, shikimoriId, isSerial]);
 
   // --- Смена озвучки -----------------------------------------------------
   async function changeTranslation(nextId: number) {
@@ -686,12 +861,15 @@ export default function Player({
             .
           </span>
           <div className="flex items-center gap-2">
-            <Link
-              href={`${watchBase}/${shikimoriId}/${otherSeason ?? 1}/${otherEpisode}`}
+            <button
+              type="button"
+              onClick={() =>
+                switchEpisode({ season: otherSeason ?? 1, episode: otherEpisode })
+              }
               className="rounded-md bg-accent px-3 py-1.5 font-medium text-white hover:bg-accent-hover"
             >
               Перейти
-            </Link>
+            </button>
             <button
               type="button"
               onClick={() => setShowOtherBanner(false)}
@@ -735,6 +913,9 @@ export default function Player({
               </button>
             ))}
           </div>
+          {switchingEpisode && (
+            <span className="text-xs text-gray-400">переключаем…</span>
+          )}
         </div>
       )}
 
@@ -744,8 +925,8 @@ export default function Player({
         <OwnPlayer
           contentType={contentType}
           shikimoriId={shikimoriId}
-          season={season}
-          episode={episode}
+          season={activeSeason}
+          episode={activeEpisode}
           extractSource="videoseed"
           animeTitle={animeTitle}
           posterUrl={posterUrl}
@@ -760,21 +941,24 @@ export default function Player({
               ? `Сезон ${next.season}`
               : undefined
           }
+          onNext={next ? () => switchEpisode(next) : undefined}
           onEnded={onEpisodeEnded}
-          onTimeUpdate={(t) => {
+          onTimeUpdate={(t, d) => {
             // Держим общий конвейер прогресса в курсе (перенос позиции при
-            // смене плеера, флаши при уходе со страницы).
+            // смене плеера, флаши при уходе со страницы, прогрев следующей
+            // серии — см. эффект прогрева выше).
             currentTimeRef.current = t;
+            if (d) durationRef.current = d;
           }}
         />
       ) : (
       <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10">
         {player === 'vibix' && vibixEmbed ? (
           <VibixPlayer
-            key={`vibix-${vibixEmbed.id}-${season}-${episode}`}
+            key={`vibix-${vibixEmbed.id}-${activeSeason}-${activeEpisode}`}
             embed={vibixEmbed}
-            season={season}
-            episode={episode}
+            season={activeSeason}
+            episode={activeEpisode}
             isSerial={seasons.length > 0}
           />
         ) : player === 'videoseed' && videoseedUrl ? (
@@ -822,12 +1006,13 @@ export default function Player({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           {hasPrev && prev ? (
-            <Link
-              href={linkFor(prev)}
+            <button
+              type="button"
+              onClick={() => switchEpisode(prev)}
               className="rounded-lg bg-bg-card px-4 py-2 text-sm font-medium text-gray-100 ring-1 ring-white/10 transition hover:bg-bg-soft"
             >
               ← Пред.
-            </Link>
+            </button>
           ) : (
             <span
               aria-disabled="true"
@@ -837,12 +1022,13 @@ export default function Player({
             </span>
           )}
           {hasNext && next ? (
-            <Link
-              href={linkFor(next)}
+            <button
+              type="button"
+              onClick={() => switchEpisode(next)}
               className="rounded-lg bg-bg-card px-4 py-2 text-sm font-medium text-gray-100 ring-1 ring-white/10 transition hover:bg-bg-soft"
             >
               След. →
-            </Link>
+            </button>
           ) : (
             <span
               aria-disabled="true"
@@ -862,7 +1048,7 @@ export default function Player({
                 value={activeSeason}
                 onChange={(e) => {
                   const s = Number(e.target.value);
-                  window.location.href = `${watchBase}/${shikimoriId}/${s}/1`;
+                  switchEpisode({ season: s, episode: 1 });
                 }}
                 className="rounded-lg border border-white/10 bg-bg-card px-3 py-2 text-sm text-gray-100 focus:border-accent focus:outline-none"
               >
@@ -916,14 +1102,15 @@ export default function Player({
                 Отмена
               </button>
             )}
-            <Link
-              href={linkFor(next)}
+            <button
+              type="button"
+              onClick={() => switchEpisode(next)}
               className="rounded-md bg-accent px-4 py-1.5 font-medium text-white hover:bg-accent-hover"
             >
               {next.season !== activeSeason
                 ? `Сезон ${next.season} →`
                 : 'Следующая серия →'}
-            </Link>
+            </button>
           </div>
         </div>
       )}
@@ -939,4 +1126,8 @@ export default function Player({
       )}
     </div>
   );
+}
+
+function linkForTarget(watchBase: string, shikimoriId: number, t: StepTarget): string {
+  return `${watchBase}/${shikimoriId}/${t.season}/${t.episode}`;
 }

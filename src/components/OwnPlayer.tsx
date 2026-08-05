@@ -50,9 +50,17 @@ interface Props {
   /** Ссылка на следующую серию — кнопка внутри плеера. null — некуда. */
   nextHref: string | null;
   nextLabel?: string;
+  /** Если задан — клик по «Следующая серия» вызывает это вместо перехода по
+   *  nextHref (бесшовное переключение без полной навигации, см.
+   *  Player.tsx/WatchPlayer.tsx switchEpisode). nextHref всё равно нужен —
+   *  используется как fallback-адрес и для отображения. */
+  onNext?: () => void;
   onEnded: () => void;
-  /** Сообщает текущую позицию наверх (для переноса при смене источника). */
-  onTimeUpdate?: (seconds: number) => void;
+  /** Сообщает текущую позицию (и, когда известна, длительность файла — она
+   *  не приходит ни от одного источника заранее, только из самого <video>)
+   *  наверх — для переноса при смене источника и для прогрева следующей
+   *  серии ближе к концу текущей. */
+  onTimeUpdate?: (seconds: number, duration: number | null) => void;
 }
 
 const VOLUME_KEY = 'aw:ownPlayerVolume';
@@ -167,6 +175,7 @@ export default function OwnPlayer({
   skipEnding,
   nextHref,
   nextLabel,
+  onNext,
   onEnded,
   onTimeUpdate,
 }: Props) {
@@ -673,7 +682,7 @@ export default function OwnPlayer({
     const onTime = () => {
       const t = video.currentTime;
       setCurrentTime(t);
-      onTimeUpdateRef.current?.(t);
+      onTimeUpdateRef.current?.(t, Number.isFinite(video.duration) ? video.duration : null);
       const op = skipOpeningRef.current;
       const end = skipEndingRef.current;
       let zone: 'opening' | 'ending' | null = null;
@@ -1025,12 +1034,22 @@ export default function OwnPlayer({
         )}
 
         {nearEnd && !recentlySkipped && nextHref && (
-          <Link
-            href={nextHref}
-            className="absolute bottom-20 right-3 z-10 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white ring-1 ring-white/20 backdrop-blur transition hover:bg-accent-hover"
-          >
-            {nextLabel ?? 'Следующая серия'} →
-          </Link>
+          onNext ? (
+            <button
+              type="button"
+              onClick={onNext}
+              className="absolute bottom-20 right-3 z-10 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white ring-1 ring-white/20 backdrop-blur transition hover:bg-accent-hover"
+            >
+              {nextLabel ?? 'Следующая серия'} →
+            </button>
+          ) : (
+            <Link
+              href={nextHref}
+              className="absolute bottom-20 right-3 z-10 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white ring-1 ring-white/20 backdrop-blur transition hover:bg-accent-hover"
+            >
+              {nextLabel ?? 'Следующая серия'} →
+            </Link>
+          )
         )}
 
         <div

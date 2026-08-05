@@ -9,8 +9,7 @@ import {
   imageUrl,
 } from '@/lib/shikimori';
 import { createClient } from '@/lib/supabase/server';
-import { createVideoSource } from '@/lib/video/kodik';
-import { getYummyEpisode } from '@/lib/video/yummy';
+import { resolveAnimeEpisodeSources } from '@/lib/watch/resolveAnimeEpisode';
 import type { WatchProgress } from '@/lib/types';
 
 export const metadata = { title: 'Просмотр — MediaWatch' };
@@ -83,23 +82,19 @@ export default async function WatchPage({
   // Готовим Kodik как fallback (AniLibria подбирается на клиенте), Yummy
   // (второй резервный источник + тайминги пропуска опенинга/эндинга) и
   // подсказки «продолжение»/«похожее» под плеером — параллельно.
-  const source = createVideoSource();
-  const [embed, yummy, prequels, sequels, similar] = await Promise.all([
-    source.getEmbedUrl({
+  const [sources, prequels, sequels, similar] = await Promise.all([
+    resolveAnimeEpisodeSources({
       shikimoriId,
       episode,
-      translationId: initialTranslationId ?? undefined,
-      startFrom: resumeFrom ?? undefined,
+      translationId: initialTranslationId,
+      resumeFrom,
     }),
-    getYummyEpisode(shikimoriId, episode),
     getPrequels(shikimoriId),
     getSequels(shikimoriId),
     getSimilarAnime(shikimoriId, 6),
   ]);
 
-  const total = embed.episodesTotal ?? episodeCount(anime);
-  const resolvedTranslationId =
-    initialTranslationId ?? embed.translations[0]?.id ?? null;
+  const total = sources.episodesTotal ?? episodeCount(anime);
   const animeYear = anime.aired_on
     ? Number(anime.aired_on.slice(0, 4)) || null
     : null;
@@ -119,14 +114,14 @@ export default async function WatchPage({
       otherEpisode={otherEpisode}
       isAuthed={!!user}
       isOngoing={anime.status === 'ongoing'}
-      kodikEmbedUrl={embed.embedUrl}
-      kodikTranslations={embed.translations}
-      kodikInitialTranslationId={resolvedTranslationId}
-      kodikFallback={embed.fallback}
-      yummyTranslations={yummy?.translations ?? []}
+      kodikEmbedUrl={sources.kodikEmbedUrl}
+      kodikTranslations={sources.kodikTranslations}
+      kodikInitialTranslationId={sources.kodikInitialTranslationId}
+      kodikFallback={sources.kodikFallback}
+      yummyTranslations={sources.yummyTranslations}
       savedTranslationTitle={savedTranslationTitle}
-      skipOpening={yummy?.skipOpening ?? null}
-      skipEnding={yummy?.skipEnding ?? null}
+      skipOpening={sources.skipOpening}
+      skipEnding={sources.skipEnding}
       prequels={prequels}
       sequels={sequels}
       similar={similar}

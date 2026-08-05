@@ -23,6 +23,11 @@ import type { ContentType, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
 import OwnPlayer from '@/components/OwnPlayer';
 
+interface SkipSegment {
+  time: number;
+  length: number;
+}
+
 interface Props {
   shikimoriId: number;
   contentType: ContentType;
@@ -47,8 +52,8 @@ interface Props {
   yummyTranslations: YummyTranslation[];
   /** Сохранённая озвучка (по названию — см. миграцию 0008) для OwnPlayer. */
   savedTranslationTitle: string | null;
-  skipOpening: { time: number; length: number } | null;
-  skipEnding: { time: number; length: number } | null;
+  skipOpening: SkipSegment | null;
+  skipEnding: SkipSegment | null;
   // Подсказки под плеером: прямое продолжение франшизы и похожие тайтлы.
   prequels: ShikimoriAnimeShort[];
   sequels: ShikimoriAnimeShort[];
@@ -60,6 +65,23 @@ type Source = 'hls' | 'kodik' | 'yummy' | 'own';
 const PREF_KEY = 'aw:preferredSource';
 /** Задержка автоперехода на следующую серию после окончания текущей. */
 const AUTO_NEXT_DELAY_MS = 3_000;
+/** Прогрев «Наш плеер» следующей серии — насколько раньше конца текущей
+ *  (титры/аутро пользователь часто пропускает сам, не дожидаясь конца). */
+const PREWARM_WINDOW_S = 300;
+const PREWARM_POLL_MS = 15_000;
+
+/** Ответ /api/watch/anime/[shikimoriId]/[episode] — см. switchEpisode. */
+interface EpisodeSourcesResponse {
+  kodikEmbedUrl: string;
+  kodikTranslations: Translation[];
+  kodikInitialTranslationId: number | null;
+  kodikFallback: boolean;
+  episodesTotal: number | null;
+  yummyTranslations: YummyTranslation[];
+  skipOpening: SkipSegment | null;
+  skipEnding: SkipSegment | null;
+  resumeFrom: number | null;
+}
 
 /**
  * Оркестратор просмотра: пытается воспроизвести тайтл через AniLibria (1080p,
@@ -76,18 +98,18 @@ export default function WatchPlayer({
   animeRomaji,
   animeRussian,
   animeYear,
-  resumeFrom,
+  resumeFrom: initialResumeFrom,
   otherEpisode,
   isAuthed,
   isOngoing,
-  kodikEmbedUrl,
-  kodikTranslations,
-  kodikInitialTranslationId,
-  kodikFallback,
-  yummyTranslations,
+  kodikEmbedUrl: initialKodikEmbedUrl,
+  kodikTranslations: initialKodikTranslations,
+  kodikInitialTranslationId: initialKodikInitialTranslationId,
+  kodikFallback: initialKodikFallback,
+  yummyTranslations: initialYummyTranslations,
   savedTranslationTitle,
-  skipOpening,
-  skipEnding,
+  skipOpening: initialSkipOpening,
+  skipEnding: initialSkipEnding,
   prequels,
   sequels,
   similar,
@@ -99,25 +121,46 @@ export default function WatchPlayer({
   // null = AniLibria недоступна для этого тайтла/серии.
   const [aniQualities, setAniQualities] = useState<HlsQuality[] | null>(null);
   const [source, setSource] = useState<Source>('kodik');
-  const [kodikEmbed, setKodikEmbed] = useState(kodikEmbedUrl);
+  const [kodikEmbed, setKodikEmbed] = useState(initialKodikEmbedUrl);
+  // Источники серии — локальное состояние поверх начальных пропов: при
+  // бесшовном переключении (см. switchEpisode) обновляются из ответа
+  // /api/watch/anime/..., а не через полную навигацию/перерендер страницы.
+  const [kodikTranslations, setKodikTranslations] = useState(initialKodikTranslations);
+  const [kodikInitialTranslationId, setKodikInitialTranslationId] = useState(
+    initialKodikInitialTranslationId,
+  );
+  const [kodikFallback, setKodikFallback] = useState(initialKodikFallback);
+  const [yummyTranslations, setYummyTranslations] = useState(initialYummyTranslations);
+  const [skipOpening, setSkipOpening] = useState(initialSkipOpening);
+  const [skipEnding, setSkipEnding] = useState(initialSkipEnding);
+  const [resumeFrom, setResumeFrom] = useState(initialResumeFrom);
+  // Переключение ИСТОЧНИКА (вкладки плеера) — существующее; switchingEpisode
+  // ниже — новое, переключение СЕРИИ.
   const [switching, setSwitching] = useState(false);
+  const [switchingEpisode, setSwitchingEpisode] = useState(false);
   const [ended, setEnded] = useState(false);
   // Автопереход на следующую серию (null — неактивен/отменён).
   const [autoNext, setAutoNext] = useState<number | null>(null);
   const autoNextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showOtherBanner, setShowOtherBanner] = useState(otherEpisode !== null);
-  // Активная серия: может измениться из самого плеера Kodik (внутренняя навигация).
+  // Активная серия: может измениться из самого плеера Kodik.
   const [activeEpisode, setActiveEpisode] = useState(episode);
+  const activeEpisodeRef = useRef(activeEpisode);
+  activeEpisodeRef.current = activeEpisode;
+  // Прогрели ли уже следующую серию «Наш плеер» — сброс на каждую новую
+  // активную серию (см. эффект прогрева ниже).
+  const prewarmedRef = useRef(false);
 
-  // Синхронизируем активную серию, когда сменился маршрут (наши кнопки «След./Пред.»).
+  // Синхронизируем активную серию, когда сменился маршрут (прямые ссылки,
+  // обновление страницы — не бесшовное переключение, см. switchEpisode).
   useEffect(() => {
     setActiveEpisode(episode);
   }, [episode]);
 
   // При навигации по маршруту сервер отдаёт новый Kodik-embed — обновляем iframe.
   useEffect(() => {
-    setKodikEmbed(kodikEmbedUrl);
-  }, [kodikEmbedUrl]);
+    setKodikEmbed(initialKodikEmbedUrl);
+  }, [initialKodikEmbedUrl]);
 
   const isCinema = contentType === 'cinema';
   const watchBase = isCinema ? '/cinema/watch' : '/watch';
@@ -136,11 +179,18 @@ export default function WatchPlayer({
   const bumpPosition = useCallback((t: number) => {
     if (Number.isFinite(t) && t > 0) livePositionRef.current = t;
   }, []);
+  // Длительность — заполняется только OwnPlayer.onTimeUpdate (единственный
+  // источник, где реальная длительность файла заранее неизвестна) — нужна
+  // прогреву «Наш плеер» ниже (durationRef - livePositionRef <= окно).
+  const durationRef = useRef<number | null>(null);
 
   const hasNext = activeEpisode < total;
   const hasPrev = activeEpisode > 1;
 
   // --- Подбор источника: AniLibria → иначе Kodik (только для аниме) ---
+  // Завязано на activeEpisode (не на проп episode) — иначе при бесшовном
+  // переключении (см. switchEpisode) AniLibria не переразрешалась бы для
+  // новой серии.
   useEffect(() => {
     let cancelled = false;
     setResolving(true);
@@ -157,7 +207,7 @@ export default function WatchPlayer({
           if (!cancelled && id != null) {
             const rel = await getRelease(id);
             if (!cancelled && rel && !rel.is_blocked_by_geo) {
-              const ep = pickEpisode(rel, episode);
+              const ep = pickEpisode(rel, activeEpisode);
               const eq = ep ? episodeQualities(ep) : [];
               if (eq.length > 0) q = eq;
             }
@@ -188,7 +238,7 @@ export default function WatchPlayer({
     return () => {
       cancelled = true;
     };
-  }, [isCinema, animeRomaji, animeRussian, animeYear, episode, hasYummy, hasOwnPlayer]);
+  }, [isCinema, animeRomaji, animeRussian, animeYear, activeEpisode, hasYummy, hasOwnPlayer]);
 
   // --- Ручное переключение источника с переносом позиции ---
   const switchTo = useCallback(
@@ -204,7 +254,7 @@ export default function WatchPlayer({
         try {
           const params = new URLSearchParams({
             shikimoriId: String(shikimoriId),
-            episode: String(episode),
+            episode: String(activeEpisode),
             startFrom: String(pos),
           });
           if (kodikInitialTranslationId) {
@@ -222,7 +272,7 @@ export default function WatchPlayer({
       }
       setSource(target);
     },
-    [source, switching, shikimoriId, episode, kodikInitialTranslationId],
+    [source, switching, shikimoriId, activeEpisode, kodikInitialTranslationId],
   );
 
   // --- Тост о восстановленной позиции ---
@@ -283,7 +333,7 @@ export default function WatchPlayer({
       setAutoNext(nextEpisode);
       if (autoNextTimerRef.current) clearTimeout(autoNextTimerRef.current);
       autoNextTimerRef.current = setTimeout(() => {
-        router.push(`${watchBase}/${shikimoriId}/${nextEpisode}`);
+        switchEpisodeRef.current(nextEpisode);
       }, AUTO_NEXT_DELAY_MS);
     }
   }, [
@@ -295,8 +345,6 @@ export default function WatchPlayer({
     animeTitle,
     posterUrl,
     activeEpisode,
-    router,
-    watchBase,
   ]);
 
   // Отмена автоперехода.
@@ -324,6 +372,9 @@ export default function WatchPlayer({
   }, []);
 
   // --- Realtime между устройствами (last-write-wins) ---
+  // Подписка держится СТАБИЛЬНОЙ через бесшовные переключения серии (episode
+  // не в deps ниже) — сравнение идёт по свежему activeEpisodeRef, а не по
+  // пропу episode (который не меняется при switchEpisode).
   useEffect(() => {
     if (!isAuthed) return;
     const supabase = createClient();
@@ -337,7 +388,7 @@ export default function WatchPlayer({
           if (!row || row.shikimori_id !== shikimoriId) return;
           const isBackground =
             document.visibilityState === 'hidden' || !playingRef.current;
-          if (isBackground && row.episode !== episode) {
+          if (isBackground && row.episode !== activeEpisodeRef.current) {
             toast(
               `На другом устройстве вы перешли на серию ${row.episode}`,
               'info',
@@ -349,7 +400,126 @@ export default function WatchPlayer({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isAuthed, shikimoriId, episode, toast]);
+  }, [isAuthed, shikimoriId, toast]);
+
+  // --- Бесшовное переключение серии ---------------------------------------
+  // Вместо полной Next-навигации: оптимистично обновляем номер серии, тянем
+  // ТОЛЬКО нужные для новой серии источники с /api/watch/anime/... (без
+  // тайтл-уровневых данных — постер/предиквелы/сиквелы/похожее не
+  // перезапрашиваются), обновляем адресную строку через history.pushState
+  // (без полного роутинга Next). AniLibria переразрешается сама (см. эффект
+  // выше, завязан на activeEpisode). При сбое — настоящая навигация, чтобы
+  // пользователь не застрял. Флаш прогресса СТАРОЙ серии — на существующих
+  // триггерах source-компонентов (пауза/интервал/скрытие вкладки, см.
+  // useProgressSaver) — здесь его дополнительно не форсируем: как и при
+  // обычной клиентской навигации Next.js, это best-effort с окном в
+  // несколько секунд, не хуже текущего поведения.
+  const switchEpisode = useCallback(
+    async (targetEpisode: number, pushHistory = true) => {
+      setSwitchingEpisode(true);
+      setShowOtherBanner(false);
+      setEnded(false);
+      setAutoNext(null);
+      if (autoNextTimerRef.current) {
+        clearTimeout(autoNextTimerRef.current);
+        autoNextTimerRef.current = null;
+      }
+      setActiveEpisode(targetEpisode);
+      livePositionRef.current = 0;
+      durationRef.current = null;
+      prewarmedRef.current = false;
+
+      try {
+        const params = new URLSearchParams();
+        if (kodikInitialTranslationId != null) {
+          params.set('translationId', String(kodikInitialTranslationId));
+        }
+        const qs = params.toString();
+        const res = await fetch(
+          `/api/watch/anime/${shikimoriId}/${targetEpisode}${qs ? `?${qs}` : ''}`,
+        );
+        if (!res.ok) throw new Error('bad response');
+        const data = (await res.json()) as EpisodeSourcesResponse;
+
+        setKodikEmbed(data.kodikEmbedUrl);
+        setKodikTranslations(data.kodikTranslations);
+        setKodikInitialTranslationId(data.kodikInitialTranslationId);
+        setKodikFallback(data.kodikFallback);
+        setYummyTranslations(data.yummyTranslations);
+        setSkipOpening(data.skipOpening);
+        setSkipEnding(data.skipEnding);
+        setResumeFrom(data.resumeFrom);
+
+        if (pushHistory) {
+          window.history.pushState(null, '', `${watchBase}/${shikimoriId}/${targetEpisode}`);
+        }
+        document.title = `${animeTitle} — MediaWatch`;
+      } catch {
+        toast('Не удалось переключить серию, открываю страницу заново', 'error');
+        router.push(`${watchBase}/${shikimoriId}/${targetEpisode}`);
+      } finally {
+        setSwitchingEpisode(false);
+      }
+    },
+    [shikimoriId, kodikInitialTranslationId, watchBase, animeTitle, toast, router],
+  );
+  // Всегда-свежая ссылка на switchEpisode — для замыканий, живущих дольше её
+  // собственной идентичности (автопереход в onEnded, объявленный выше).
+  const switchEpisodeRef = useRef(switchEpisode);
+  switchEpisodeRef.current = switchEpisode;
+
+  // Кнопка «Назад»/«Вперёд» браузера — история двигалась через pushState в
+  // switchEpisode, без участия роутера Next, поэтому ловим её сами.
+  useEffect(() => {
+    const titleBase = `${watchBase}/${shikimoriId}/`;
+    const onPopState = () => {
+      const path = window.location.pathname;
+      if (!path.startsWith(titleBase)) return; // ушли с этого тайтла вовсе
+      const parts = path.split('/').filter(Boolean);
+      const e = Number(parts[parts.length - 1]);
+      if (Number.isFinite(e) && e !== activeEpisodeRef.current) {
+        switchEpisode(e, false);
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [switchEpisode, watchBase, shikimoriId]);
+
+  // --- Прогрев «Наш плеер» следующей серии --------------------------------
+  // За 5 минут до конца текущей — см. тот же приём и обоснование окна в
+  // Player.tsx (cinema). durationRef тут заполняется только из OwnPlayer
+  // (единственный источник, где длительность заранее неизвестна). Два шага:
+  // лёгкий /api/watch/anime/... за озвучками Yummy следующей серии, затем
+  // HEAD на /api/proxy/.../{source}?t=<id> для первой из них — тот роут
+  // реально вызывает resolveStream() и кладёт результат в кэш.
+  useEffect(() => {
+    if (source !== 'own' || !hasOwnPlayer) return;
+    const id = setInterval(() => {
+      if (prewarmedRef.current) return;
+      const dur = durationRef.current;
+      if (!dur || dur - livePositionRef.current > PREWARM_WINDOW_S) return;
+      const nextEp = activeEpisodeRef.current + 1;
+      if (nextEp > total) return;
+      prewarmedRef.current = true;
+      const params = new URLSearchParams();
+      if (kodikInitialTranslationId != null) {
+        params.set('translationId', String(kodikInitialTranslationId));
+      }
+      const qs = params.toString();
+      fetch(`/api/watch/anime/${shikimoriId}/${nextEp}${qs ? `?${qs}` : ''}`)
+        .then((r) => (r.ok ? (r.json() as Promise<EpisodeSourcesResponse>) : null))
+        .then((data) => {
+          const t = data?.yummyTranslations.find((tr) => tr.source != null);
+          if (!t?.source) return;
+          return fetch(
+            `/api/proxy/anime/${shikimoriId}/1/${nextEp}/${t.source}?t=${t.id}`,
+            { method: 'HEAD' },
+          );
+        })
+        .catch(() => {});
+    }, PREWARM_POLL_MS);
+    return () => clearInterval(id);
+  }, [source, hasOwnPlayer, shikimoriId, total, kodikInitialTranslationId]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -372,12 +542,13 @@ export default function WatchPlayer({
         <div className="flex items-center justify-between gap-3 rounded-lg border border-accent/20 bg-accent/10 px-4 py-3 text-sm">
           <span>Вы остановились на серии {otherEpisode}.</span>
           <div className="flex items-center gap-2">
-            <Link
-              href={`${watchBase}/${shikimoriId}/${otherEpisode}`}
+            <button
+              type="button"
+              onClick={() => switchEpisode(otherEpisode)}
               className="rounded-md bg-accent px-3 py-1.5 font-medium text-white hover:bg-accent-hover"
             >
               Перейти
-            </Link>
+            </button>
             <button
               type="button"
               onClick={() => setShowOtherBanner(false)}
@@ -453,8 +624,10 @@ export default function WatchPlayer({
               </button>
             )}
           </div>
-          {switching && (
-            <span className="text-xs text-gray-400">переключаем…</span>
+          {(switching || switchingEpisode) && (
+            <span className="text-xs text-gray-400">
+              {switchingEpisode ? 'переключаем серию…' : 'переключаем…'}
+            </span>
           )}
         </div>
       )}
@@ -467,7 +640,7 @@ export default function WatchPlayer({
       ) : source === 'hls' && aniQualities ? (
         <HlsPlayer
           shikimoriId={shikimoriId}
-          episode={episode}
+          episode={activeEpisode}
           animeTitle={animeTitle}
           posterUrl={posterUrl}
           isAuthed={isAuthed}
@@ -487,7 +660,7 @@ export default function WatchPlayer({
           contentType={contentType}
           shikimoriId={shikimoriId}
           season={1}
-          episode={episode}
+          episode={activeEpisode}
           extractSource="alloha"
           animeTitle={animeTitle}
           posterUrl={posterUrl}
@@ -501,14 +674,18 @@ export default function WatchPlayer({
           initialTranslationTitle={savedTranslationTitle}
           skipOpening={skipOpening}
           skipEnding={skipEnding}
-          nextHref={hasNext ? `${watchBase}/${shikimoriId}/${episode + 1}` : null}
+          nextHref={hasNext ? `${watchBase}/${shikimoriId}/${activeEpisode + 1}` : null}
+          onNext={hasNext ? () => switchEpisode(activeEpisode + 1) : undefined}
           onEnded={onEnded}
-          onTimeUpdate={bumpPosition}
+          onTimeUpdate={(t, d) => {
+            bumpPosition(t);
+            if (d) durationRef.current = d;
+          }}
         />
       ) : source === 'yummy' && hasYummy ? (
         <YummyPlayer
           shikimoriId={shikimoriId}
-          episode={episode}
+          episode={activeEpisode}
           animeTitle={animeTitle}
           posterUrl={posterUrl}
           isAuthed={isAuthed}
@@ -521,7 +698,7 @@ export default function WatchPlayer({
           key={kodikEmbed}
           shikimoriId={shikimoriId}
           contentType={contentType}
-          episode={episode}
+          episode={activeEpisode}
           animeTitle={animeTitle}
           posterUrl={posterUrl}
           isAuthed={isAuthed}
@@ -539,12 +716,13 @@ export default function WatchPlayer({
       {/* Навигация по сериям */}
       <div className="flex items-center gap-2">
         {hasPrev ? (
-          <Link
-            href={`${watchBase}/${shikimoriId}/${activeEpisode - 1}`}
+          <button
+            type="button"
+            onClick={() => switchEpisode(activeEpisode - 1)}
             className="rounded-lg bg-bg-card px-4 py-2 text-sm font-medium text-gray-100 ring-1 ring-white/10 transition hover:bg-bg-soft"
           >
             ← Пред.
-          </Link>
+          </button>
         ) : (
           <span
             aria-disabled="true"
@@ -554,12 +732,13 @@ export default function WatchPlayer({
           </span>
         )}
         {hasNext ? (
-          <Link
-            href={`${watchBase}/${shikimoriId}/${activeEpisode + 1}`}
+          <button
+            type="button"
+            onClick={() => switchEpisode(activeEpisode + 1)}
             className="rounded-lg bg-bg-card px-4 py-2 text-sm font-medium text-gray-100 ring-1 ring-white/10 transition hover:bg-bg-soft"
           >
             След. →
-          </Link>
+          </button>
         ) : (
           <span
             aria-disabled="true"
@@ -592,12 +771,13 @@ export default function WatchPlayer({
                 Отмена
               </button>
             )}
-            <Link
-              href={`${watchBase}/${shikimoriId}/${activeEpisode + 1}`}
+            <button
+              type="button"
+              onClick={() => switchEpisode(activeEpisode + 1)}
               className="rounded-md bg-accent px-4 py-1.5 font-medium text-white hover:bg-accent-hover"
             >
               Следующая серия →
-            </Link>
+            </button>
           </div>
         </div>
       )}
