@@ -1,15 +1,19 @@
-import { Suspense } from 'react';
 import CinemaCard from '@/components/CinemaCard';
-import ModeSwitch from '@/components/ModeSwitch';
 import Pagination from '@/components/Pagination';
-import { CardGridSkeleton } from '@/components/Skeletons';
 import { getPopularCinemaRanked } from '@/lib/videoseed-catalog';
 
 export const metadata = { title: 'Популярное — MediaWatch' };
 
 const PAGE_SIZE = 24;
 
-async function PopularGrid({ page }: { page: number }) {
+export default async function PopularCinemaPage({
+  searchParams,
+}: {
+  searchParams: { page?: string };
+}) {
+  const pageParam = Number(searchParams.page);
+  const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
+
   let data;
   try {
     data = await getPopularCinemaRanked(page, PAGE_SIZE);
@@ -52,32 +56,6 @@ async function PopularGrid({ page }: { page: number }) {
         prevHref={hasPrev ? `/cinema/popular?page=${page - 1}` : null}
         nextHref={data.hasMore ? `/cinema/popular?page=${page + 1}` : null}
       />
-    </div>
-  );
-}
-
-export default function PopularCinemaPage({
-  searchParams,
-}: {
-  searchParams: { page?: string };
-}) {
-  const pageParam = Number(searchParams.page);
-  const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
-
-  return (
-    <div className="flex flex-col gap-6">
-      <ModeSwitch active="cinema" />
-
-      <div>
-        <h1 className="text-xl font-bold">Популярное</h1>
-        <p className="text-sm text-gray-400">
-          Топ фильмов и сериалов по рейтингу TMDB.
-        </p>
-      </div>
-
-      <Suspense key={page} fallback={<CardGridSkeleton count={PAGE_SIZE} />}>
-        <PopularGrid page={page} />
-      </Suspense>
     </div>
   );
 }

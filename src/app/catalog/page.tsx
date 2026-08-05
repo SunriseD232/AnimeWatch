@@ -1,15 +1,6 @@
-import { Suspense } from 'react';
 import AnimeCard from '@/components/AnimeCard';
-import GenreFilterPanel from '@/components/GenreFilterPanel';
-import ModeSwitch from '@/components/ModeSwitch';
 import Pagination from '@/components/Pagination';
-import { CardGridSkeleton } from '@/components/Skeletons';
-import {
-  ANIME_CATALOG_SORTS,
-  getAnimeCatalog,
-  getAnimeGenres,
-  type AnimeCatalogSort,
-} from '@/lib/shikimori';
+import { ANIME_CATALOG_SORTS, getAnimeCatalog, type AnimeCatalogSort } from '@/lib/shikimori';
 
 export const metadata = { title: 'Каталог аниме — MediaWatch' };
 
@@ -49,36 +40,18 @@ function pageHref(
   return `/catalog?${params.toString()}`;
 }
 
-async function GenresPanel() {
-  let genres: { id: number; russian: string }[] = [];
-  try {
-    genres = await getAnimeGenres();
-  } catch {
-    genres = [];
-  }
-  return (
-    <GenreFilterPanel
-      genres={genres.map((g) => ({ value: String(g.id), label: g.russian }))}
-      sorts={[...ANIME_CATALOG_SORTS]}
-      defaultSort={DEFAULT_SORT}
-      anonsToggle
-    />
-  );
-}
-
-async function CatalogGrid({
-  genresInclude,
-  genresExclude,
-  sort,
-  page,
-  showAnons,
+export default async function CatalogPage({
+  searchParams,
 }: {
-  genresInclude: number[];
-  genresExclude: number[];
-  sort: AnimeCatalogSort;
-  page: number;
-  showAnons: boolean;
+  searchParams: { genres?: string; exclude?: string; sort?: string; page?: string; anons?: string };
 }) {
+  const genresInclude = parseIds(searchParams.genres);
+  const genresExclude = parseIds(searchParams.exclude);
+  const sort = isValidSort(searchParams.sort) ? searchParams.sort : DEFAULT_SORT;
+  const pageParam = Number(searchParams.page);
+  const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
+  const showAnons = searchParams.anons === '1';
+
   let data;
   try {
     data = await getAnimeCatalog({
@@ -123,50 +96,6 @@ async function CatalogGrid({
         prevHref={hasPrev ? pageHref(genresInclude, genresExclude, sort, page - 1, showAnons) : null}
         nextHref={data.hasMore ? pageHref(genresInclude, genresExclude, sort, page + 1, showAnons) : null}
       />
-    </div>
-  );
-}
-
-export default function CatalogPage({
-  searchParams,
-}: {
-  searchParams: { genres?: string; exclude?: string; sort?: string; page?: string; anons?: string };
-}) {
-  const genresInclude = parseIds(searchParams.genres);
-  const genresExclude = parseIds(searchParams.exclude);
-  const sort = isValidSort(searchParams.sort) ? searchParams.sort : DEFAULT_SORT;
-  const pageParam = Number(searchParams.page);
-  const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
-  const showAnons = searchParams.anons === '1';
-
-  return (
-    <div className="flex flex-col gap-6">
-      <ModeSwitch active="anime" />
-
-      <div>
-        <h1 className="text-xl font-bold">Каталог аниме</h1>
-        <p className="text-sm text-gray-400">
-          Выбирайте жанры (клик — включить, ещё раз — исключить), сочетайте
-          несколько сразу.
-        </p>
-      </div>
-
-      <Suspense fallback={<div className="h-32 animate-pulse rounded-2xl bg-bg-card" />}>
-        <GenresPanel />
-      </Suspense>
-
-      <Suspense
-        key={`${searchParams.genres ?? ''}|${searchParams.exclude ?? ''}|${sort}|${page}|${showAnons}`}
-        fallback={<CardGridSkeleton count={PAGE_SIZE} />}
-      >
-        <CatalogGrid
-          genresInclude={genresInclude}
-          genresExclude={genresExclude}
-          sort={sort}
-          page={page}
-          showAnons={showAnons}
-        />
-      </Suspense>
     </div>
   );
 }

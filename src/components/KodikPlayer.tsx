@@ -22,6 +22,9 @@ interface Props {
   translations: Translation[];
   initialTranslationId: number | null;
   fallback: boolean;
+  /** Есть ли другие вкладки плеера (AniLibria/Yummy/Наш плеер) — определяет
+   *  формулировку заглушки, когда у Kodik нет этого тайтла. */
+  hasAlternatives?: boolean;
   onEnded: () => void;
   /** Сообщает текущую позицию наверх (для переноса при смене источника). */
   onTimeUpdate?: (seconds: number) => void;
@@ -45,6 +48,7 @@ export default function KodikPlayer({
   translations,
   initialTranslationId,
   fallback,
+  hasAlternatives = false,
   onEnded,
   onTimeUpdate,
   onEpisodeChange,
@@ -170,12 +174,12 @@ export default function KodikPlayer({
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-bg-soft p-6 text-center">
             <div className="text-4xl">🎬</div>
             <p className="text-sm font-medium text-gray-200">
-              Видео недоступно в демо-режиме
+              Этот источник сейчас недоступен
             </p>
             <p className="max-w-md text-xs leading-relaxed text-gray-400">
-              Нужен{' '}
-              <code className="rounded bg-black/30 px-1">KODIK_TOKEN</code> —
-              добавьте его в окружение, чтобы подключить плеер Kodik.
+              {hasAlternatives
+                ? 'Попробуйте другой плеер в переключателе выше.'
+                : 'Попробуйте зайти позже.'}
             </p>
           </div>
         ) : (

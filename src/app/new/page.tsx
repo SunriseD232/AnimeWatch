@@ -1,15 +1,19 @@
-import { Suspense } from 'react';
 import AnimeCard from '@/components/AnimeCard';
-import ModeSwitch from '@/components/ModeSwitch';
 import Pagination from '@/components/Pagination';
-import { CardGridSkeleton } from '@/components/Skeletons';
 import { getNewAnime } from '@/lib/shikimori';
 
 export const metadata = { title: 'Новинки — MediaWatch' };
 
 const PAGE_SIZE = 24;
 
-async function NewGrid({ page }: { page: number }) {
+export default async function NewAnimePage({
+  searchParams,
+}: {
+  searchParams: { page?: string };
+}) {
+  const pageParam = Number(searchParams.page);
+  const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
+
   let data;
   try {
     data = await getNewAnime(page, PAGE_SIZE);
@@ -45,32 +49,6 @@ async function NewGrid({ page }: { page: number }) {
         prevHref={hasPrev ? `/new?page=${page - 1}` : null}
         nextHref={data.hasMore ? `/new?page=${page + 1}` : null}
       />
-    </div>
-  );
-}
-
-export default function NewAnimePage({
-  searchParams,
-}: {
-  searchParams: { page?: string };
-}) {
-  const pageParam = Number(searchParams.page);
-  const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
-
-  return (
-    <div className="flex flex-col gap-6">
-      <ModeSwitch active="anime" />
-
-      <div>
-        <h1 className="text-xl font-bold">Новинки</h1>
-        <p className="text-sm text-gray-400">
-          Последние вышедшие тайтлы, от новых к старым.
-        </p>
-      </div>
-
-      <Suspense key={page} fallback={<CardGridSkeleton count={PAGE_SIZE} />}>
-        <NewGrid page={page} />
-      </Suspense>
     </div>
   );
 }

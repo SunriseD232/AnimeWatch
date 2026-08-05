@@ -21,11 +21,21 @@ export function levenshtein(a: string, b: string): number {
 }
 
 /**
+ * «ё» почти всегда набирают как «е» (нет отдельной клавиши/привычки) —
+ * приравниваем их перед сравнением, иначе «елка» не находит «ёлка».
+ */
+function normalize(word: string): string {
+  return word.replace(/ё/g, 'е');
+}
+
+/**
  * Слово запроса совпадает со словом тайтла, если это его начало (обычный
  * случай) или если оно отличается на 1-2 опечатки — короткие слова (≤4
  * символов) допускают только 1 правку, чтобы не плодить случайные совпадения.
  */
-export function wordMatches(queryWord: string, targetWord: string): boolean {
+export function wordMatches(queryWordRaw: string, targetWordRaw: string): boolean {
+  const queryWord = normalize(queryWordRaw);
+  const targetWord = normalize(targetWordRaw);
   if (targetWord.startsWith(queryWord)) return true;
   if (queryWord.length < 3) return false;
   const maxDist = queryWord.length <= 4 ? 1 : 2;

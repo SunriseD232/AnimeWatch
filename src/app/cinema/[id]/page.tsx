@@ -8,6 +8,9 @@ import { getCinemaById, getCinemaCatalog, type CinemaShort } from '@/lib/videose
 import { createClient } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
+import { buildVideoseedEmbedUrl } from '@/lib/video/videoseed';
+import { getVibixEmbed } from '@/lib/video/vibix';
+import { createVideoSource } from '@/lib/video/kodik';
 
 export default async function CinemaPage({
   params,
@@ -80,6 +83,20 @@ export default async function CinemaPage({
   const resumeSeason = progress?.season ?? 1;
   const resumeEpisode = progress?.episode ?? 1;
   const resumePos = progress?.position_seconds ?? 0;
+
+  // Videoseed — основной источник и почти всегда настроен (это же каталог,
+  // из которого пришёл сам тайтл), поэтому проверяем Vibix/Kodik только если
+  // его нет — незачем платить лишними запросами в общем случае. Без
+  // ownPlayerTranslations (тяжёлое Puppeteer-извлечение) — та же логика, что
+  // и в Player.tsx, где «Наш плеер» лишь производная от Kodik/Videoseed.
+  let hasAnyPlayer = buildVideoseedEmbedUrl({ kinopoiskId: id }) !== null;
+  if (!hasAnyPlayer) {
+    const [vibixCheck, kodikCheck] = await Promise.all([
+      getVibixEmbed(id),
+      createVideoSource().getEmbedUrl({ kinopoiskId: id, episode: 1 }),
+    ]);
+    hasAnyPlayer = vibixCheck !== null || !kodikCheck.fallback;
+  }
 
   return (
     <div className="flex flex-col gap-8">
@@ -162,18 +179,24 @@ export default async function CinemaPage({
           )}
 
           <div className="mt-1 flex flex-wrap items-center gap-3">
-            <Link
-              href={`/cinema/watch/${id}/${resumeSeason}/${resumeEpisode}`}
-              className="rounded-full press bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-hover"
-            >
-              {progress
-                ? item.isSerial
-                  ? `Продолжить: серия ${resumeEpisode} (${formatTime(resumePos)})`
-                  : `Продолжить (${formatTime(resumePos)})`
-                : item.isSerial
-                  ? 'Начать просмотр'
-                  : 'Смотреть'}
-            </Link>
+            {hasAnyPlayer ? (
+              <Link
+                href={`/cinema/watch/${id}/${resumeSeason}/${resumeEpisode}`}
+                className="rounded-full press bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-hover"
+              >
+                {progress
+                  ? item.isSerial
+                    ? `Продолжить: серия ${resumeEpisode} (${formatTime(resumePos)})`
+                    : `Продолжить (${formatTime(resumePos)})`
+                  : item.isSerial
+                    ? 'Начать просмотр'
+                    : 'Смотреть'}
+              </Link>
+            ) : (
+              <span className="rounded-full bg-bg-card px-5 py-2.5 text-sm font-semibold text-gray-400 ring-1 ring-white/10">
+                Сейчас нет в каталоге
+              </span>
+            )}
             <ListButton
               shikimoriId={id}
               contentType="cinema"

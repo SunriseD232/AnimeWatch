@@ -529,6 +529,7 @@ export default function WatchPlayer({
           translations={kodikTranslations}
           initialTranslationId={kodikInitialTranslationId}
           fallback={kodikFallback}
+          hasAlternatives={!!aniQualities || hasYummy || hasOwnPlayer}
           onEnded={onEnded}
           onTimeUpdate={bumpPosition}
           onEpisodeChange={onEpisodeChange}

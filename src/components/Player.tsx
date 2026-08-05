@@ -158,13 +158,14 @@ export default function Player({
   );
   const multiSeason = seasonsList.length > 1;
 
-  // Плееры по приоритету: Vibix (точный трекинг позиции) → Videoseed → Kodik.
+  // Плееры по приоритету: Наш плеер (свой проксирующий стрим, без стороннего
+  // iframe/рекламы) → Vibix (точный трекинг позиции) → Videoseed → Kodik.
   // Vibix/Videoseed доступны при наличии токенов и тайтла в их каталогах.
   const hasVibix = vibixEmbed !== null;
   const hasVideoseed = videoseedUrl !== null;
   const hasOwnPlayer = ownPlayerTranslations.length > 0;
   const [player, setPlayer] = useState<PlayerKind>(
-    hasVibix ? 'vibix' : hasVideoseed ? 'videoseed' : 'kodik',
+    hasOwnPlayer ? 'own' : hasVibix ? 'vibix' : hasVideoseed ? 'videoseed' : 'kodik',
   );
 
   const [embedUrl, setEmbedUrl] = useState(initialEmbedUrl);
@@ -787,18 +788,21 @@ export default function Player({
             className="absolute inset-0 h-full w-full border-0"
           />
         ) : fallback ? (
-          // Режим B: рабочего token-free плеера нет — показываем заглушку
-          // с инструкцией (как предусмотрено ТЗ), а не битый iframe.
+          // Kodik не нашёл этот тайтл (или не настроен) — не встраиваем
+          // битый iframe. Формулировка зависит от того, есть ли ещё
+          // источники в переключателе выше: если да, предлагаем их
+          // попробовать, иначе — нейтральное "недоступно" без деталей о
+          // серверной конфигурации (KODIK_TOKEN и т.п. — это не забота
+          // зрителя).
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-bg-soft p-6 text-center">
             <div className="text-4xl">🎬</div>
             <p className="text-sm font-medium text-gray-200">
-              Видео недоступно в демо-режиме
+              Этот источник сейчас недоступен
             </p>
             <p className="max-w-md text-xs leading-relaxed text-gray-400">
-              Для воспроизведения нужен бесплатный{' '}
-              <code className="rounded bg-black/30 px-1">KODIK_TOKEN</code>.
-              Добавьте его в окружение — подключится реальный плеер Kodik с
-              выбором озвучки и автоматическим трекингом позиции просмотра.
+              {hasVibix || hasVideoseed || hasOwnPlayer
+                ? 'Попробуйте другой плеер в переключателе выше.'
+                : 'Попробуйте зайти позже.'}
             </p>
           </div>
         ) : (

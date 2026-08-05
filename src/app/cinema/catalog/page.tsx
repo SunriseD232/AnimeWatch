@@ -1,9 +1,5 @@
-import { Suspense } from 'react';
 import CinemaCard from '@/components/CinemaCard';
-import GenreFilterPanel from '@/components/GenreFilterPanel';
-import ModeSwitch from '@/components/ModeSwitch';
 import Pagination from '@/components/Pagination';
-import { CardGridSkeleton } from '@/components/Skeletons';
 import {
   CINEMA_CATALOG_SORTS,
   CINEMA_GENRES,
@@ -46,17 +42,17 @@ function pageHref(
   return `/cinema/catalog?${params.toString()}`;
 }
 
-async function CatalogGrid({
-  genresInclude,
-  genresExclude,
-  sort,
-  page,
+export default async function CinemaCatalogPage({
+  searchParams,
 }: {
-  genresInclude: string[];
-  genresExclude: string[];
-  sort: CinemaCatalogSort;
-  page: number;
+  searchParams: { genres?: string; exclude?: string; sort?: string; page?: string };
 }) {
+  const genresInclude = parseGenres(searchParams.genres);
+  const genresExclude = parseGenres(searchParams.exclude);
+  const sort = isValidSort(searchParams.sort) ? searchParams.sort : DEFAULT_SORT;
+  const pageParam = Number(searchParams.page);
+  const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
+
   let data;
   try {
     data = await getCinemaCatalog({
@@ -101,50 +97,6 @@ async function CatalogGrid({
         prevHref={hasPrev ? pageHref(genresInclude, genresExclude, sort, page - 1) : null}
         nextHref={data.hasMore ? pageHref(genresInclude, genresExclude, sort, page + 1) : null}
       />
-    </div>
-  );
-}
-
-export default function CinemaCatalogPage({
-  searchParams,
-}: {
-  searchParams: { genres?: string; exclude?: string; sort?: string; page?: string };
-}) {
-  const genresInclude = parseGenres(searchParams.genres);
-  const genresExclude = parseGenres(searchParams.exclude);
-  const sort = isValidSort(searchParams.sort) ? searchParams.sort : DEFAULT_SORT;
-  const pageParam = Number(searchParams.page);
-  const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
-
-  return (
-    <div className="flex flex-col gap-6">
-      <ModeSwitch active="cinema" />
-
-      <div>
-        <h1 className="text-xl font-bold">Каталог кино</h1>
-        <p className="text-sm text-gray-400">
-          Выбирайте жанры (клик — включить, ещё раз — исключить), сочетайте
-          несколько сразу.
-        </p>
-      </div>
-
-      <GenreFilterPanel
-        genres={CINEMA_GENRES.map((g) => ({ value: g, label: g }))}
-        sorts={[...CINEMA_CATALOG_SORTS]}
-        defaultSort={DEFAULT_SORT}
-      />
-
-      <Suspense
-        key={`${searchParams.genres ?? ''}|${searchParams.exclude ?? ''}|${sort}|${page}`}
-        fallback={<CardGridSkeleton count={PAGE_SIZE} />}
-      >
-        <CatalogGrid
-          genresInclude={genresInclude}
-          genresExclude={genresExclude}
-          sort={sort}
-          page={page}
-        />
-      </Suspense>
     </div>
   );
 }
