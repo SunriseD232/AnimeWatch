@@ -102,9 +102,12 @@ export default async function CinemaPage({
     <div className="flex flex-col gap-8">
       {/* Шапка — постер как размытая подложка на весь блок (см. ту же
           обёртку на странице аниме). */}
-      <div className="relative overflow-hidden rounded-3xl">
+      <div className="relative">
         {item.poster && (
-          <div aria-hidden="true" className="absolute inset-0 -z-10">
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 -z-10 overflow-hidden rounded-3xl"
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={item.poster}

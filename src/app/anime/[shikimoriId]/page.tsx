@@ -106,9 +106,12 @@ export default async function AnimePage({
       {/* Шапка — постер как размытая подложка на весь блок: без этого на
           широких экранах справа от небольшого постера была просто пустая
           чёрная область. */}
-      <div className="relative overflow-hidden rounded-3xl">
+      <div className="relative">
         {poster && (
-          <div aria-hidden="true" className="absolute inset-0 -z-10">
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 -z-10 overflow-hidden rounded-3xl"
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={poster}
