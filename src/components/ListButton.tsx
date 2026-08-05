@@ -18,6 +18,7 @@ interface Props {
   animeTitle: string;
   posterUrl: string | null;
   initialStatus: UserListStatus | null;
+  initialMuted?: boolean;
   isAuthed: boolean;
 }
 
@@ -27,12 +28,14 @@ export default function ListButton({
   animeTitle,
   posterUrl,
   initialStatus,
+  initialMuted = false,
   isAuthed,
 }: Props) {
   const { toast } = useToast();
   const [status, setStatus] = useState<UserListStatus | null>(
     initialStatus,
   );
+  const [muted, setMuted] = useState(initialMuted);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -76,6 +79,7 @@ export default function ListButton({
           .eq('shikimori_id', shikimoriId);
         if (error) throw error;
         setStatus(null);
+        setMuted(false);
         toast('Удалено из списка', 'success');
       } else {
         const {
@@ -97,6 +101,31 @@ export default function ListButton({
         setStatus(next);
         toast('Список обновлён', 'success');
       }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Ошибка';
+      toast(msg, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleMute() {
+    setOpen(false);
+    const next = !muted;
+    setSaving(true);
+    const supabase = createClient();
+    try {
+      const { error } = await supabase
+        .from('user_list')
+        .update({ muted: next })
+        .eq('content_type', contentType)
+        .eq('shikimori_id', shikimoriId);
+      if (error) throw error;
+      setMuted(next);
+      toast(
+        next ? 'Уведомления по тайтлу выключены' : 'Уведомления включены',
+        'success',
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Ошибка';
       toast(msg, 'error');
@@ -134,6 +163,15 @@ export default function ListButton({
               {o.label}
             </button>
           ))}
+          {status && (
+            <button
+              type="button"
+              onClick={toggleMute}
+              className="block w-full border-t border-white/10 px-4 py-2.5 text-left text-sm text-gray-200 transition hover:bg-white/5"
+            >
+              {muted ? '🔔 Включить уведомления' : '🔕 Заглушить уведомления'}
+            </button>
+          )}
           {status && (
             <button
               type="button"

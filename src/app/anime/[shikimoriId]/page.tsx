@@ -193,6 +193,7 @@ export default async function AnimePage({
               animeTitle={title}
               posterUrl={poster}
               initialStatus={listItem?.status ?? null}
+              initialMuted={listItem?.muted ?? false}
               isAuthed={!!user}
             />
             {trailerUrl && <TrailerButton embedUrl={trailerUrl} />}

@@ -145,7 +145,8 @@ export async function GET(request: NextRequest) {
           .select('user_id')
           .eq('status', 'watching')
           .eq('content_type', row.content_type)
-          .eq('shikimori_id', row.shikimori_id);
+          .eq('shikimori_id', row.shikimori_id)
+          .eq('muted', false);
 
         const rows = ((watchers ?? []) as { user_id: string }[]).map((w) => ({
           user_id: w.user_id,

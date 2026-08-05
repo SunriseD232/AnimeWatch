@@ -53,6 +53,8 @@ export async function POST(request: NextRequest) {
           shikimori_id: shikimoriId,
           season,
           episode,
+          anime_title: body.anime_title ?? null,
+          poster_url: body.poster_url ?? null,
         },
         {
           onConflict: 'user_id,content_type,shikimori_id,season,episode',

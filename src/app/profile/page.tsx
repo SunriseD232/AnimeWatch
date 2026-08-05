@@ -6,7 +6,7 @@ import { isAdminEmail } from '@/lib/admin';
 import { createClient } from '@/lib/supabase/server';
 import { getTodaysSignupCode } from '@/lib/signupCode';
 import { getVpsRelayEnabled } from '@/lib/settings';
-import type { UserListItem } from '@/lib/types';
+import type { UserListItem, WatchedEpisode } from '@/lib/types';
 
 export const metadata = { title: 'Профиль — MediaWatch' };
 
@@ -19,12 +19,20 @@ export default async function ProfilePage() {
   // Подстраховка (основная защита — в middleware).
   if (!user) redirect('/login?redirect=/profile');
 
-  const { data } = await supabase
-    .from('user_list')
-    .select('*')
-    .order('created_at', { ascending: false });
+  const [{ data }, { data: history }] = await Promise.all([
+    supabase
+      .from('user_list')
+      .select('*')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('watched_episodes')
+      .select('*')
+      .order('watched_at', { ascending: false })
+      .limit(200),
+  ]);
 
   const items = (data ?? []) as UserListItem[];
+  const historyItems = (history ?? []) as WatchedEpisode[];
   const isAdmin = isAdminEmail(user.email);
   const relayEnabled = isAdmin ? await getVpsRelayEnabled() : false;
 
@@ -50,6 +58,7 @@ export default async function ProfilePage() {
 
       <ProfileTabs
         items={items}
+        history={historyItems}
         showCodeTab={isAdmin}
         code={isAdmin ? getTodaysSignupCode() : null}
       />

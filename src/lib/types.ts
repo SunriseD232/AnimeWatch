@@ -60,7 +60,23 @@ export interface UserListItem {
   anime_title: string;
   poster_url: string | null;
   status: UserListStatus;
+  /** Не присылать уведомления о новых сериях по этому тайтлу (см. миграцию
+   *  0016 и api/cron/check-episodes) — не убирая тайтл из списка целиком. */
+  muted: boolean;
   created_at: string;
+}
+
+/** Одна досмотренная серия (таблица watched_episodes) — используется историей
+ *  просмотра в профиле. */
+export interface WatchedEpisode {
+  id: string;
+  content_type: ContentType;
+  shikimori_id: number;
+  season: number;
+  episode: number;
+  anime_title: string | null;
+  poster_url: string | null;
+  watched_at: string;
 }
 
 /** Уведомление о новых сериях (таблица episode_notifications). */

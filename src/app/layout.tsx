@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import './globals.css';
 import Navbar from '@/components/Navbar';
 import { ToastProvider } from '@/components/ToastProvider';
+import PwaRegister from '@/components/PwaRegister';
 
 // Inter — ближайшее веб-приближение SF Pro (см. tailwind.config.ts).
 // next/font сам самохостит файлы шрифта — никаких внешних запросов в рантайме.
@@ -17,6 +18,12 @@ export const metadata: Metadata = {
   title: 'MediaWatch — аниме, фильмы и сериалы',
   description:
     'Смотрите аниме, фильмы и сериалы и продолжайте с того же места на любом устройстве.',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'MediaWatch',
+  },
 };
 
 export const viewport: Viewport = {
@@ -33,6 +40,7 @@ export default function RootLayout({
   return (
     <html lang="ru" className={`dark ${inter.variable}`}>
       <body className="min-h-screen font-sans">
+        <PwaRegister />
         <ToastProvider>
           <Suspense fallback={<div className="h-[57px] border-b border-white/5" />}>
             <Navbar />

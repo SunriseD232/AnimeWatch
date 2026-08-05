@@ -6,6 +6,7 @@
 
 import { getYummyPostersMap } from './video/yummy';
 import { mapWithConcurrency } from './concurrency';
+import { wordMatches } from './fuzzy';
 
 // ВАЖНО: Shikimori переехал с shikimori.one на shikimori.io. Старый домен
 // отвечает редиректами, из-за чего картинки показывали плейсхолдер.
@@ -49,6 +50,9 @@ export interface ShikimoriAnimeFull extends ShikimoriAnimeShort {
   description_html: string | null;
   genres: { id: number; name: string; russian: string }[];
   videos: ShikimoriVideo[];
+  /** ISO-дата выхода следующей серии — есть только у онгоингов. Используется
+   *  календарём релизов (см. app/calendar). */
+  next_episode_at: string | null;
 }
 
 /**
@@ -406,7 +410,7 @@ export async function searchAnime(
     const titles = [anime.russian, anime.name].filter(Boolean) as string[];
     return titles.some((title) => {
       const tw = titleWords(title);
-      return words.every((w) => tw.some((word) => word.startsWith(w)));
+      return words.every((w) => tw.some((word) => wordMatches(w, word)));
     });
   });
 

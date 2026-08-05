@@ -59,6 +59,14 @@ export default async function Navbar() {
 
         {user ? (
           <div className="flex shrink-0 items-center gap-1">
+            <Link
+              href="/calendar"
+              aria-label="Календарь выхода серий"
+              title="Календарь выхода серий"
+              className="press hidden rounded-full px-3 py-2 text-sm text-gray-300 transition hover:bg-white/5 hover:text-white sm:block"
+            >
+              📅
+            </Link>
             <NotificationBell initial={notifications} />
             <Link
               href="/profile"

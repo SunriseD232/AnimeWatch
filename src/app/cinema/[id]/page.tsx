@@ -180,6 +180,7 @@ export default async function CinemaPage({
               animeTitle={title}
               posterUrl={item.poster}
               initialStatus={listItem?.status ?? null}
+              initialMuted={listItem?.muted ?? false}
               isAuthed={!!user}
             />
             {/* Для сериалов трейлер — внутри CinemaEpisodes, по сезонам */}
