@@ -236,6 +236,10 @@ export default function OwnPlayer({
   const dashQualitiesRef = useRef<string | null>(null);
   const playingRef = useRef(false);
   const seekTargetRef = useRef<number | null>(resumeFrom);
+  // Пытались ли уже запустить автовоспроизведение на ЭТОМ подключении — см.
+  // attemptPlay ниже. Сбрасывается вместе с остальными per-connection ref'ами
+  // в эффекте резолва источника.
+  const autoplayTriedRef = useRef(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onTimeUpdateRef = useRef(onTimeUpdate);
   onTimeUpdateRef.current = onTimeUpdate;
@@ -410,6 +414,7 @@ export default function OwnPlayer({
     setLoadState('probing');
     setBuffering(true);
     setIsEnded(false);
+    autoplayTriedRef.current = false;
 
     (async () => {
       let contentType: string | null = null;
@@ -666,18 +671,29 @@ export default function OwnPlayer({
       if (Number.isFinite(video.duration) && target >= video.duration) return;
       if (Math.abs(video.currentTime - target) > 1) {
         video.currentTime = target;
-        // Перестановка currentTime сразу после автовоспроизведения (autoPlay
-        // на <video>, см. ниже) нередко обрывает ещё не разрешившийся
-        // play() — браузер тихо остаётся на паузе, ничего не сообщая (ни
-        // ошибки, ни события), и выглядит это как «зависший» плеер, пока не
-        // ткнуть play руками. Особенно заметно при возобновлении с середины
-        // (перезагрузка страницы посреди просмотра) — на позиции 0 сик не
-        // происходит вовсе, поэтому там же не воспроизводится этот баг.
-        // Дожимаем play() ещё раз сразу после сика — не мешает, если он уже
-        // и так играет.
-        video.play().catch(() => {});
       }
       seekTargetRef.current = null;
+    };
+    // Запускаем воспроизведение сами (вместо атрибута autoPlay на <video>,
+    // см. ниже) — так у нас есть доступ к промису play() и можно поймать
+    // отказ. Браузеры блокируют автовоспроизведение СО ЗВУКОМ без
+    // достаточной истории вовлечённости (Media Engagement Index у Chrome,
+    // ещё строже у Safari/Firefox) — раньше play() тихо отклонялся, ничего
+    // не сообщая (ни ошибки, ни события), и плеер выглядел «зависшим», пока
+    // не ткнуть play руками. Отказ на звуке почти всегда чинится повтором
+    // БЕЗ звука — это браузеры разрешают практически всегда — с явным
+    // индикатором «выкл. звук» в панели, который и так уже есть.
+    const attemptPlay = () => {
+      if (autoplayTriedRef.current) return;
+      autoplayTriedRef.current = true;
+      video.play().catch(() => {
+        video.muted = true;
+        setMuted(true);
+        video.play().catch(() => {
+          // Не запустилось даже без звука — оставляем на паузе, кнопка
+          // «Смотреть» по центру уже показывает, что нужно нажать.
+        });
+      });
     };
     const onLoadedMetadata = () => {
       if (Number.isFinite(video.duration)) setDuration(video.duration);
@@ -743,6 +759,7 @@ export default function OwnPlayer({
     const onCanPlay = () => {
       setBuffering(false);
       applyResumeSeek();
+      attemptPlay();
     };
     const onError = () => setLoadState('failed');
 
@@ -1001,7 +1018,6 @@ export default function OwnPlayer({
       >
         <video
           ref={videoRef}
-          autoPlay
           playsInline
           preload="metadata"
           poster={posterUrl ?? undefined}
