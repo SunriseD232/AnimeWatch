@@ -149,7 +149,7 @@ export default function SearchBox() {
         <ul
           id="search-suggestions"
           role="listbox"
-          className="glass absolute z-30 mt-2 w-full overflow-hidden rounded-2xl border border-white/10 shadow-2xl"
+          className="absolute z-30 mt-2 w-full overflow-hidden rounded-2xl border border-white/10 bg-bg-card shadow-2xl"
         >
           {suggestions.map((s, i) => (
             <li key={`${s.contentType}:${s.id}`} role="option" aria-selected={i === activeIndex}>
