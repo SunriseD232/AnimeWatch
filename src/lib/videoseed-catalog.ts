@@ -368,9 +368,12 @@ export async function getCinemaCatalog(
   const need = Math.max(baseNeed, SORT_CANDIDATE_POOL);
   const types: ('movie' | 'serial')[] = type === 'both' ? ['movie', 'serial'] : [type];
 
-  const results = await Promise.all(
+  // allSettled — та же причина, что и в searchCinema: один тип не должен
+  // ронять всю подборку, если Videoseed квакнет status:"error" именно на нём.
+  const settled = await Promise.allSettled(
     types.map((t) => collectFiltered(t, genresInclude, genresExclude, need)),
   );
+  const results = settled.map((r) => (r.status === 'fulfilled' ? r.value : []));
 
   // Для 'both' чередуем фильмы/сериалы, чтобы подборка не была однобокой.
   const merged: VsRawItem[] = [];
@@ -442,13 +445,26 @@ export async function searchCinema(
 ): Promise<CinemaShort[]> {
   const q = query.trim();
   if (!q) return [];
-  const [serials, movies] = await Promise.all([
+  // allSettled, не all: Videoseed на некоторые текстовые запросы отдаёт
+  // status:"error" ПРИ ЭТОМ с непустым data (проверено вживую на запросе,
+  // который реально матчит только сериалы, — list=movie падает с error, а
+  // list=serial тем же самым запросом отвечает success) — vsFetch кидает на
+  // любой status!=='success' (правильно само по себе), но раньше это через
+  // Promise.all роняло ВЕСЬ поиск, даже если вторая половина (serial) нашла
+  // результат. Один упавший список не должен топить оба.
+  const [serials, movies] = await Promise.allSettled([
     vsFetch({ list: 'serial', q, items: String(limit) }, 300),
     vsFetch({ list: 'movie', q, items: String(limit) }, 300),
   ]);
 
   // Сериалы первыми — раздел ими и ценен; затем фильмы.
-  return dedupe([...serials, ...movies], limit);
+  return dedupe(
+    [
+      ...(serials.status === 'fulfilled' ? serials.value : []),
+      ...(movies.status === 'fulfilled' ? movies.value : []),
+    ],
+    limit,
+  );
 }
 
 /** Полная карточка тайтла по kinopoisk_id. */
