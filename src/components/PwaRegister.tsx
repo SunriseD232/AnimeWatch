@@ -2,14 +2,19 @@
 
 import { useEffect } from 'react';
 
-/** Регистрирует /sw.js — нужен только для критериев установки PWA (см. public/sw.js). */
+/**
+ * Чистит следы отменённого PWA-эксперимента: на мобильных зарегистрированный
+ * sw.js ломал рендер (открывался сырой HTML вместо страницы). Файлы удалены,
+ * но у части телефонов service worker уже установлен и продолжит
+ * контролировать сайт, пока его явно не отписать — просто удалить sw.js на
+ * сервере для этого недостаточно.
+ */
 export default function PwaRegister() {
   useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {
-        // Не критично — сайт и без SW работает как обычная страница.
-      });
-    }
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.getRegistrations().then((regs) => {
+      regs.forEach((reg) => reg.unregister());
+    });
   }, []);
 
   return null;

@@ -18,12 +18,6 @@ export const metadata: Metadata = {
   title: 'MediaWatch — аниме, фильмы и сериалы',
   description:
     'Смотрите аниме, фильмы и сериалы и продолжайте с того же места на любом устройстве.',
-  manifest: '/manifest.json',
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: 'black-translucent',
-    title: 'MediaWatch',
-  },
 };
 
 export const viewport: Viewport = {
