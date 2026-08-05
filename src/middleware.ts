@@ -30,7 +30,10 @@ export const config = {
      * Матчим все пути, кроме статики и картинок:
      * - _next/static, _next/image
      * - favicon.ico и файлы с расширениями картинок
+     * - manifest.json и sw.js (public/) — иначе анонимам, открывающим их
+     *   напрямую (PWA-установка, регистрация service worker), редирект на
+     *   /login отдаёт HTML вместо JSON/JS и ломает и то, и другое.
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };
