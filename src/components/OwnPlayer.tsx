@@ -477,7 +477,18 @@ export default function OwnPlayer({
         const { default: Hls } = await import('hls.js');
         if (cancelled) return;
         if (Hls.isSupported()) {
-          const hls = new Hls({ enableWorker: true });
+          // startPosition — иначе hls.js по умолчанию начинает буферизацию
+          // с начала потока и только ПОСЛЕ loadedmetadata мы переставляем
+          // currentTime на сохранённую позицию (см. applyResumeSeek ниже):
+          // первый сегмент у нулевой секунды скачивается зря, а нужный —
+          // уже вторым заходом. При старте с нуля этой лишней работы нет,
+          // поэтому возобновление с середины ощутимо дольше. startPosition
+          // сразу нацеливает hls.js на нужный сегмент с первого запроса.
+          const target = seekTargetRef.current;
+          const hls = new Hls({
+            enableWorker: true,
+            startPosition: target && target > 1 ? target : -1,
+          });
           hlsRef.current = hls;
           hlsErrorRecoveryRef.current = 0;
           // master.m3u8 может содержать несколько ABR-вариантов (см. §12
