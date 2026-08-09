@@ -18,6 +18,7 @@
  */
 
 import { getTmdbRatingByImdbId } from './tmdb';
+import { getCachedJson } from './cache/apiCache';
 import type { OwnPlayerTranslation } from './extract/types';
 
 const VIDEOSEED_API = 'https://api.videoseed.tv/apiv2.php';
@@ -110,16 +111,23 @@ async function vsFetch(
 ): Promise<VsRawItem[]> {
   const t = token();
   if (!t) return []; // без токена каталог пуст — страница покажет заглушку
-  const search = new URLSearchParams({ token: t, ...params });
-  const res = await fetch(`${VIDEOSEED_API}?${search.toString()}`, {
-    next: { revalidate },
+  // Ключ кэша — без токена (не хотим хранить секрет в базе), но с
+  // отсортированными параметрами (стабильный ключ независимо от порядка).
+  const cacheKey = `videoseed:${new URLSearchParams(
+    Object.entries(params).sort(([a], [b]) => a.localeCompare(b)),
+  ).toString()}`;
+  return getCachedJson(cacheKey, revalidate, async () => {
+    const search = new URLSearchParams({ token: t, ...params });
+    const res = await fetch(`${VIDEOSEED_API}?${search.toString()}`, {
+      cache: 'no-store',
+    });
+    if (!res.ok) throw new Error(`Videoseed API error ${res.status}`);
+    const data = (await res.json()) as VsResponse;
+    if (data.status && data.status !== 'success') {
+      throw new Error(`Videoseed API status: ${data.status}`);
+    }
+    return data.data ?? [];
   });
-  if (!res.ok) throw new Error(`Videoseed API error ${res.status}`);
-  const data = (await res.json()) as VsResponse;
-  if (data.status && data.status !== 'success') {
-    throw new Error(`Videoseed API status: ${data.status}`);
-  }
-  return data.data ?? [];
 }
 
 /** Разбивает строку «А, Б, В» в массив без пустых значений. */

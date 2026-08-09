@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { Suspense } from 'react';
 import CinemaCard from '@/components/CinemaCard';
 import ContinueCard from '@/components/ContinueCard';
@@ -132,7 +133,15 @@ export default function CinemaHomePage({
 
   return (
     <div className="flex flex-col gap-10">
-      <ModeSwitch active="cinema" />
+      <div className="flex items-center justify-between gap-3">
+        <ModeSwitch active="cinema" />
+        <Link
+          href="/tips"
+          className="press shrink-0 rounded-full bg-bg-card px-3 py-2 text-sm text-gray-300 ring-1 ring-white/10 transition hover:bg-bg-soft hover:text-white"
+        >
+          💡 Подсказки
+        </Link>
+      </div>
 
       <section className="animate-rise flex flex-col gap-4">
         <h1 className="text-xl font-bold">Продолжить просмотр</h1>

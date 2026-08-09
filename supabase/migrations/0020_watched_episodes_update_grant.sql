@@ -1,0 +1,17 @@
+-- MediaWatch — миграция 0020: не хватало UPDATE-гранта на watched_episodes
+-- Применить через Supabase SQL Editor.
+--
+-- Миграция 0004 выдала authenticated только select/insert/delete. Пока
+-- /api/progress писал upsert с {onConflict, ignoreDuplicates: true} (INSERT
+-- ... ON CONFLICT DO NOTHING), этого хватало — DO NOTHING не трогает
+-- существующие строки и не требует UPDATE. Позже (см. историю правок
+-- src/app/api/progress/route.ts) ignoreDuplicates убрали, чтобы повторная
+-- отметка уже просмотренной серии обновляла anime_title/poster_url —
+-- получился INSERT ... ON CONFLICT DO UPDATE, а он требует UPDATE-грант на
+-- ВСЮ операцию (даже когда конфликта в конкретном вызове не происходит,
+-- Postgres проверяет права по всем клаузам стейтмента). Без гранта каждая
+-- попытка отметить досмотренную серию стала падать с "permission denied for
+-- table watched_episodes" — из-за этого «История» в профиле перестала
+-- пополняться (проверено вживую: 500-ка на /api/progress с этим текстом
+-- ошибки при каждой отметке watched_episode).
+grant update on watched_episodes to authenticated;

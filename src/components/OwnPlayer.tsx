@@ -269,6 +269,15 @@ export default function OwnPlayer({
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
+  // Свежее значение скорости — для повторного применения на loadedmetadata
+  // (см. onLoadedMetadata ниже): hls.js на каждом attachMedia/новом манифесте
+  // сам сбрасывает video.playbackRate обратно на 1, поэтому применять его
+  // только один раз при первом монтировании (как раньше) недостаточно — на
+  // следующей серии/переподключении сброс происходит ПОСЛЕ того разового
+  // применения, и реально проигрывается всегда на обычной скорости, хотя
+  // выбранное значение в меню настроек остаётся видно как выбранное.
+  const playbackRateRef = useRef(playbackRate);
+  playbackRateRef.current = playbackRate;
   const [fullscreen, setFullscreen] = useState(false);
   const [buffering, setBuffering] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -719,6 +728,7 @@ export default function OwnPlayer({
     };
     const onLoadedMetadata = () => {
       if (Number.isFinite(video.duration)) setDuration(video.duration);
+      video.playbackRate = playbackRateRef.current;
       applyResumeSeek();
     };
     const onPlay = () => {
@@ -777,9 +787,43 @@ export default function OwnPlayer({
         /* ignore */
       }
     };
-    const onWaiting = () => setBuffering(true);
+    // Перемотка вперёд, а затем назад (например, глянуть кусок серии дальше
+    // и вернуться досматривать с прерванного места) оставляет между старым
+    // и новым буферизованными участками несколько секунд без данных — не
+    // «дыра с нуля» (там ждать нормально), а именно разрыв МЕЖДУ двумя уже
+    // подгруженными кусками. hls.js обычно сам перепрыгивает такие разрывы,
+    // но не всегда достаточно быстро — воспроизведено вживую: видео зависало
+    // на несколько секунд/дольше, доходя ровно до места, откуда до этого
+    // перематывали назад. watchdog — если застряли в waiting дольше 2.5с и
+    // впереди (в пределах 20с) уже есть буферизованный участок — прыгаем в
+    // его начало сами, не дожидаясь неопределённо долго.
+    let gapWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearGapWatchdog = () => {
+      if (gapWatchdogTimer) {
+        clearTimeout(gapWatchdogTimer);
+        gapWatchdogTimer = null;
+      }
+    };
+    const onWaiting = () => {
+      setBuffering(true);
+      clearGapWatchdog();
+      gapWatchdogTimer = setTimeout(() => {
+        gapWatchdogTimer = null;
+        if (video.readyState >= 3 || video.paused) return;
+        const b = video.buffered;
+        const t = video.currentTime;
+        for (let i = 0; i < b.length; i++) {
+          const start = b.start(i);
+          if (start > t && start - t < 20) {
+            video.currentTime = start + 0.1;
+            break;
+          }
+        }
+      }, 2_500);
+    };
     const onCanPlay = () => {
       setBuffering(false);
+      clearGapWatchdog();
       applyResumeSeek();
       attemptPlay();
     };
@@ -816,6 +860,7 @@ export default function OwnPlayer({
       video.removeEventListener('playing', onCanPlay);
       video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('error', onError);
+      clearGapWatchdog();
     };
   }, [save, onEnded, loadState, performAutoSkip]);
 
@@ -1082,7 +1127,11 @@ export default function OwnPlayer({
             type="button"
             onClick={togglePlay}
             aria-label="Смотреть"
-            className="absolute inset-0 flex items-center justify-center"
+            // bottom-16, не inset-0: полное покрытие до самого низа перекрывало
+            // кликабельную область панели управления (в частности, кнопку
+            // «Настройки») — первый клик там иногда попадал на эту кнопку
+            // (пауза/повторный play) вместо реального контрола под ней.
+            className="absolute inset-x-0 top-0 bottom-16 flex items-center justify-center"
           >
             <span className="flex h-16 w-16 items-center justify-center rounded-full bg-black/60 ring-1 ring-white/20 backdrop-blur transition hover:bg-black/80">
               <svg viewBox="0 0 24 24" className="ml-1 h-8 w-8 fill-white">

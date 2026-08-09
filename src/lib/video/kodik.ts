@@ -1,3 +1,4 @@
+import { getCachedJson } from '@/lib/cache/apiCache';
 import type {
   EmbedResult,
   GetEmbedParams,
@@ -61,6 +62,36 @@ function withParams(
     : url.toString();
 }
 
+/**
+ * Общий поиск Kodik по kinopoisk_id/shikimori_id — используется и
+ * KodikVideoSource.searchMode (embed для вкладки Kodik), и
+ * getKodikOwnPlayerTranslations (список озвучек для «Наш плеер») — раньше
+ * это были два независимых fetch на один и тот же URL, теперь один
+ * общекэшируемый (см. getCachedJson) на оба случая.
+ */
+async function fetchKodikSearch(
+  token: string,
+  idParam: { kinopoiskId?: number; shikimoriId?: number },
+): Promise<KodikSearchResponse> {
+  const search = new URLSearchParams({ token, with_episodes: 'true' });
+  let cacheKey: string;
+  if (idParam.kinopoiskId != null) {
+    search.set('kinopoisk_id', String(idParam.kinopoiskId));
+    cacheKey = `kodik:search:kp:${idParam.kinopoiskId}`;
+  } else {
+    search.set('shikimori_id', String(idParam.shikimoriId));
+    cacheKey = `kodik:search:shiki:${idParam.shikimoriId}`;
+  }
+
+  return getCachedJson(cacheKey, 600, async () => {
+    const res = await fetch(`${KODIK_API}?${search.toString()}`, {
+      cache: 'no-store',
+    });
+    if (!res.ok) throw new Error(`Kodik API error ${res.status}`);
+    return (await res.json()) as KodikSearchResponse;
+  });
+}
+
 export class KodikVideoSource implements VideoSource {
   constructor(private readonly token: string | undefined) {}
 
@@ -89,24 +120,11 @@ export class KodikVideoSource implements VideoSource {
       startFrom,
     } = params;
 
-    const search = new URLSearchParams({
-      token: this.token as string,
-      with_episodes: 'true',
-    });
     // Кино ищем по kinopoisk_id, аниме — по shikimori_id.
-    if (kinopoiskId != null) {
-      search.set('kinopoisk_id', String(kinopoiskId));
-    } else {
-      search.set('shikimori_id', String(shikimoriId));
-    }
-
-    const res = await fetch(`${KODIK_API}?${search.toString()}`, {
-      // Ответ Kodik по тайтлу стабилен — можно кэшировать ненадолго.
-      next: { revalidate: 600 },
+    const data = await fetchKodikSearch(this.token as string, {
+      kinopoiskId: kinopoiskId ?? undefined,
+      shikimoriId: kinopoiskId == null ? shikimoriId : undefined,
     });
-    if (!res.ok) throw new Error(`Kodik API error ${res.status}`);
-
-    const data = (await res.json()) as KodikSearchResponse;
     if (!data.results || data.results.length === 0) {
       throw new Error('Kodik: пустой результат');
     }
@@ -192,19 +210,9 @@ export async function getKodikOwnPlayerTranslations(
   const token = process.env.KODIK_TOKEN;
   if (!token) return [];
 
-  const search = new URLSearchParams({
-    token,
-    with_episodes: 'true',
-    kinopoisk_id: String(kinopoiskId),
-  });
-
   let data: KodikSearchResponse;
   try {
-    const res = await fetch(`${KODIK_API}?${search.toString()}`, {
-      next: { revalidate: 600 },
-    });
-    if (!res.ok) return [];
-    data = (await res.json()) as KodikSearchResponse;
+    data = await fetchKodikSearch(token, { kinopoiskId });
   } catch {
     return [];
   }

@@ -14,6 +14,8 @@
  * в отличие от публичных embed-токенов Videoseed/Kodik).
  */
 
+import { getCachedJson } from '@/lib/cache/apiCache';
+
 const VIBIX_API = 'https://vibix.org/api/v1';
 
 export interface VibixEmbed {
@@ -50,32 +52,33 @@ export async function getVibixEmbed(
     return null;
   }
   try {
-    const res = await fetch(
-      `${VIBIX_API}/publisher/videos/kp/${kinopoiskId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
+    return await getCachedJson(`vibix:kp:${kinopoiskId}`, 600, async () => {
+      const res = await fetch(
+        `${VIBIX_API}/publisher/videos/kp/${kinopoiskId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/json',
+          },
+          cache: 'no-store',
         },
-        next: { revalidate: 600 },
-      },
-    );
-    if (!res.ok) {
-      // 404 — тайтла нет в каталоге (норма); остальное — проблемы токена/API.
-      if (res.status !== 404) {
-        console.warn(`[vibix] API ${res.status} для kp=${kinopoiskId}`);
-      }
-      return null;
-    }
-    const data = (await res.json()) as { embed_code?: string };
-    const embed = parseEmbedCode(data.embed_code);
-    if (!embed) {
-      console.warn(
-        `[vibix] не удалось разобрать embed_code для kp=${kinopoiskId}:`,
-        data.embed_code,
       );
-    }
-    return embed;
+      if (!res.ok) {
+        // 404 — тайтла нет в каталоге (норма, кэшируем и это); остальное —
+        // проблемы токена/API, не кэшируем (пусть повторит на следующий запрос).
+        if (res.status === 404) return null;
+        throw new Error(`[vibix] API ${res.status} для kp=${kinopoiskId}`);
+      }
+      const data = (await res.json()) as { embed_code?: string };
+      const embed = parseEmbedCode(data.embed_code);
+      if (!embed) {
+        console.warn(
+          `[vibix] не удалось разобрать embed_code для kp=${kinopoiskId}:`,
+          data.embed_code,
+        );
+      }
+      return embed;
+    });
   } catch (err) {
     console.warn('[vibix] ошибка запроса:', err);
     return null;
