@@ -565,6 +565,7 @@ export default function WatchPlayer({
         },
       },
       ownPlayerDockRef.current,
+      `${watchBase}/${shikimoriId}/${activeEpisode}`,
     );
   });
 

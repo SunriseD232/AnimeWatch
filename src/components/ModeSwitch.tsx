@@ -1,10 +1,18 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect } from 'react';
 import type { ContentType } from '@/lib/types';
 
+// href «Аниме» — /?mode=anime, не голый '/': у него отдельный ключ
+// клиентского Router Cache Next.js, независимый от '/' (который middleware
+// при aw_mode=cinema редиректит на /cinema, см. middleware.ts) — иначе клик
+// по «Аниме» иногда зацикливался обратно на /cinema через закэшированный
+// редирект. Обычная (не голая) ссылка позволяет использовать next/link —
+// полная перезагрузка страницы здесь больше не нужна и раньше обрывала
+// Picture-in-Picture при переключении раздела.
 const TABS: { value: ContentType; label: string; href: string }[] = [
-  { value: 'anime', label: 'Аниме', href: '/' },
+  { value: 'anime', label: 'Аниме', href: '/?mode=anime' },
   { value: 'cinema', label: 'Фильмы и сериалы', href: '/cinema' },
 ];
 
@@ -34,20 +42,13 @@ export default function ModeSwitch({ active }: { active: ContentType }) {
       {TABS.map((tab) => {
         const isActive = tab.value === active;
         return (
-          <a
+          <Link
             key={tab.value}
             href={tab.href}
             aria-current={isActive ? 'page' : undefined}
             // Кука ставится ДО навигации: иначе middleware вернул бы
             // пользователя обратно в прошлый раздел.
             onClick={() => setModeCookie(tab.value)}
-            // ОБЫЧНАЯ ссылка, не next/link: клиентский Router Cache Next.js
-            // запоминает результат редиректа '/' → '/cinema' (middleware.ts)
-            // и при клике по «Аниме» повторно использует его в обход
-            // свежей проверки cookie — переключение зацикливалось обратно
-            // на /cinema (воспроизведено вживую, баг возвращался несмотря
-            // на prefetch={false}). Полная навигация браузером обходит
-            // клиентский кэш роутера и гарантирует свежий проход middleware.
             className={[
               'press rounded-full px-4 py-2 text-sm font-medium transition',
               isActive
@@ -56,7 +57,7 @@ export default function ModeSwitch({ active }: { active: ContentType }) {
             ].join(' ')}
           >
             {tab.label}
-          </a>
+          </Link>
         );
       })}
     </div>

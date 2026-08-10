@@ -851,6 +851,7 @@ export default function Player({
         },
       },
       ownPlayerDockRef.current,
+      `${watchBase}/${shikimoriId}/${activeSeason}/${activeEpisode}`,
     );
   });
 

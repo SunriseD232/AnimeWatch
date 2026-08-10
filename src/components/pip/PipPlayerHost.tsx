@@ -12,6 +12,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { useRouter } from 'next/navigation';
 import OwnPlayer from '@/components/OwnPlayer';
 
 type OwnPlayerProps = ComponentProps<typeof OwnPlayer>;
@@ -26,7 +27,7 @@ interface PipHostContextValue {
    *  «причал» (dock) — куда визуально ставить плеер, пока страница
    *  просмотра смонтирована. Вызывается на каждом рендере страницы (см.
    *  Player.tsx/WatchPlayer.tsx). */
-  show: (key: string, props: OwnPlayerProps, dock: HTMLDivElement) => void;
+  show: (key: string, props: OwnPlayerProps, dock: HTMLDivElement, href: string) => void;
   /** Страница просмотра размонтировалась/ушла с вкладки «Наш плеер» — dock
    *  для key больше не действителен. Если для key сейчас активен
    *  Picture-in-Picture, сессия не закрывается: видео остаётся жить (просто
@@ -72,6 +73,7 @@ export function usePipPlayerHost(): PipHostContextValue {
  * фоном) — контейнер уезжает за экран, но не размонтируется.
  */
 export function PipPlayerHost({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
   // Состояние (не просто ref) — портал ниже читает его при рендере, а читать
   // ref.current прямо в рендере (не в эффекте/колбэке) при конкурентном
@@ -81,12 +83,16 @@ export function PipPlayerHost({ children }: { children: ReactNode }) {
   const [holderEl, setHolderEl] = useState<HTMLDivElement | null>(null);
   const holderRef = useRef<HTMLDivElement | null>(null);
   const dockElRef = useRef<HTMLDivElement | null>(null);
+  // Адрес страницы просмотра для ТЕКУЩЕЙ сессии (см. show ниже) — сюда
+  // возвращаемся, если пользователь закрыл плавающее окно вручную, пока
+  // плеер был осиротевшим (см. onPipChange).
+  const hrefRef = useRef<string | null>(null);
   const pipActiveRef = useRef(false);
   const ownerKeyRef = useRef<string | null>(null);
   const rafRef = useRef<number | null>(null);
 
   const show = useCallback(
-    (key: string, props: OwnPlayerProps, dockEl: HTMLDivElement) => {
+    (key: string, props: OwnPlayerProps, dockEl: HTMLDivElement, href: string) => {
       if (ownerKeyRef.current && ownerKeyRef.current !== key) {
         // Открыли ДРУГОЙ тайтл, пока предыдущий ещё жив (обычно висел в
         // PiP) — прежняя сессия закрывается безусловно, новый плеер
@@ -102,6 +108,7 @@ export function PipPlayerHost({ children }: { children: ReactNode }) {
       }
       ownerKeyRef.current = key;
       dockElRef.current = dockEl;
+      hrefRef.current = href;
       setSession((prev) => (prev && prev.key === key ? { key, props } : { key, props }));
     },
     [],
@@ -115,15 +122,26 @@ export function PipPlayerHost({ children }: { children: ReactNode }) {
     setSession(null);
   }, []);
 
-  const onPipChange = useCallback((active: boolean) => {
-    pipActiveRef.current = active;
-    // Плавающее окно закрыли вручную, а страница, которая открыла плеер,
-    // уже не смонтирована (dock пуст) — сессии больше незачем жить дальше.
-    if (!active && dockElRef.current === null) {
-      ownerKeyRef.current = null;
-      setSession(null);
-    }
-  }, []);
+  const onPipChange = useCallback(
+    (active: boolean) => {
+      pipActiveRef.current = active;
+      // Плавающее окно закрылось (крестиком или кнопкой «Вернуться на
+      // вкладку»), а страница, которая открыла плеер, сейчас не смонтирована
+      // (dock пуст) — возвращаем пользователя на страницу с этим плеером,
+      // чтобы он не терял видео из виду. Сама страница при монтировании
+      // снова вызовет show() с тем же key — сессия просто «заберёт» плеер
+      // обратно, без пересоздания (см. show выше).
+      if (!active && dockElRef.current === null) {
+        if (hrefRef.current) {
+          router.push(hrefRef.current);
+        } else {
+          ownerKeyRef.current = null;
+          setSession(null);
+        }
+      }
+    },
+    [router],
+  );
 
   // Каждый кадр, пока есть активная сессия, подгоняем позицию/размер
   // постоянного контейнера под текущий dock (если он есть и подключён к
@@ -145,12 +163,20 @@ export function PipPlayerHost({ children }: { children: ReactNode }) {
         holder.style.opacity = '1';
         holder.style.pointerEvents = 'auto';
       } else {
+        // Ни одна страница сейчас не «докует» плеер (ушли со страницы, PiP
+        // донашивает воспроизведение фоном) — уводим контейнер ЗА ЭКРАН, а
+        // НЕ схлопываем его в 1×1px/opacity:0. Проверено вживую: схлопывание
+        // до почти нулевого размера/прозрачности заставляло реальный
+        // Picture-in-Picture в браузере закрываться самостоятельно (видимо,
+        // Chrome трактует это похоже на display:none, хотя формально это не
+        // он) — с нормальным размером и полной непрозрачностью, просто вне
+        // видимой области, плавающее окно продолжает работать корректно.
         holder.style.position = 'fixed';
         holder.style.top = '0';
-        holder.style.left = '0';
-        holder.style.width = '1px';
-        holder.style.height = '1px';
-        holder.style.opacity = '0';
+        holder.style.left = '-10000px';
+        holder.style.width = '480px';
+        holder.style.height = '270px';
+        holder.style.opacity = '1';
         holder.style.pointerEvents = 'none';
       }
       rafRef.current = requestAnimationFrame(tick);
@@ -185,13 +211,18 @@ export function PipPlayerHost({ children }: { children: ReactNode }) {
         }}
         aria-hidden={!session}
         style={{
+          // Начальные значения — те же, что и «нет причала» ветка rAF-цикла
+          // ниже (полный непрозрачный размер, просто за экраном): реальный
+          // размер/непрозрачность важны, чтобы браузер не решил, что видео
+          // «пропало», и не закрыл настоящий Picture-in-Picture сам (см.
+          // комментарий в rAF-цикле).
           position: 'fixed',
           top: 0,
-          left: 0,
-          width: 1,
-          height: 1,
+          left: -10000,
+          width: 480,
+          height: 270,
           overflow: 'hidden',
-          opacity: 0,
+          opacity: 1,
           pointerEvents: 'none',
           zIndex: 30,
         }}
