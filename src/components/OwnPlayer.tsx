@@ -279,6 +279,11 @@ export default function OwnPlayer({
   const playbackRateRef = useRef(playbackRate);
   playbackRateRef.current = playbackRate;
   const [fullscreen, setFullscreen] = useState(false);
+  const [pip, setPip] = useState(false);
+  // Поддержка Picture-in-Picture — определяем на клиенте (document
+  // недоступен при SSR), кнопка скрыта, пока не узнаем точно (Firefox/старые
+  // браузеры/видео с disablePictureInPicture — не показываем совсем).
+  const [pipSupported, setPipSupported] = useState(false);
   const [buffering, setBuffering] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
   // Сегмент, который только что автопропустили — показываем тост «Опенинг
@@ -893,6 +898,39 @@ export default function OwnPlayer({
     }
   }, []);
 
+  // --- Picture-in-Picture ------------------------------------------------------
+  useEffect(() => {
+    setPipSupported(
+      typeof document !== 'undefined' && !!document.pictureInPictureEnabled,
+    );
+  }, []);
+
+  // video — новый DOM-узел на каждую серию (см. loadState probing→ready
+  // выше, <video> размонтируется в промежуточных ветках) — переподвешиваем
+  // слушатели вместе с ним, как и остальные обработчики <video> в этом файле.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const onEnter = () => setPip(true);
+    const onLeave = () => setPip(false);
+    video.addEventListener('enterpictureinpicture', onEnter);
+    video.addEventListener('leavepictureinpicture', onLeave);
+    return () => {
+      video.removeEventListener('enterpictureinpicture', onEnter);
+      video.removeEventListener('leavepictureinpicture', onLeave);
+    };
+  }, [loadState]);
+
+  const togglePip = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (document.pictureInPictureElement) {
+      document.exitPictureInPicture().catch(() => {});
+    } else {
+      video.requestPictureInPicture().catch(() => {});
+    }
+  }, []);
+
   // --- Управление -------------------------------------------------------------
   const togglePlay = useCallback(() => {
     const v = videoRef.current;
@@ -1422,6 +1460,33 @@ export default function OwnPlayer({
                 </div>
               )}
             </div>
+
+            {pipSupported && (
+              <button
+                type="button"
+                onClick={togglePip}
+                aria-label={
+                  pip ? 'Выйти из режима «Картинка в картинке»' : 'Картинка в картинке'
+                }
+                className={[
+                  'rounded-md p-1.5 transition hover:bg-white/10',
+                  pip ? 'bg-white/10' : '',
+                ].join(' ')}
+              >
+                <svg viewBox="0 0 24 24" className="h-5 w-5">
+                  <rect
+                    x="3"
+                    y="5"
+                    width="18"
+                    height="14"
+                    rx="2"
+                    className="fill-none stroke-current"
+                    strokeWidth="2"
+                  />
+                  <rect x="12" y="11" width="7" height="5" rx="1" className="fill-current" />
+                </svg>
+              </button>
+            )}
 
             <button
               type="button"
