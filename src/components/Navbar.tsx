@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
+import { getUserCount, isAdminEmail } from '@/lib/admin';
 import CalendarLink from './CalendarLink';
 import NotificationBell from './NotificationBell';
 import SearchBox from './SearchBox';
@@ -11,6 +12,9 @@ export default async function Navbar() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  const isAdmin = isAdminEmail(user?.email);
+  const userCount = isAdmin ? await getUserCount() : null;
 
   let notifications: AppNotification[] = [];
   if (user) {
@@ -61,6 +65,14 @@ export default async function Navbar() {
 
         {user ? (
           <div className="flex shrink-0 items-center gap-1">
+            {isAdmin && userCount !== null && (
+              <span
+                title="Зарегистрировано пользователей"
+                className="hidden items-center gap-1 rounded-full bg-bg-card px-3 py-1.5 text-xs font-medium text-gray-400 ring-1 ring-white/10 sm:flex"
+              >
+                👤 {userCount}
+              </span>
+            )}
             <CalendarLink />
             <TipsLink />
             <NotificationBell initial={notifications} />

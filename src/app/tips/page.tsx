@@ -137,6 +137,15 @@ export default function TipsPage() {
         </p>
       </section>
 
+      <section className="flex flex-col gap-2">
+        <h2 className="text-lg font-semibold">Плеер завис?</h2>
+        <p className="text-sm leading-relaxed text-gray-400">
+          Если видео немного подвисло (картинка есть, но не двигается, или
+          не реагирует на перемотку) — нажмите паузу и снова play пару раз.
+          Обычно этого достаточно, чтобы плеер отошёл от зависания.
+        </p>
+      </section>
+
       <Link
         href="/"
         className="press w-fit rounded-full bg-bg-card px-4 py-2 text-sm font-medium text-gray-300 ring-1 ring-white/10 transition hover:bg-bg-soft hover:text-white"
