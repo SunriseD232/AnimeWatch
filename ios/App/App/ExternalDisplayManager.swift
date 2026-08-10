@@ -12,8 +12,12 @@ import UIKit
 /// останавливает рендеринг, когда приложение уходит в фон/экран
 /// блокируется — это ограничение самого WebKit, не обходится настройками.
 /// Нативный AVPlayer с фоновым аудио-режимом (UIBackgroundModes=audio в
-/// Info.plist) продолжает декодировать/рендерить и при блокировке — тот же
-/// приём, на котором построены Кинопоиск и подобные видео-приложения.
+/// Info.plist) продолжает декодировать звук и при блокировке — но само
+/// изображение на очках переживает блокировку не через это, а через
+/// AVPlayer.usesExternalPlaybackWhileExternalScreenIsActive (см. play()
+/// ниже) — оно передаёт рендер внешнему, системному конвейеру (тому же,
+/// что у AirPlay) вместо отрисовки силами самого приложения, которую ОС
+/// приостанавливает при реальной блокировке телефона.
 ///
 /// Почему UIScreen.didConnectNotification + ручной UIWindow, а не UIScene с
 /// ролью "external display": первая версия пробовала подключать внешний
@@ -110,6 +114,17 @@ final class ExternalDisplayManager: NSObject {
 
         let item = AVPlayerItem(url: url)
         let newPlayer = AVPlayer(playerItem: item)
+        // Наша ручная AVPlayerLayer-отрисовка в UIWindow на внешнем экране
+        // (см. attachWindow выше) работает, только пока приложение реально
+        // на переднем плане — при блокировке телефона такая отрисовка
+        // приложением приостанавливается системой, даже если фоновое аудио
+        // продолжает идти. usesExternalPlaybackWhileExternalScreenIsActive
+        // переключает вывод на системный конвейер "внешнего воспроизведения"
+        // (тот же, что использует AirPlay) — им управляет не наш код, а сама
+        // ОС, и именно поэтому у него больше шансов пережить блокировку.
+        // allowsExternalPlayback включён по умолчанию, но выставляем явно.
+        newPlayer.allowsExternalPlayback = true
+        newPlayer.usesExternalPlaybackWhileExternalScreenIsActive = true
         player = newPlayer
         playerViewController?.playerContainerView.playerLayer.player = newPlayer
 
@@ -120,6 +135,14 @@ final class ExternalDisplayManager: NSObject {
         newPlayer.play()
 
         addTimeObserver()
+
+        // Не даём телефону погаснуть/заблокироваться САМОМУ по таймауту
+        // бездействия, пока идёт воспроизведение на очках — не помогает от
+        // ручной блокировки кнопкой, но убирает автоблокировку как отдельную
+        // переменную при тестировании. Сбрасывается в stop().
+        DispatchQueue.main.async {
+            UIApplication.shared.isIdleTimerDisabled = true
+        }
     }
 
     func stop() {
@@ -127,6 +150,9 @@ final class ExternalDisplayManager: NSObject {
         player?.pause()
         player = nil
         playerViewController?.playerContainerView.playerLayer.player = nil
+        DispatchQueue.main.async {
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
     }
 
     private func configureAudioSession() {
