@@ -20,20 +20,35 @@ export interface PresenceSummary {
 }
 
 /**
- * Число зарегистрированных + «сейчас онлайн» пользователей (auth.users), с
- * почтами — для бейджа в шапке у админов (клик раскрывает список, см.
- * Navbar.tsx/UserPresenceBadge.tsx). Список пользователей и почты доступны
- * только через admin API (service_role, обходит RLS) — обычным клиентом не
- * достать. «Онлайн» — по heartbeat (см. миграцию 0021_user_presence.sql,
- * PresenceHeartbeat.tsx шлёт отметку раз в ~45с, пока вкладка видима);
- * last_seen_at не старше 2 минут — 2 пропуска heartbeat на сетевые заминки,
- * не показывает давно ушедших.
- *
- * Кэшируем на 30 секунд общим межпроцессным кэшем (api_response_cache) —
- * без этого каждый рендер шапки у админа бил бы по Auth admin API. 30с — TTL
- * пониже, чем было у отдельного getUserCount() (5 мин): "онлайн" должен
- * оставаться довольно свежим, а список пользователей всё равно приходится
- * тянуть заново вместе с online-частью в одном запросе.
+ * Только число «сейчас онлайн» — дешёвый индексированный count по своей
+ * таблице (см. миграцию 0021_user_presence.sql), БЕЗ обращения к Auth admin
+ * API. Это то, что показывается в шапке сразу у каждого админа на КАЖДОЙ
+ * навигации (Navbar рендерится всегда, а у сайта отключён клиентский Router
+ * Cache для динамики — staleTimes:0 в next.config.js — так что это реально
+ * бьёт на каждый переход). Список почт (getPresenceSummary ниже) специально
+ * НЕ вызывается тут — тянуть его на каждый рендер шапки заметно замедляло
+ * весь сайт админу (admin.listUsers + доп. round-trip в api_response_cache
+ * на КАЖДОМ переходе — поиск, открытие тайтла, возврат на главную), см.
+ * коммит, который это исправил. Детали (почты) — по клику, лениво, через
+ * /api/admin/presence, см. UserPresenceBadge.tsx.
+ */
+export async function getOnlineUserCount(): Promise<number> {
+  const service = createServiceClient();
+  const threshold = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  const { count } = await service
+    .from('user_presence')
+    .select('user_id', { count: 'exact', head: true })
+    .gte('last_seen_at', threshold);
+  return count ?? 0;
+}
+
+/**
+ * Полная сводка (счётчики + почты) — тяжёлая (admin.listUsers), поэтому
+ * вызывается ТОЛЬКО из /api/admin/presence, по клику на бейдж в шапке
+ * (UserPresenceBadge.tsx), а не при каждом рендере Navbar — см.
+ * getOnlineUserCount выше про то, почему это важно. Кэш 30с общим
+ * межпроцессным кэшем (api_response_cache) на случай, если админ открывает
+ * дропдаун повторно за короткое время.
  */
 export async function getPresenceSummary(): Promise<PresenceSummary> {
   return getCachedJson('admin:presence_summary', 30, async () => {

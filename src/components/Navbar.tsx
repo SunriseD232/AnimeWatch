@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { getPresenceSummary, isAdminEmail, type PresenceSummary } from '@/lib/admin';
+import { getOnlineUserCount, isAdminEmail } from '@/lib/admin';
 import CalendarLink from './CalendarLink';
 import NotificationBell from './NotificationBell';
 import SearchBox from './SearchBox';
@@ -15,7 +15,10 @@ export default async function Navbar() {
   } = await supabase.auth.getUser();
 
   const isAdmin = isAdminEmail(user?.email);
-  const presence: PresenceSummary | null = isAdmin ? await getPresenceSummary() : null;
+  // Только счётчик тут — дешёвый count, без admin.listUsers (см.
+  // getOnlineUserCount в lib/admin.ts про то, почему это важно: тяжёлая
+  // версия на каждом рендере шапки заметно тормозила весь сайт админу).
+  const onlineCount = isAdmin ? await getOnlineUserCount() : null;
 
   let notifications: AppNotification[] = [];
   if (user) {
@@ -66,14 +69,9 @@ export default async function Navbar() {
 
         {user ? (
           <div className="flex shrink-0 items-center gap-1">
-            {presence && (
+            {onlineCount !== null && (
               <div className="hidden sm:block">
-                <UserPresenceBadge
-                  onlineCount={presence.onlineCount}
-                  onlineEmails={presence.onlineEmails}
-                  totalCount={presence.totalCount}
-                  totalEmails={presence.totalEmails}
-                />
+                <UserPresenceBadge onlineCount={onlineCount} />
               </div>
             )}
             <CalendarLink />
