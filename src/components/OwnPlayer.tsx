@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { useProgressSaver } from '@/hooks/useProgressSaver';
 import { formatTime } from '@/lib/format';
 import type { ContentType } from '@/lib/types';
@@ -9,6 +10,7 @@ import type { ExtractSource, Subtitle } from '@/lib/extract/types';
 import type { YummyTranslation } from '@/lib/video/yummy';
 import type HlsType from 'hls.js';
 import type { MediaPlayerClass } from 'dashjs';
+import { ExternalDisplay } from '@/native/externalDisplay';
 
 interface SkipSegment {
   time: number;
@@ -300,6 +302,11 @@ export default function OwnPlayer({
   // недоступен при SSR), кнопка скрыта, пока не узнаем точно (Firefox/старые
   // браузеры/видео с disablePictureInPicture — не показываем совсем).
   const [pipSupported, setPipSupported] = useState(false);
+  // Внешний экран (очки Xreal через USB-C DisplayPort) — есть только в
+  // нативной iOS-обёртке (Capacitor), см. src/native/externalDisplay.ts и
+  // ios/App/App/ExternalDisplayManager.swift. На обычном вебе
+  // Capacitor.isNativePlatform() === false, и это состояние всегда false.
+  const [externalScreenConnected, setExternalScreenConnected] = useState(false);
   const [buffering, setBuffering] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
   // Сегмент, который только что автопропустили — показываем тост «Опенинг
@@ -980,6 +987,52 @@ export default function OwnPlayer({
     }
   }, []);
 
+  // --- Внешний экран (очки Xreal, только нативная iOS-обёртка) ---------------
+  // Подписка на события плагина — один раз на весь срок жизни компонента (не
+  // per-серию): сам факт подключения/отключения очков не связан со сменой
+  // видео. На обычном вебе Capacitor.isNativePlatform() === false — весь блок
+  // безопасный no-op, addListener на незарегистрированном под web-платформу
+  // плагине в Capacitor не бросает исключение, но мы всё равно проверяем
+  // платформу явно, чтобы не плодить лишние промисы на каждой загрузке сайта.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let cancelled = false;
+    ExternalDisplay.isExternalScreenConnected()
+      .then(({ connected }) => {
+        if (!cancelled) setExternalScreenConnected(connected);
+      })
+      .catch(() => {});
+    const connectedHandle = ExternalDisplay.addListener('externalScreenConnected', () => {
+      setExternalScreenConnected(true);
+    });
+    const disconnectedHandle = ExternalDisplay.addListener('externalScreenDisconnected', () => {
+      setExternalScreenConnected(false);
+    });
+    return () => {
+      cancelled = true;
+      connectedHandle.then((h) => h.remove()).catch(() => {});
+      disconnectedHandle.then((h) => h.remove()).catch(() => {});
+    };
+  }, []);
+
+  // Пока идёт воспроизведение на внешнем экране, локальное <video> ставим на
+  // паузу и глушим (звук уже идёт с AVPlayer на стороне очков) — сам hls.js
+  // при этом продолжает быть подключён как обычно (проще и безопаснее, чем
+  // на время отключать его пайплайн, см. PLAN.md).
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || !externalScreenConnected || loadState !== 'ready') return;
+    const video = videoRef.current;
+    if (video) video.pause();
+    ExternalDisplay.play({
+      url: new URL(src, window.location.origin).toString(),
+      startPositionSeconds: video?.currentTime || resumeFrom || 0,
+    }).catch(() => {});
+    return () => {
+      ExternalDisplay.stop().catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalScreenConnected, loadState, src]);
+
   // --- Управление -------------------------------------------------------------
   const togglePlay = useCallback(() => {
     const v = videoRef.current;
@@ -1209,13 +1262,22 @@ export default function OwnPlayer({
             выше (возможность переключить озвучку до/после ошибки без него
             недоступна). */}
 
-        {buffering && (
+        {Capacitor.isNativePlatform() && externalScreenConnected && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 bg-black/80 text-sm font-medium text-white">
+            <svg viewBox="0 0 24 24" className="h-5 w-5 fill-white">
+              <path d="M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-5v2h1a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h1v-2H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zm1 2v8h14V8H5z" />
+            </svg>
+            Воспроизведение на очках
+          </div>
+        )}
+
+        {buffering && !(Capacitor.isNativePlatform() && externalScreenConnected) && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="h-12 w-12 animate-spin rounded-full border-2 border-white/20 border-t-white" />
           </div>
         )}
 
-        {!playing && !buffering && !isEnded && (
+        {!playing && !buffering && !isEnded && !(Capacitor.isNativePlatform() && externalScreenConnected) && (
           <button
             type="button"
             onClick={togglePlay}

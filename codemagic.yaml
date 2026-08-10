@@ -1,0 +1,48 @@
+workflows:
+  ios-ad-hoc:
+    name: MediaWatch iOS (ad-hoc)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      # CM_CERTIFICATE / CM_CERTIFICATE_PASSWORD / CM_PROVISIONING_PROFILE
+      # заполняются автоматически Codemagic после того, как в UI проекта
+      # (Code signing identities) загружены .p12-сертификат (экспорт из
+      # "CSR for me" в Codemagic) и .mobileprovision-профиль (ad-hoc,
+      # bundle id ru.mediawatch.app, с зарегистрированным UDID телефона) —
+      # см. PLAN.md/README про шаги на developer.apple.com.
+      vars:
+        BUNDLE_ID: "ru.mediawatch.app"
+        XCODE_SCHEME: "App"
+        XCODE_PROJECT: "ios/App/App.xcodeproj"
+      node: 22.3.0
+      xcode: latest
+    scripts:
+      - name: Install npm dependencies
+        script: npm ci
+      - name: Sync Capacitor iOS project
+        # Проект без CocoaPods (Swift Package Manager, см. ios/App/CapApp-SPM)
+        # — pod install не нужен, cap sync сам обновит зависимости плагинов
+        # и capacitor.config.json внутри ios/App.
+        script: npx cap sync ios
+      - name: Set up code signing
+        script: |
+          keychain initialize
+          keychain add-certificates --certificate "$CM_CERTIFICATE" --certificate-password "$CM_CERTIFICATE_PASSWORD"
+          xcode-project use-profiles
+      - name: Build ipa for ad-hoc distribution
+        script: |
+          xcode-project build-ipa \
+            --project "$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      # Ad-hoc-профиль -> Codemagic сам добавляет прямую install-ссылку
+      # (страница сборки в UI) — TestFlight/App Store Connect тут не нужны.
+      email:
+        recipients:
+          - 2000gva@gmail.com
+        notify:
+          success: true
+          failure: true
