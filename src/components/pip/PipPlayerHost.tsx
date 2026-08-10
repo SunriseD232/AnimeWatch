@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useMemo,
   useRef,
   useState,
   type ComponentProps,
@@ -69,11 +70,6 @@ export function PipPlayerHost({ children }: { children: ReactNode }) {
 
   const show = useCallback(
     (key: string, props: OwnPlayerProps, dockEl: HTMLDivElement) => {
-      // eslint-disable-next-line no-console
-      console.log(
-        '[pip-debug] host.show', key, 'resumeFrom=', props.resumeFrom,
-        'ownerKeyRef=', ownerKeyRef.current, 'dockEl===prevDock?',
-      );
       if (ownerKeyRef.current && ownerKeyRef.current !== key) {
         // Открыли ДРУГОЙ тайтл, пока предыдущий ещё жив (обычно висел в
         // PiP, см. hide ниже) — прежняя сессия закрывается безусловно,
@@ -121,8 +117,22 @@ export function PipPlayerHost({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dock]);
 
+  // Мемоизировано намеренно: show/hide сами стабильны (useCallback без
+  // зависимостей), но без useMemo этот объект пересоздавался бы на КАЖДЫЙ
+  // рендер PipPlayerHost — а значит менялся бы у контекста, а значит любой
+  // потребитель (Player.tsx/WatchPlayer.tsx) перерендеривался бы просто от
+  // смены ссылки на объект. Раньше это давало настоящий бесконечный цикл:
+  // Player.tsx рендерится → эффект без deps зовёт show() → setSession здесь
+  // → PipPlayerHost рендерится → НОВЫЙ объект контекста → Player.tsx снова
+  // рендерится (просто потому что подписан на контекст) → снова show() →
+  // ... без остановки, десятки раз в секунду, пока пользователь ничего не
+  // делал — воспроизведено вживую (видео зависало на readyState=1, а после
+  // включения PiP страница переставала реагировать на клики вообще: главный
+  // поток был занят этим циклом).
+  const contextValue = useMemo(() => ({ show, hide }), [show, hide]);
+
   return (
-    <PipHostContext.Provider value={{ show, hide }}>
+    <PipHostContext.Provider value={contextValue}>
       {children}
       {/* Всегда смонтированный скрытый контейнер — сюда уезжает портал,
           когда ни одна страница плеер не «докует», но PiP ещё активен. */}
