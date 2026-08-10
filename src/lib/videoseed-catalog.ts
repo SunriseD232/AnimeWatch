@@ -328,6 +328,16 @@ function matchesFilter(
 // (revalidate) — стоимость платится один раз, а не на каждый визит.
 const MAX_UPSTREAM_PAGES = 30;
 const UPSTREAM_PAGE_SIZE = 50;
+// Страницы внутри пачки запрашиваются параллельно (Promise.all), пачки —
+// последовательно. Раньше все до 30 страниц шли строго одна за другой
+// (await в цикле) — для редкого/generic-жанра (например, буквального тега
+// «Сериалы», который почти не встречается ПОДСТРОКОЙ в genre других
+// тайтлов) это означало перебор всех 30 страниц ПОДРЯД перед тем, как
+// сдаться, даже если каждая из них уже в кэше (кэш всё равно отдельный
+// round-trip на страницу) — на практике страница тайтла с таким жанром
+// грузилась 6+ секунд из-за одного этого. Пачками по 5 — тот же итоговый
+// объём запросов к апстриму, но без ожидания их по одному.
+const PAGE_BATCH_SIZE = 5;
 
 /** Копит подходящие под фильтр записи, дозапрашивая страницы, пока не хватит. */
 async function collectFiltered(
@@ -337,22 +347,39 @@ async function collectFiltered(
   need: number,
 ): Promise<VsRawItem[]> {
   const collected: VsRawItem[] = [];
-  for (let page = 1; page <= MAX_UPSTREAM_PAGES; page++) {
-    const batch = await vsFetch(
-      {
-        list: type,
-        sort_by: 'post_date desc',
-        items: String(UPSTREAM_PAGE_SIZE),
-        from: String(page),
-      },
-      3600,
+  for (
+    let batchStart = 1;
+    batchStart <= MAX_UPSTREAM_PAGES;
+    batchStart += PAGE_BATCH_SIZE
+  ) {
+    const pageCount = Math.min(PAGE_BATCH_SIZE, MAX_UPSTREAM_PAGES - batchStart + 1);
+    const pages = Array.from({ length: pageCount }, (_, i) => batchStart + i);
+    const batches = await Promise.all(
+      pages.map((page) =>
+        vsFetch(
+          {
+            list: type,
+            sort_by: 'post_date desc',
+            items: String(UPSTREAM_PAGE_SIZE),
+            from: String(page),
+          },
+          3600,
+        ),
+      ),
     );
-    if (batch.length === 0) break;
-    for (const item of batch) {
-      if (matchesFilter(item, genresInclude, genresExclude)) collected.push(item);
+
+    let reachedEnd = false;
+    for (const batch of batches) {
+      if (batch.length === 0) {
+        reachedEnd = true;
+        break;
+      }
+      for (const item of batch) {
+        if (matchesFilter(item, genresInclude, genresExclude)) collected.push(item);
+      }
+      if (batch.length < UPSTREAM_PAGE_SIZE) reachedEnd = true;
     }
-    if (collected.length >= need) break;
-    if (batch.length < UPSTREAM_PAGE_SIZE) break;
+    if (collected.length >= need || reachedEnd) break;
   }
   return collected;
 }
