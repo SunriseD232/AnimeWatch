@@ -69,6 +69,11 @@ export function PipPlayerHost({ children }: { children: ReactNode }) {
 
   const show = useCallback(
     (key: string, props: OwnPlayerProps, dockEl: HTMLDivElement) => {
+      // eslint-disable-next-line no-console
+      console.log(
+        '[pip-debug] host.show', key, 'resumeFrom=', props.resumeFrom,
+        'ownerKeyRef=', ownerKeyRef.current, 'dockEl===prevDock?',
+      );
       if (ownerKeyRef.current && ownerKeyRef.current !== key) {
         // Открыли ДРУГОЙ тайтл, пока предыдущий ещё жив (обычно висел в
         // PiP, см. hide ниже) — прежняя сессия закрывается безусловно,

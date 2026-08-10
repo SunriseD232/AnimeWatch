@@ -398,6 +398,8 @@ export default function OwnPlayer({
   // середине просмотра откатывало бы на изначальную точку резюма вместо
   // продолжения с того же места.
   useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log('[pip-debug] sync seekTargetRef effect fired, resumeFrom=', resumeFrom);
     seekTargetRef.current = resumeFrom;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [episode, season, resumeFrom]);
@@ -518,6 +520,8 @@ export default function OwnPlayer({
           // поэтому возобновление с середины ощутимо дольше. startPosition
           // сразу нацеливает hls.js на нужный сегмент с первого запроса.
           const target = seekTargetRef.current;
+          // eslint-disable-next-line no-console
+          console.log('[pip-debug] hls create, target=', target, 'resumeFrom prop=', resumeFrom, 'episode=', episode);
           const hls = new Hls({
             enableWorker: true,
             startPosition: target && target > 1 ? target : -1,

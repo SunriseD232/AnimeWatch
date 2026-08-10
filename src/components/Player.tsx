@@ -823,6 +823,8 @@ export default function Player({
       pipHost.hide(ownPlayerTitleKey);
       return;
     }
+    // eslint-disable-next-line no-console
+    console.log('[pip-debug] Player.tsx show() call, resumeFrom=', resumeFrom);
     pipHost.show(
       ownPlayerTitleKey,
       {
