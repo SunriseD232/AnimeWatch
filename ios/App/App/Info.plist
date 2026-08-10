@@ -27,10 +27,12 @@
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
-    <!-- true — обязательно для отдельной UIScene внешнего экрана (очки
-         Xreal, см. ExternalDisplaySceneDelegate.swift); при false внешний
-         дисплей просто зеркалит основной экран, что нам и нужно избежать. -->
-    <true/>
+    <!-- false — вернулись к стандартному Capacitor-шаблону: внешний экран
+         (очки Xreal) больше не подключается через UIScene, см.
+         ExternalDisplayManager.swift (UIScreen.didConnectNotification +
+         ручной UIWindow) и комментарий в AppDelegate.swift о том, почему
+         scene-based подход не сработал. -->
+    <false/>
     <key>UISceneConfigurations</key>
     <dict>
       <key>UIWindowSceneSessionRoleApplication</key>
@@ -42,29 +44,6 @@
             <string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
             <key>UISceneStoryboardFile</key>
             <string>Main</string>
-        </dict>
-      </array>
-      <!-- Обе роли объявлены сразу (Interactive и NonInteractive) — на
-           момент написания не было возможности сверить в Xcode, какую
-           именно iOS фактически назначает USB-C DisplayPort-дисплею;
-           AppDelegate.application(configurationForConnecting:) матчит по
-           подстроке "ExternalDisplay" в любом случае, см. этот файл. -->
-      <key>UIWindowSceneSessionRoleExternalDisplayNonInteractive</key>
-      <array>
-        <dict>
-            <key>UISceneConfigurationName</key>
-            <string>External Display Configuration</string>
-            <key>UISceneDelegateClassName</key>
-            <string>$(PRODUCT_MODULE_NAME).ExternalDisplaySceneDelegate</string>
-        </dict>
-      </array>
-      <key>UIWindowSceneSessionRoleExternalDisplay</key>
-      <array>
-        <dict>
-            <key>UISceneConfigurationName</key>
-            <string>External Display Configuration</string>
-            <key>UISceneDelegateClassName</key>
-            <string>$(PRODUCT_MODULE_NAME).ExternalDisplaySceneDelegate</string>
         </dict>
       </array>
     </dict>

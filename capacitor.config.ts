@@ -28,9 +28,14 @@ const config: CapacitorConfig = {
     cleartext: false,
   },
   ios: {
-    // Пропускаем приветственную инициализацию Capacitor'а поверх контента —
-    // с server.url и так сразу открывается реальная страница.
-    contentInset: 'automatic',
+    // 'never' — WKWebView занимает экран полностью, от края до края;
+    // отступы под чёлку/Dynamic Island/домашний индикатор сайт расставляет
+    // сам через env(safe-area-inset-*) на <body>, см. src/app/layout.tsx
+    // (viewportFit: 'cover' + safe-area padding). 'automatic' пробовали
+    // раньше — WKWebView сам добавлял свой инсет ПОВЕРХ уже отрисованной
+    // страницы без safe-area CSS, из-за чего контент оказывался чуть
+    // больше видимой области экрана (не помещался на iPhone 17 Pro).
+    contentInset: 'never',
   },
 };
 

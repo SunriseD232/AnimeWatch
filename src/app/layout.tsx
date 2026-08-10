@@ -36,6 +36,13 @@ export const viewport: Viewport = {
   themeColor: '#000000',
   width: 'device-width',
   initialScale: 1,
+  // cover — контент реально уходит под чёлку/Dynamic Island/домашний индикатор
+  // (актуально для iOS PWA-режима и нативной обёртки, см. capacitor.config.ts
+  // ios.contentInset: 'never') — без этого safe-area-отступы ниже на <body>
+  // были бы просто равны нулю, а WKWebView без auto-инсета обрезал/сдвигал
+  // бы контент по-своему, из-за чего страница на iPhone выглядела «чуть
+  // больше, чем надо».
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({
@@ -45,7 +52,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ru" className={`dark ${inter.variable}`}>
-      <body className="min-h-screen font-sans">
+      <body className="min-h-screen font-sans pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
         <PwaRegister />
         <ToastProvider>
           <PipPlayerHost>

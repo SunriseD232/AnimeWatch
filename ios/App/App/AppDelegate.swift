@@ -33,26 +33,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
     }
 
-    func application(_ application: UIApplication,
-                     configurationForConnecting connectingSceneSession: UISceneSession,
-                     options: UIScene.ConnectionOptions) -> UISceneConfiguration {
-        // Внешний экран (очки Xreal) подключается как отдельная UIScene —
-        // роутим её на ExternalDisplaySceneDelegate вместо обычного
-        // SceneDelegate (тот хостит CAPBridgeViewController/WKWebView,
-        // который нам тут не нужен — см. ExternalDisplayManager.swift).
-        // Проверяем rawValue по подстроке, а не точным enum-кейсом
-        // (.windowExternalDisplay vs .windowExternalDisplayNonInteractive) —
-        // не было возможности сверить точное имя константы без Xcode на
-        // момент написания, см. PLAN.md/README примечание к этому файлу.
-        if connectingSceneSession.role.rawValue.contains("ExternalDisplay") {
-            let config = UISceneConfiguration(name: "External Display Configuration",
-                                              sessionRole: connectingSceneSession.role)
-            config.delegateClass = ExternalDisplaySceneDelegate.self
-            return config
-        }
-        let config = UISceneConfiguration(name: "Default Configuration",
-                                          sessionRole: connectingSceneSession.role)
-        config.delegateClass = SceneDelegate.self
-        return config
-    }
+    // Внешний экран (очки Xreal) раньше пытались подключать как отдельную
+    // UIScene с ролью "external display" — не сработало (пустой/чёрный
+    // экран на очках при рабочем подключении в других приложениях), похоже,
+    // iOS в принципе не создаёт такую UIScene для USB-C DisplayPort-вывода в
+    // обычном (не CarPlay/enterprise) приложении. Вернулись к классическому
+    // способу — UIScreen.didConnectNotification + вручную создаваемый
+    // UIWindow, см. ExternalDisplayManager.swift — он не требует ничего
+    // объявлять тут или в Info.plist про сцены, и это исторически
+    // стандартный, проверенный способ рендера на внешний UIScreen.
 }

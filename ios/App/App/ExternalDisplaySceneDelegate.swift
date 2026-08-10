@@ -20,30 +20,10 @@ final class ExternalPlayerViewController: UIViewController {
     }
 }
 
-/// Отдельная UIScene для внешнего экрана (очки Xreal) — Capacitor 8
-/// генерирует scene-based проект (см. SceneDelegate.swift — основной экран
-/// телефона уже живёт в отдельной сцене), поэтому внешний дисплей тоже
-/// подключается как своя UIScene с ролью «external display», а не через
-/// устаревший (для scene-based приложений) UIScreen.didConnectNotification.
-/// Какую именно сцену создать для какой роли — решает
-/// AppDelegate.application(configurationForConnecting:), см. этот файл.
-class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
-    var window: UIWindow?
-
-    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
-        guard let windowScene = scene as? UIWindowScene else { return }
-
-        let vc = ExternalPlayerViewController()
-        let win = UIWindow(windowScene: windowScene)
-        win.rootViewController = vc
-        window = win
-        win.makeKeyAndVisible()
-
-        ExternalDisplayManager.shared.attachExternalLayer(vc.playerContainerView.playerLayer)
-    }
-
-    func sceneDidDisconnect(_ scene: UIScene) {
-        ExternalDisplayManager.shared.detachExternalLayer()
-        window = nil
-    }
-}
+// Раньше в этом файле был ExternalDisplaySceneDelegate: UIWindowSceneDelegate
+// (подключение внешнего экрана через отдельную UIScene) — убрали, реального
+// вывода на экран не было (пробовали на устройстве — очки оставались
+// чёрными/пустыми). Внешний экран теперь подключается классическим способом
+// через UIScreen.didConnectNotification + ручной UIWindow, см.
+// ExternalDisplayManager.swift. Имя файла оставили как есть, чтобы не
+// трогать project.pbxproj (там уже зарегистрирован путь до этого файла).
