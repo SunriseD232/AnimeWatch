@@ -820,7 +820,7 @@ export default function Player({
   const ownPlayerTitleKey = `${contentType}:${shikimoriId}`;
   useEffect(() => {
     if (player !== 'own' || !hasOwnPlayer || !ownPlayerDockRef.current) {
-      pipHost.hide(ownPlayerTitleKey);
+      pipHost.unclaimDock(ownPlayerTitleKey);
       return;
     }
     pipHost.show(
@@ -858,7 +858,7 @@ export default function Player({
   // выше) — если PiP не активен, PipPlayerHost закроет сессию; если активен,
   // оставит <video> жить в своём скрытом контейнере (см. PipPlayerHost.hide).
   useEffect(() => {
-    return () => pipHost.hide(ownPlayerTitleKey);
+    return () => pipHost.unclaimDock(ownPlayerTitleKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -976,12 +976,15 @@ export default function Player({
 
       {/* Плеер 16:9 */}
       {player === 'own' && hasOwnPlayer ? (
-        // Свой плеер рисует контейнер сам, но не здесь напрямую — реальный
-        // OwnPlayer живёт в PipPlayerHost (см. app/layout.tsx), сюда он
-        // приезжает порталом (см. эффект show/hide ниже). Так Picture-in-
-        // Picture переживает уход с этой страницы: PipPlayerHost не даёт
-        // <video> покинуть документ, пока плавающее окно открыто.
-        <div ref={ownPlayerDockRef} />
+        // Реальный OwnPlayer живёт в PipPlayerHost (см. app/layout.tsx) в
+        // постоянном контейнере с position:fixed — он на каждый кадр
+        // подгоняется под прямоугольник ЭТОГО div'а (см. show()/rAF-цикл в
+        // PipPlayerHost), поэтому размеры тут должны совпадать с обычным
+        // видео-контейнером, а не быть пустым блоком без размеров.
+        <div
+          ref={ownPlayerDockRef}
+          className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10"
+        />
       ) : (
       <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10">
         {player === 'vibix' && vibixEmbed ? (

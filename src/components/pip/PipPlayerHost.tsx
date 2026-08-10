@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -21,15 +22,17 @@ interface Session {
 }
 
 interface PipHostContextValue {
-  /** Регистрирует/обновляет сессию «Нашего плеера» для тайтла key —
-   *  вызывается на каждом рендере страницы просмотра, пока на ней открыт
-   *  этот источник (см. Player.tsx/WatchPlayer.tsx). */
+  /** Регистрирует/обновляет сессию «Нашего плеера» для тайтла key и её
+   *  «причал» (dock) — куда визуально ставить плеер, пока страница
+   *  просмотра смонтирована. Вызывается на каждом рендере страницы (см.
+   *  Player.tsx/WatchPlayer.tsx). */
   show: (key: string, props: OwnPlayerProps, dock: HTMLDivElement) => void;
-  /** Снять текущий dock — страница просмотра размонтировалась или ушла с
-   *  вкладки «Наш плеер». Если для key сейчас активен Picture-in-Picture —
-   *  сессия не закрывается, видео остаётся жить в скрытом контейнере
-   *  держателя. */
-  hide: (key: string) => void;
+  /** Страница просмотра размонтировалась/ушла с вкладки «Наш плеер» — dock
+   *  для key больше не действителен. Если для key сейчас активен
+   *  Picture-in-Picture, сессия не закрывается: видео остаётся жить (просто
+   *  без видимого причала), пока пользователь не вернётся на страницу с тем
+   *  же key или не откроет другой тайтл. */
+  unclaimDock: (key: string) => void;
 }
 
 const PipHostContext = createContext<PipHostContextValue | null>(null);
@@ -45,35 +48,49 @@ export function usePipPlayerHost(): PipHostContextValue {
  * layout и не размонтируется при переходах между страницами (см.
  * app/layout.tsx). Страницы просмотра (Player.tsx/WatchPlayer.tsx) НЕ
  * рендерят OwnPlayer напрямую — вместо этого рендерят пустой контейнер
- * (dock) и просят через show()/hide() ЭТОТ компонент отрисовать туда
- * реальный плеер порталом.
+ * (dock) и через show()/unclaimDock() сообщают ЭТОМУ компоненту, где сейчас
+ * находится их «причал».
  *
- * Зачем: нативный Picture-in-Picture у <video> закрывается сам, как только
- * элемент убирают из документа — а именно так Next.js App Router и убирает
- * страницу при переходе (React размонтирует поддерево целиком). Если в
- * момент ухода со страницы PiP активен, держатель не даёт <video> покинуть
- * документ — просто перепортаlivает его в свой скрытый контейнер:
- * воспроизведение и плавающее окно продолжают жить, пока пользователь не
- * откроет ДРУГОЙ тайтл (тогда сессия закрывается по-настоящему) или сам не
- * закроет PiP.
+ * Зачем вообще так: нативный Picture-in-Picture у <video> закрывается сам,
+ * как только элемент убирают из документа — а именно так Next.js App Router
+ * убирает страницу при переходе (React размонтирует поддерево целиком).
  *
- * OwnPlayer при этом остаётся тем же самым React-инстансом (тот же key) —
- * меняется только контейнер портала, а не сам компонент, поэтому hls.js/
- * позиция/буфер не сбрасываются при переезде между dock'ами.
+ * КАК устроено (важно): реальный <video>/OwnPlayer порталится ВСЕГДА в один
+ * и тот же, никогда не меняющийся DOM-узел (holderRef) — целевой контейнер
+ * портала не меняется НИКОГДА, поэтому React никогда не имеет повода
+ * пересоздать компонент. Раньше портал целился то в dock страницы, то в
+ * скрытый контейнер — смена ЦЕЛИ портала на практике оказалась не «переносом
+ * узла», а полным раскрытием/пересборкой поддерева (проверено вживую: смена
+ * target уничтожала <video> и hls.js, currentTime улетал на 0) — то есть
+ * ИМЕННО та проблема, которую вся эта архитектура должна была решить.
+ *
+ * Вместо переноса DOM-узла — постоянный контейнер держим как position:fixed
+ * и на каждый кадр (rAF, пока есть активная сессия) подгоняем его
+ * top/left/width/height под getBoundingClientRect() dock'а ТЕКУЩЕЙ
+ * смонтированной страницы (если она есть и совпадает по key). Нет
+ * подходящей страницы (ушли со страницы, PiP донашивает воспроизведение
+ * фоном) — контейнер уезжает за экран, но не размонтируется.
  */
 export function PipPlayerHost({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
-  const [dock, setDock] = useState<HTMLDivElement | null>(null);
-  const hiddenHostRef = useRef<HTMLDivElement | null>(null);
+  // Состояние (не просто ref) — портал ниже читает его при рендере, а читать
+  // ref.current прямо в рендере (не в эффекте/колбэке) при конкурентном
+  // рендеринге React не гарантированно консистентно. once не-null, этот
+  // holderEl уже не меняется до конца жизни приложения (див ниже рендерится
+  // безусловно и никогда не размонтируется), так что колбэк отработает один раз.
+  const [holderEl, setHolderEl] = useState<HTMLDivElement | null>(null);
+  const holderRef = useRef<HTMLDivElement | null>(null);
+  const dockElRef = useRef<HTMLDivElement | null>(null);
   const pipActiveRef = useRef(false);
   const ownerKeyRef = useRef<string | null>(null);
+  const rafRef = useRef<number | null>(null);
 
   const show = useCallback(
     (key: string, props: OwnPlayerProps, dockEl: HTMLDivElement) => {
       if (ownerKeyRef.current && ownerKeyRef.current !== key) {
         // Открыли ДРУГОЙ тайтл, пока предыдущий ещё жив (обычно висел в
-        // PiP, см. hide ниже) — прежняя сессия закрывается безусловно,
-        // новый плеер получает video/hls с нуля, как и раньше.
+        // PiP) — прежняя сессия закрывается безусловно, новый плеер
+        // получает video/hls с нуля, как и раньше.
         if (document.pictureInPictureElement) {
           document.exitPictureInPicture().catch(() => {});
         }
@@ -84,78 +101,108 @@ export function PipPlayerHost({ children }: { children: ReactNode }) {
         document.exitPictureInPicture().catch(() => {});
       }
       ownerKeyRef.current = key;
-      setDock(dockEl);
-      setSession({ key, props });
+      dockElRef.current = dockEl;
+      setSession((prev) => (prev && prev.key === key ? { key, props } : { key, props }));
     },
     [],
   );
 
-  const hide = useCallback((key: string) => {
+  const unclaimDock = useCallback((key: string) => {
     if (ownerKeyRef.current !== key) return; // уже перехвачено другим тайтлом
-    if (pipActiveRef.current && hiddenHostRef.current) {
-      // PiP активен — не закрываем сессию, уводим портал в скрытый
-      // контейнер держателя: <video> остаётся в документе, воспроизведение
-      // и плавающее окно не прерываются.
-      setDock(hiddenHostRef.current);
-      return;
-    }
+    dockElRef.current = null;
+    if (pipActiveRef.current) return; // PiP активен — сессия живёт дальше без видимого причала
     ownerKeyRef.current = null;
     setSession(null);
-    setDock(null);
   }, []);
 
   const onPipChange = useCallback((active: boolean) => {
     pipActiveRef.current = active;
-    // Пользователь закрыл плавающее окно вручную, пока плеер уже осиротел
-    // (страница, которая его открыла, не смонтирована) — сессии больше
-    // незачем жить дальше.
-    if (!active && dock !== null && dock === hiddenHostRef.current) {
+    // Плавающее окно закрыли вручную, а страница, которая открыла плеер,
+    // уже не смонтирована (dock пуст) — сессии больше незачем жить дальше.
+    if (!active && dockElRef.current === null) {
       ownerKeyRef.current = null;
       setSession(null);
-      setDock(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dock]);
+  }, []);
 
-  // Мемоизировано намеренно: show/hide сами стабильны (useCallback без
-  // зависимостей), но без useMemo этот объект пересоздавался бы на КАЖДЫЙ
-  // рендер PipPlayerHost — а значит менялся бы у контекста, а значит любой
-  // потребитель (Player.tsx/WatchPlayer.tsx) перерендеривался бы просто от
-  // смены ссылки на объект. Раньше это давало настоящий бесконечный цикл:
-  // Player.tsx рендерится → эффект без deps зовёт show() → setSession здесь
-  // → PipPlayerHost рендерится → НОВЫЙ объект контекста → Player.tsx снова
-  // рендерится (просто потому что подписан на контекст) → снова show() →
-  // ... без остановки, десятки раз в секунду, пока пользователь ничего не
-  // делал — воспроизведено вживую (видео зависало на readyState=1, а после
-  // включения PiP страница переставала реагировать на клики вообще: главный
-  // поток был занят этим циклом).
-  const contextValue = useMemo(() => ({ show, hide }), [show, hide]);
+  // Каждый кадр, пока есть активная сессия, подгоняем позицию/размер
+  // постоянного контейнера под текущий dock (если он есть и подключён к
+  // документу) — либо уводим контейнер за экран, если dock'а сейчас нет.
+  useEffect(() => {
+    if (!session) return;
+    const holder = holderRef.current;
+    if (!holder) return;
+
+    const tick = () => {
+      const dock = dockElRef.current;
+      if (dock && dock.isConnected) {
+        const r = dock.getBoundingClientRect();
+        holder.style.position = 'fixed';
+        holder.style.top = `${r.top}px`;
+        holder.style.left = `${r.left}px`;
+        holder.style.width = `${r.width}px`;
+        holder.style.height = `${r.height}px`;
+        holder.style.opacity = '1';
+        holder.style.pointerEvents = 'auto';
+      } else {
+        holder.style.position = 'fixed';
+        holder.style.top = '0';
+        holder.style.left = '0';
+        holder.style.width = '1px';
+        holder.style.height = '1px';
+        holder.style.opacity = '0';
+        holder.style.pointerEvents = 'none';
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    };
+  }, [session]);
+
+  // Мемоизировано намеренно: show/unclaimDock сами стабильны (useCallback
+  // без зависимостей), но без useMemo этот объект пересоздавался бы на
+  // каждый рендер PipPlayerHost — а значит менялся бы у контекста, а значит
+  // любой потребитель (Player.tsx/WatchPlayer.tsx) перерендеривался бы
+  // просто от смены ссылки на объект. Раньше это давало настоящий
+  // бесконечный цикл: Player.tsx рендерится → эффект без deps зовёт show() →
+  // setSession здесь → PipPlayerHost рендерится → НОВЫЙ объект контекста →
+  // Player.tsx снова рендерится (просто потому что подписан на контекст) →
+  // снова show() → ... без остановки, десятки раз в секунду сам по себе.
+  const contextValue = useMemo(() => ({ show, unclaimDock }), [show, unclaimDock]);
 
   return (
     <PipHostContext.Provider value={contextValue}>
       {children}
-      {/* Всегда смонтированный скрытый контейнер — сюда уезжает портал,
-          когда ни одна страница плеер не «докует», но PiP ещё активен. */}
+      {/* Единственный, НИКОГДА не меняющийся контейнер портала — см. большой
+          комментарий выше про то, почему нельзя было переключать target. */}
       <div
-        ref={hiddenHostRef}
-        aria-hidden="true"
+        ref={(el) => {
+          holderRef.current = el;
+          setHolderEl(el);
+        }}
+        aria-hidden={!session}
         style={{
           position: 'fixed',
-          bottom: 0,
-          right: 0,
+          top: 0,
+          left: 0,
           width: 1,
           height: 1,
           overflow: 'hidden',
           opacity: 0,
           pointerEvents: 'none',
+          zIndex: 30,
         }}
-      />
-      {session &&
-        dock &&
-        createPortal(
-          <OwnPlayer key={session.key} {...session.props} onPipChange={onPipChange} />,
-          dock,
-        )}
+      >
+        {session &&
+          holderEl &&
+          createPortal(
+            <OwnPlayer key={session.key} {...session.props} onPipChange={onPipChange} />,
+            holderEl,
+          )}
+      </div>
     </PipHostContext.Provider>
   );
 }

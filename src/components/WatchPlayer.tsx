@@ -534,7 +534,7 @@ export default function WatchPlayer({
   const ownPlayerTitleKey = `${contentType}:${shikimoriId}`;
   useEffect(() => {
     if (source !== 'own' || !hasOwnPlayer || !ownPlayerDockRef.current) {
-      pipHost.hide(ownPlayerTitleKey);
+      pipHost.unclaimDock(ownPlayerTitleKey);
       return;
     }
     pipHost.show(
@@ -572,7 +572,7 @@ export default function WatchPlayer({
   // выше) — если PiP не активен, PipPlayerHost закроет сессию; если активен,
   // оставит <video> жить в своём скрытом контейнере (см. PipPlayerHost.hide).
   useEffect(() => {
-    return () => pipHost.hide(ownPlayerTitleKey);
+    return () => pipHost.unclaimDock(ownPlayerTitleKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -711,10 +711,15 @@ export default function WatchPlayer({
           onTimeUpdate={bumpPosition}
         />
       ) : source === 'own' && hasOwnPlayer ? (
-        // Реальный OwnPlayer живёт в PipPlayerHost (см. app/layout.tsx), сюда
-        // он приезжает порталом — см. эффект show/hide ниже. Так Picture-in-
-        // Picture переживает уход с этой страницы.
-        <div ref={ownPlayerDockRef} />
+        // Реальный OwnPlayer живёт в PipPlayerHost (см. app/layout.tsx) в
+        // постоянном контейнере с position:fixed — он на каждый кадр
+        // подгоняется под прямоугольник ЭТОГО div'а (см. show()/rAF-цикл в
+        // PipPlayerHost), поэтому размеры тут должны совпадать с обычным
+        // видео-контейнером.
+        <div
+          ref={ownPlayerDockRef}
+          className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10"
+        />
       ) : source === 'yummy' && hasYummy ? (
         <YummyPlayer
           shikimoriId={shikimoriId}
