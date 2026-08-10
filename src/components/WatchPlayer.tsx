@@ -21,7 +21,7 @@ import type { YummyTranslation } from '@/lib/video/yummy';
 import type { ShikimoriAnimeShort } from '@/lib/shikimori';
 import type { ContentType, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
-import OwnPlayer from '@/components/OwnPlayer';
+import { usePipPlayerHost } from '@/components/pip/PipPlayerHost';
 
 interface SkipSegment {
   time: number;
@@ -116,6 +116,7 @@ export default function WatchPlayer({
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
+  const pipHost = usePipPlayerHost();
 
   const [resolving, setResolving] = useState(true);
   // null = AniLibria недоступна для этого тайтла/серии.
@@ -150,6 +151,9 @@ export default function WatchPlayer({
   // Прогрели ли уже следующую серию «Наш плеер» — сброс на каждую новую
   // активную серию (см. эффект прогрева ниже).
   const prewarmedRef = useRef(false);
+  // Контейнер, в который PipPlayerHost порталит реальный OwnPlayer (см.
+  // эффект show/hide ниже и components/pip/PipPlayerHost.tsx).
+  const ownPlayerDockRef = useRef<HTMLDivElement | null>(null);
 
   // Синхронизируем активную серию, когда сменился маршрут (прямые ссылки,
   // обновление страницы — не бесшовное переключение, см. switchEpisode).
@@ -521,6 +525,57 @@ export default function WatchPlayer({
     return () => clearInterval(id);
   }, [source, hasOwnPlayer, shikimoriId, total, kodikInitialTranslationId]);
 
+  // --- Держим OwnPlayer в PipPlayerHost в курсе актуальных пропсов -------
+  // Реальный <video>/hls.js живёт не здесь (см. PipPlayerHost) — чтобы
+  // пережить уход со страницы при активном Picture-in-Picture. Пока вкладка
+  // «Наш плеер» открыта на этой странице — просим держатель рисовать его в
+  // наш dock со свежими пропсами на каждом рендере (без списка зависимостей:
+  // как обычный проброс пропсов, только через один хоп).
+  const ownPlayerTitleKey = `${contentType}:${shikimoriId}`;
+  useEffect(() => {
+    if (source !== 'own' || !hasOwnPlayer || !ownPlayerDockRef.current) {
+      pipHost.hide(ownPlayerTitleKey);
+      return;
+    }
+    pipHost.show(
+      ownPlayerTitleKey,
+      {
+        contentType,
+        shikimoriId,
+        season: 1,
+        episode: activeEpisode,
+        extractSource: 'alloha',
+        animeTitle,
+        posterUrl,
+        isAuthed,
+        resumeFrom:
+          livePositionRef.current > 1
+            ? Math.floor(livePositionRef.current)
+            : resumeFrom,
+        translations: ownPlayerTranslations,
+        initialTranslationTitle: savedTranslationTitle,
+        skipOpening,
+        skipEnding,
+        nextHref: hasNext ? `${watchBase}/${shikimoriId}/${activeEpisode + 1}` : null,
+        onNext: hasNext ? () => switchEpisode(activeEpisode + 1) : undefined,
+        onEnded,
+        onTimeUpdate: (t, d) => {
+          bumpPosition(t);
+          if (d) durationRef.current = d;
+        },
+      },
+      ownPlayerDockRef.current,
+    );
+  });
+
+  // Настоящее размонтирование страницы (не путать с обычным ре-рендером
+  // выше) — если PiP не активен, PipPlayerHost закроет сессию; если активен,
+  // оставит <video> жить в своём скрытом контейнере (см. PipPlayerHost.hide).
+  useEffect(() => {
+    return () => pipHost.hide(ownPlayerTitleKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="flex flex-col gap-4">
       {/* Заголовок */}
@@ -656,32 +711,10 @@ export default function WatchPlayer({
           onTimeUpdate={bumpPosition}
         />
       ) : source === 'own' && hasOwnPlayer ? (
-        <OwnPlayer
-          contentType={contentType}
-          shikimoriId={shikimoriId}
-          season={1}
-          episode={activeEpisode}
-          extractSource="alloha"
-          animeTitle={animeTitle}
-          posterUrl={posterUrl}
-          isAuthed={isAuthed}
-          resumeFrom={
-            livePositionRef.current > 1
-              ? Math.floor(livePositionRef.current)
-              : resumeFrom
-          }
-          translations={ownPlayerTranslations}
-          initialTranslationTitle={savedTranslationTitle}
-          skipOpening={skipOpening}
-          skipEnding={skipEnding}
-          nextHref={hasNext ? `${watchBase}/${shikimoriId}/${activeEpisode + 1}` : null}
-          onNext={hasNext ? () => switchEpisode(activeEpisode + 1) : undefined}
-          onEnded={onEnded}
-          onTimeUpdate={(t, d) => {
-            bumpPosition(t);
-            if (d) durationRef.current = d;
-          }}
-        />
+        // Реальный OwnPlayer живёт в PipPlayerHost (см. app/layout.tsx), сюда
+        // он приезжает порталом — см. эффект show/hide ниже. Так Picture-in-
+        // Picture переживает уход с этой страницы.
+        <div ref={ownPlayerDockRef} />
       ) : source === 'yummy' && hasYummy ? (
         <YummyPlayer
           shikimoriId={shikimoriId}

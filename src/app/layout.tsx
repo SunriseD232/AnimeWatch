@@ -5,6 +5,7 @@ import './globals.css';
 import Navbar from '@/components/Navbar';
 import { ToastProvider } from '@/components/ToastProvider';
 import PwaRegister from '@/components/PwaRegister';
+import { PipPlayerHost } from '@/components/pip/PipPlayerHost';
 
 // Inter — ближайшее веб-приближение SF Pro (см. tailwind.config.ts).
 // next/font сам самохостит файлы шрифта — никаких внешних запросов в рантайме.
@@ -36,10 +37,12 @@ export default function RootLayout({
       <body className="min-h-screen font-sans">
         <PwaRegister />
         <ToastProvider>
-          <Suspense fallback={<div className="h-[57px] border-b border-white/5" />}>
-            <Navbar />
-          </Suspense>
-          <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
+          <PipPlayerHost>
+            <Suspense fallback={<div className="h-[57px] border-b border-white/5" />}>
+              <Navbar />
+            </Suspense>
+            <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
+          </PipPlayerHost>
         </ToastProvider>
       </body>
     </html>

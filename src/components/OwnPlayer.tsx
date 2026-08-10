@@ -61,6 +61,11 @@ interface Props {
    *  наверх — для переноса при смене источника и для прогрева следующей
    *  серии ближе к концу текущей. */
   onTimeUpdate?: (seconds: number, duration: number | null) => void;
+  /** Сообщает о входе/выходе из Picture-in-Picture — используется PipPlayerHost
+   *  (см. components/pip/PipPlayerHost.tsx), чтобы решить, можно ли безопасно
+   *  убрать этот плеер из документа при уходе со страницы (нельзя, пока PiP
+   *  активен — иначе браузер сам закроет плавающее окно). */
+  onPipChange?: (active: boolean) => void;
 }
 
 const VOLUME_KEY = 'aw:ownPlayerVolume';
@@ -178,7 +183,10 @@ export default function OwnPlayer({
   onNext,
   onEnded,
   onTimeUpdate,
+  onPipChange,
 }: Props) {
+  const onPipChangeRef = useRef(onPipChange);
+  onPipChangeRef.current = onPipChange;
   // Выбор озвучки: сперва пробуем сохранённую по id (только кино — там он
   // стабилен, см. Props.savedTranslationId), затем по названию (аниме —
   // video_id Yummy меняется от серии к серии, см. миграцию 0008), иначе
@@ -911,8 +919,14 @@ export default function OwnPlayer({
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    const onEnter = () => setPip(true);
-    const onLeave = () => setPip(false);
+    const onEnter = () => {
+      setPip(true);
+      onPipChangeRef.current?.(true);
+    };
+    const onLeave = () => {
+      setPip(false);
+      onPipChangeRef.current?.(false);
+    };
     video.addEventListener('enterpictureinpicture', onEnter);
     video.addEventListener('leavepictureinpicture', onLeave);
     return () => {

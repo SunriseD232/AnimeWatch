@@ -18,7 +18,7 @@ import type { ContentType, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
 import { useVideoseedEstimator } from '@/hooks/useVideoseedEstimator';
 import VibixPlayer from '@/components/VibixPlayer';
-import OwnPlayer from '@/components/OwnPlayer';
+import { usePipPlayerHost } from '@/components/pip/PipPlayerHost';
 
 interface Props {
   shikimoriId: number;
@@ -163,6 +163,7 @@ export default function Player({
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
+  const pipHost = usePipPlayerHost();
 
   // Раздел кино живёт под /cinema, аниме — под /anime и /watch.
   const isCinema = contentType === 'cinema';
@@ -227,6 +228,9 @@ export default function Player({
   const durationRef = useRef<number | null>(null);
   // iframe Videoseed — нужен оценщику позиции (клики, fullscreen).
   const vsIframeRef = useRef<HTMLIFrameElement>(null);
+  // Контейнер, в который PipPlayerHost порталит реальный OwnPlayer (см.
+  // эффект show/hide ниже и components/pip/PipPlayerHost.tsx).
+  const ownPlayerDockRef = useRef<HTMLDivElement | null>(null);
   // Ожидающее восстановление позиции в Vibix (команда seek после готовности).
   const vibixSeekRef = useRef<number | null>(resumeFrom);
   const translationRef = useRef<number | null>(initialTranslationId);
@@ -807,6 +811,57 @@ export default function Player({
     return () => clearInterval(id);
   }, [player, hasOwnPlayer, seasonsList, shikimoriId, isSerial]);
 
+  // --- Держим OwnPlayer в PipPlayerHost в курсе актуальных пропсов -------
+  // Реальный <video>/hls.js живёт не здесь (см. PipPlayerHost) — чтобы
+  // пережить уход со страницы при активном Picture-in-Picture. Пока вкладка
+  // «Наш плеер» открыта на этой странице — просим держатель рисовать его в
+  // наш dock со свежими пропсами на каждом рендере (без списка зависимостей:
+  // как обычный проброс пропсов, только через один хоп).
+  const ownPlayerTitleKey = `${contentType}:${shikimoriId}`;
+  useEffect(() => {
+    if (player !== 'own' || !hasOwnPlayer || !ownPlayerDockRef.current) {
+      pipHost.hide(ownPlayerTitleKey);
+      return;
+    }
+    pipHost.show(
+      ownPlayerTitleKey,
+      {
+        contentType,
+        shikimoriId,
+        season: activeSeason,
+        episode: activeEpisode,
+        extractSource: 'videoseed',
+        animeTitle,
+        posterUrl,
+        isAuthed,
+        resumeFrom,
+        translations: ownPlayerTranslations,
+        initialTranslationTitle: savedTranslationTitle,
+        savedTranslationId,
+        nextHref: next ? linkFor(next) : null,
+        nextLabel: next && next.season !== activeSeason ? `Сезон ${next.season}` : undefined,
+        onNext: next ? () => switchEpisode(next) : undefined,
+        onEnded: onEpisodeEnded,
+        onTimeUpdate: (t, d) => {
+          // Держим общий конвейер прогресса в курсе (перенос позиции при
+          // смене плеера, флаши при уходе со страницы, прогрев следующей
+          // серии — см. эффект прогрева выше).
+          currentTimeRef.current = t;
+          if (d) durationRef.current = d;
+        },
+      },
+      ownPlayerDockRef.current,
+    );
+  });
+
+  // Настоящее размонтирование страницы (не путать с обычным ре-рендером
+  // выше) — если PiP не активен, PipPlayerHost закроет сессию; если активен,
+  // оставит <video> жить в своём скрытом контейнере (см. PipPlayerHost.hide).
+  useEffect(() => {
+    return () => pipHost.hide(ownPlayerTitleKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // --- Смена озвучки -----------------------------------------------------
   async function changeTranslation(nextId: number) {
     if (nextId === translationId) return;
@@ -921,36 +976,12 @@ export default function Player({
 
       {/* Плеер 16:9 */}
       {player === 'own' && hasOwnPlayer ? (
-        // Свой плеер рисует контейнер сам.
-        <OwnPlayer
-          contentType={contentType}
-          shikimoriId={shikimoriId}
-          season={activeSeason}
-          episode={activeEpisode}
-          extractSource="videoseed"
-          animeTitle={animeTitle}
-          posterUrl={posterUrl}
-          isAuthed={isAuthed}
-          resumeFrom={resumeFrom}
-          translations={ownPlayerTranslations}
-          initialTranslationTitle={savedTranslationTitle}
-          savedTranslationId={savedTranslationId}
-          nextHref={next ? linkFor(next) : null}
-          nextLabel={
-            next && next.season !== activeSeason
-              ? `Сезон ${next.season}`
-              : undefined
-          }
-          onNext={next ? () => switchEpisode(next) : undefined}
-          onEnded={onEpisodeEnded}
-          onTimeUpdate={(t, d) => {
-            // Держим общий конвейер прогресса в курсе (перенос позиции при
-            // смене плеера, флаши при уходе со страницы, прогрев следующей
-            // серии — см. эффект прогрева выше).
-            currentTimeRef.current = t;
-            if (d) durationRef.current = d;
-          }}
-        />
+        // Свой плеер рисует контейнер сам, но не здесь напрямую — реальный
+        // OwnPlayer живёт в PipPlayerHost (см. app/layout.tsx), сюда он
+        // приезжает порталом (см. эффект show/hide ниже). Так Picture-in-
+        // Picture переживает уход с этой страницы: PipPlayerHost не даёт
+        // <video> покинуть документ, пока плавающее окно открыто.
+        <div ref={ownPlayerDockRef} />
       ) : (
       <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10">
         {player === 'vibix' && vibixEmbed ? (
