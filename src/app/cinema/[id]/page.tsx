@@ -20,83 +20,94 @@ export default async function CinemaPage({
   const id = Number(params.id);
   if (!Number.isFinite(id)) notFound();
 
-  const item = await getCinemaById(id);
+  const supabase = createClient();
+
+  // Проверка доступности плеера (Vibix/Kodik) не зависит ни от item, ни от
+  // user — запускаем сразу, параллельно со всем остальным резолвом
+  // страницы (раньше шла ПОСЛЕДНЕЙ, строго после всего прочего). Страница
+  // и так тяжелее анимешной (несколько внешних API), а чем дольше она
+  // резолвится, тем выше шанс поймать клиентский роутер Next.js в гонке
+  // между автопрефетчем карточки и реальным переходом по клику — см.
+  // CinemaCard.tsx. Само по себе быстрее для всех, независимо от этого.
+  const hasAnyPlayerPromise = (async () => {
+    let hasAnyPlayer = buildVideoseedEmbedUrl({ kinopoiskId: id }) !== null;
+    if (!hasAnyPlayer) {
+      const [vibixCheck, kodikCheck] = await Promise.all([
+        getVibixEmbed(id),
+        createVideoSource().getEmbedUrl({ kinopoiskId: id, episode: 1 }),
+      ]);
+      hasAnyPlayer = vibixCheck !== null || !kodikCheck.fallback;
+    }
+    return hasAnyPlayer;
+  })();
+
+  const [item, {
+    data: { user },
+  }] = await Promise.all([getCinemaById(id), supabase.auth.getUser()]);
   if (!item) notFound();
 
   const title = item.title;
   const total = item.episodesTotal;
 
+  // Похожее — по первому жанру тайтла (у Videoseed нет отдельного API
+  // "похожих", в отличие от Shikimori для аниме, см. lib/shikimori.ts).
+  const similarPromise: Promise<CinemaShort[]> =
+    item.genres.length > 0
+      ? getCinemaCatalog({
+          type: 'both',
+          genresInclude: [item.genres[0]],
+          genresExclude: [],
+          sort: 'rating',
+          page: 1,
+          pageSize: 13,
+        })
+          .then((catalogPage) => catalogPage.items.filter((s) => s.id !== id).slice(0, 12))
+          .catch(() => [])
+      : Promise.resolve([]);
+
   // Прогресс и статус списка для этого тайтла (если пользователь вошёл).
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const progressPromise = user
+    ? Promise.all([
+        supabase
+          .from('watch_progress')
+          .select('*')
+          .eq('content_type', 'cinema')
+          .eq('shikimori_id', id)
+          .maybeSingle(),
+        supabase
+          .from('user_list')
+          .select('*')
+          .eq('content_type', 'cinema')
+          .eq('shikimori_id', id)
+          .maybeSingle(),
+        supabase
+          .from('watched_episodes')
+          .select('season, episode')
+          .eq('content_type', 'cinema')
+          .eq('shikimori_id', id),
+      ])
+    : null;
+
+  const [similar, hasAnyPlayer, progressResult] = await Promise.all([
+    similarPromise,
+    hasAnyPlayerPromise,
+    progressPromise,
+  ]);
 
   let progress: WatchProgress | null = null;
   let listItem: UserListItem | null = null;
   let watched: { season: number; episode: number }[] = [];
 
-  if (user) {
-    const [{ data: p }, { data: l }, { data: w }] = await Promise.all([
-      supabase
-        .from('watch_progress')
-        .select('*')
-        .eq('content_type', 'cinema')
-        .eq('shikimori_id', id)
-        .maybeSingle(),
-      supabase
-        .from('user_list')
-        .select('*')
-        .eq('content_type', 'cinema')
-        .eq('shikimori_id', id)
-        .maybeSingle(),
-      supabase
-        .from('watched_episodes')
-        .select('season, episode')
-        .eq('content_type', 'cinema')
-        .eq('shikimori_id', id),
-    ]);
+  if (progressResult) {
+    const [{ data: p }, { data: l }, { data: w }] = progressResult;
     progress = (p as WatchProgress | null) ?? null;
     listItem = (l as UserListItem | null) ?? null;
     watched = (w ?? []) as { season: number; episode: number }[];
   }
 
-  // Похожее — по первому жанру тайтла (у Videoseed нет отдельного API
-  // "похожих", в отличие от Shikimori для аниме, см. lib/shikimori.ts).
-  let similar: CinemaShort[] = [];
-  if (item.genres.length > 0) {
-    try {
-      const catalogPage = await getCinemaCatalog({
-        type: 'both',
-        genresInclude: [item.genres[0]],
-        genresExclude: [],
-        sort: 'rating',
-        page: 1,
-        pageSize: 13,
-      });
-      similar = catalogPage.items.filter((s) => s.id !== id).slice(0, 12);
-    } catch {
-      similar = [];
-    }
-  }
-
   const resumeSeason = progress?.season ?? 1;
   const resumeEpisode = progress?.episode ?? 1;
   const resumePos = progress?.position_seconds ?? 0;
-
-  // Videoseed — основной источник и почти всегда настроен (это же каталог,
-  // из которого пришёл сам тайтл), поэтому проверяем Vibix/Kodik только если
-  // его нет — незачем платить лишними запросами в общем случае. Без
-  // ownPlayerTranslations (тяжёлое Puppeteer-извлечение) — та же логика, что
-  // и в Player.tsx, где «Наш плеер» лишь производная от Kodik/Videoseed.
-  let hasAnyPlayer = buildVideoseedEmbedUrl({ kinopoiskId: id }) !== null;
-  if (!hasAnyPlayer) {
-    const [vibixCheck, kodikCheck] = await Promise.all([
-      getVibixEmbed(id),
-      createVideoSource().getEmbedUrl({ kinopoiskId: id, episode: 1 }),
-    ]);
-    hasAnyPlayer = vibixCheck !== null || !kodikCheck.fallback;
-  }
 
   return (
     <div className="flex flex-col gap-8">

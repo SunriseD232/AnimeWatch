@@ -16,7 +16,17 @@ export default function CinemaCard({ item }: { item: CinemaShort }) {
 
   return (
     <div className="card-lift group relative flex flex-col overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60">
-      <Link href={`/cinema/${item.id}`} className="flex flex-1 flex-col">
+      {/* prefetch={false}: /cinema/[id] — тяжёлая серверная страница (Videoseed +
+          Supabase + похожее + проверка Vibix/Kodik), и при её медленном резолве
+          автопрефетч Next.js иногда успевает выстрелить ВТОРЫМ, отдельным RSC-
+          запросом почти одновременно с реальным переходом по клику — два
+          параллельных потока на один и тот же маршрут ловят клиентский роутер
+          в состояние гонки, и итоговое дерево коммитится ПУСТЫМ (без ошибки в
+          консоли, без notFound/error.tsx — просто пустой <main>, лечится
+          только полной перезагрузкой). Разница по времени видна ТОЛЬКО у
+          /cinema/[id] (у /anime/[id] — быстрее, без Vibix/Kodik — не
+          воспроизводится), так что отключаем префетч точечно тут. */}
+      <Link href={`/cinema/${item.id}`} prefetch={false} className="flex flex-1 flex-col">
         <div className="relative aspect-[2/3] w-full overflow-hidden bg-bg-soft">
           {item.poster ? (
             // eslint-disable-next-line @next/next/no-img-element
