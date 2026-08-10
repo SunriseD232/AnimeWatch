@@ -15,6 +15,14 @@ interface SkipSegment {
   length: number;
 }
 
+/** WebKit-only Picture-in-Picture API (Safari — нет стандартного
+ *  document.pictureInPictureEnabled/requestPictureInPicture у iOS). */
+interface WebkitPipVideoElement extends HTMLVideoElement {
+  webkitSupportsPresentationMode?: (mode: 'picture-in-picture') => boolean;
+  webkitSetPresentationMode?: (mode: 'picture-in-picture' | 'inline') => void;
+  webkitPresentationMode?: 'picture-in-picture' | 'inline' | 'fullscreen';
+}
+
 interface QualityLevel {
   /** Индекс уровня в hls.levels — то, что подставляется в hls.currentLevel. */
   index: number;
@@ -907,11 +915,20 @@ export default function OwnPlayer({
   }, []);
 
   // --- Picture-in-Picture ------------------------------------------------------
+  // iOS Safari не поддерживает стандартный document.pictureInPictureEnabled/
+  // video.requestPictureInPicture() вовсе — у него свой, WebKit-only API
+  // (webkitSupportsPresentationMode/webkitSetPresentationMode). Без этой
+  // ветки кнопка PiP на iPhone/iPad просто не показывалась (pipSupported
+  // всегда false), хотя сам PiP там технически есть.
   useEffect(() => {
+    const video = videoRef.current;
+    const webkitVideo = video as WebkitPipVideoElement | null;
     setPipSupported(
-      typeof document !== 'undefined' && !!document.pictureInPictureEnabled,
+      (typeof document !== 'undefined' && !!document.pictureInPictureEnabled) ||
+        !!webkitVideo?.webkitSupportsPresentationMode?.('picture-in-picture'),
     );
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadState]);
 
   // video — новый DOM-узел на каждую серию (см. loadState probing→ready
   // выше, <video> размонтируется в промежуточных ветках) — переподвешиваем
@@ -927,17 +944,35 @@ export default function OwnPlayer({
       setPip(false);
       onPipChangeRef.current?.(false);
     };
+    // Safari: нет enterpictureinpicture/leavepictureinpicture — вместо них
+    // webkitpresentationmodechanged на самом видео, с состоянием в свойстве
+    // webkitPresentationMode ('picture-in-picture' | 'inline' | 'fullscreen').
+    const onPresentationModeChange = () => {
+      const mode = (video as WebkitPipVideoElement).webkitPresentationMode;
+      if (mode === 'picture-in-picture') onEnter();
+      else onLeave();
+    };
     video.addEventListener('enterpictureinpicture', onEnter);
     video.addEventListener('leavepictureinpicture', onLeave);
+    video.addEventListener('webkitpresentationmodechanged', onPresentationModeChange);
     return () => {
       video.removeEventListener('enterpictureinpicture', onEnter);
       video.removeEventListener('leavepictureinpicture', onLeave);
+      video.removeEventListener('webkitpresentationmodechanged', onPresentationModeChange);
     };
   }, [loadState]);
 
   const togglePip = useCallback(() => {
-    const video = videoRef.current;
+    const video = videoRef.current as WebkitPipVideoElement | null;
     if (!video) return;
+    if (typeof video.webkitSetPresentationMode === 'function') {
+      // Safari — без document.pictureInPictureElement, состояние читаем с
+      // самого видео.
+      video.webkitSetPresentationMode(
+        video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture',
+      );
+      return;
+    }
     if (document.pictureInPictureElement) {
       document.exitPictureInPicture().catch(() => {});
     } else {

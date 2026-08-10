@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import CalendarLink from './CalendarLink';
 import NotificationBell from './NotificationBell';
 import SearchBox from './SearchBox';
+import TipsLink from './TipsLink';
 import type { AppNotification } from '@/lib/types';
 
 export default async function Navbar() {
@@ -61,6 +62,7 @@ export default async function Navbar() {
         {user ? (
           <div className="flex shrink-0 items-center gap-1">
             <CalendarLink />
+            <TipsLink />
             <NotificationBell initial={notifications} />
             <Link
               href="/profile"
@@ -71,6 +73,7 @@ export default async function Navbar() {
           </div>
         ) : (
           <div className="flex shrink-0 items-center gap-1">
+            <TipsLink />
             <Link
               href="/login"
               className="press rounded-full px-3 py-2 text-sm text-gray-300 transition hover:bg-white/5 hover:text-white"
