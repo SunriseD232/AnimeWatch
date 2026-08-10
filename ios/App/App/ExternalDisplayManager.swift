@@ -12,12 +12,14 @@ import UIKit
 /// останавливает рендеринг, когда приложение уходит в фон/экран
 /// блокируется — это ограничение самого WebKit, не обходится настройками.
 /// Нативный AVPlayer с фоновым аудио-режимом (UIBackgroundModes=audio в
-/// Info.plist) продолжает декодировать звук и при блокировке — но само
-/// изображение на очках переживает блокировку не через это, а через
-/// AVPlayer.usesExternalPlaybackWhileExternalScreenIsActive (см. play()
-/// ниже) — оно передаёт рендер внешнему, системному конвейеру (тому же,
-/// что у AirPlay) вместо отрисовки силами самого приложения, которую ОС
-/// приостанавливает при реальной блокировке телефона.
+/// Info.plist) должен продолжать декодировать и при блокировке — тот же
+/// приём, на котором построены Кинопоиск и подобные видео-приложения.
+///
+/// Пробовали usesExternalPlaybackWhileExternalScreenIsActive (переключение
+/// рендера на системный AirPlay-конвейер) — стало ХУЖЕ: позиция вообще
+/// замирала на блокировке (не только пропадала картинка) — то есть сам
+/// AVPlayer, похоже, вставал на паузу в ожидании внешнего route, которого
+/// в нашей ручной UIWindow-конфигурации фактически нет. Откатили.
 ///
 /// Почему UIScreen.didConnectNotification + ручной UIWindow, а не UIScene с
 /// ролью "external display": первая версия пробовала подключать внешний
@@ -114,17 +116,6 @@ final class ExternalDisplayManager: NSObject {
 
         let item = AVPlayerItem(url: url)
         let newPlayer = AVPlayer(playerItem: item)
-        // Наша ручная AVPlayerLayer-отрисовка в UIWindow на внешнем экране
-        // (см. attachWindow выше) работает, только пока приложение реально
-        // на переднем плане — при блокировке телефона такая отрисовка
-        // приложением приостанавливается системой, даже если фоновое аудио
-        // продолжает идти. usesExternalPlaybackWhileExternalScreenIsActive
-        // переключает вывод на системный конвейер "внешнего воспроизведения"
-        // (тот же, что использует AirPlay) — им управляет не наш код, а сама
-        // ОС, и именно поэтому у него больше шансов пережить блокировку.
-        // allowsExternalPlayback включён по умолчанию, но выставляем явно.
-        newPlayer.allowsExternalPlayback = true
-        newPlayer.usesExternalPlaybackWhileExternalScreenIsActive = true
         player = newPlayer
         playerViewController?.playerContainerView.playerLayer.player = newPlayer
 
