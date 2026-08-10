@@ -12,43 +12,59 @@ export function isAdminEmail(email: string | null | undefined): boolean {
   return !!email && ADMIN_EMAILS.includes(email);
 }
 
-/**
- * Число зарегистрированных пользователей (auth.users) — для бейджа в шапке
- * у админов, см. Navbar.tsx. Список пользователей доступен только через
- * admin API (service_role, обходит RLS) — обычным клиентом не достать.
- * Кэшируем на 5 минут через общий межпроцессный кэш (api_response_cache) —
- * иначе это отдельный запрос к Supabase Auth на КАЖДЫЙ рендер шапки.
- */
-export async function getUserCount(): Promise<number> {
-  return getCachedJson('admin:user_count', 300, async () => {
-    const service = createServiceClient();
-    // perPage=1000 — с большим запасом относительно реальной аудитории
-    // этого закрытого self-hosted сайта (доступ только по коду
-    // регистрации); при таком масштабе пагинация не нужна.
-    const { data, error } = await service.auth.admin.listUsers({
-      page: 1,
-      perPage: 1000,
-    });
-    if (error || !data) return 0;
-    return data.users.length;
-  });
+export interface PresenceSummary {
+  totalCount: number;
+  totalEmails: string[];
+  onlineCount: number;
+  onlineEmails: string[];
 }
 
 /**
- * Сколько пользователей «сейчас онлайн» — по heartbeat (см. миграцию
- * 0021_user_presence.sql, PresenceHeartbeat.tsx шлёт отметку раз в ~45с,
- * пока вкладка видима). «Онлайн» — last_seen_at не старше 2 минут (heartbeat
- * раз в 45с даёт 2 пропуска на сетевые заминки, не показывает уже ушедших
- * подолгу). Без кэша — это дешёвый индексированный count по своей таблице,
- * не внешний API, и бейдж должен быть живым, а не отставать на 5 минут, как
- * getUserCount() выше.
+ * Число зарегистрированных + «сейчас онлайн» пользователей (auth.users), с
+ * почтами — для бейджа в шапке у админов (клик раскрывает список, см.
+ * Navbar.tsx/UserPresenceBadge.tsx). Список пользователей и почты доступны
+ * только через admin API (service_role, обходит RLS) — обычным клиентом не
+ * достать. «Онлайн» — по heartbeat (см. миграцию 0021_user_presence.sql,
+ * PresenceHeartbeat.tsx шлёт отметку раз в ~45с, пока вкладка видима);
+ * last_seen_at не старше 2 минут — 2 пропуска heartbeat на сетевые заминки,
+ * не показывает давно ушедших.
+ *
+ * Кэшируем на 30 секунд общим межпроцессным кэшем (api_response_cache) —
+ * без этого каждый рендер шапки у админа бил бы по Auth admin API. 30с — TTL
+ * пониже, чем было у отдельного getUserCount() (5 мин): "онлайн" должен
+ * оставаться довольно свежим, а список пользователей всё равно приходится
+ * тянуть заново вместе с online-частью в одном запросе.
  */
-export async function getOnlineUserCount(): Promise<number> {
-  const service = createServiceClient();
-  const threshold = new Date(Date.now() - 2 * 60 * 1000).toISOString();
-  const { count } = await service
-    .from('user_presence')
-    .select('user_id', { count: 'exact', head: true })
-    .gte('last_seen_at', threshold);
-  return count ?? 0;
+export async function getPresenceSummary(): Promise<PresenceSummary> {
+  return getCachedJson('admin:presence_summary', 30, async () => {
+    const service = createServiceClient();
+    const threshold = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+
+    // perPage=1000 — с большим запасом относительно реальной аудитории
+    // этого закрытого self-hosted сайта (доступ только по коду
+    // регистрации); при таком масштабе пагинация не нужна.
+    const [{ data: usersData, error: usersError }, { data: presenceRows }] =
+      await Promise.all([
+        service.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+        service.from('user_presence').select('user_id').gte('last_seen_at', threshold),
+      ]);
+
+    const users = !usersError && usersData ? usersData.users : [];
+    const totalEmails = users
+      .map((u) => u.email ?? u.id)
+      .sort((a, b) => a.localeCompare(b));
+
+    const onlineIds = new Set((presenceRows ?? []).map((r) => r.user_id as string));
+    const onlineEmails = users
+      .filter((u) => onlineIds.has(u.id))
+      .map((u) => u.email ?? u.id)
+      .sort((a, b) => a.localeCompare(b));
+
+    return {
+      totalCount: totalEmails.length,
+      totalEmails,
+      onlineCount: onlineEmails.length,
+      onlineEmails,
+    };
+  });
 }

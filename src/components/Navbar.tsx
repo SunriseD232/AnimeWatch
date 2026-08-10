@@ -1,10 +1,11 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { getOnlineUserCount, getUserCount, isAdminEmail } from '@/lib/admin';
+import { getPresenceSummary, isAdminEmail, type PresenceSummary } from '@/lib/admin';
 import CalendarLink from './CalendarLink';
 import NotificationBell from './NotificationBell';
 import SearchBox from './SearchBox';
 import TipsLink from './TipsLink';
+import UserPresenceBadge from './UserPresenceBadge';
 import type { AppNotification } from '@/lib/types';
 
 export default async function Navbar() {
@@ -14,9 +15,7 @@ export default async function Navbar() {
   } = await supabase.auth.getUser();
 
   const isAdmin = isAdminEmail(user?.email);
-  const [userCount, onlineCount] = isAdmin
-    ? await Promise.all([getUserCount(), getOnlineUserCount()])
-    : [null, null];
+  const presence: PresenceSummary | null = isAdmin ? await getPresenceSummary() : null;
 
   let notifications: AppNotification[] = [];
   if (user) {
@@ -67,15 +66,15 @@ export default async function Navbar() {
 
         {user ? (
           <div className="flex shrink-0 items-center gap-1">
-            {isAdmin && onlineCount !== null && (
-              <span
-                title={`Сейчас онлайн: ${onlineCount} · Зарегистрировано: ${userCount}`}
-                className="hidden items-center gap-1.5 rounded-full bg-bg-card px-3 py-1.5 text-xs font-medium text-gray-400 ring-1 ring-white/10 sm:flex"
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                {onlineCount} онлайн
-                <span className="text-gray-600">· {userCount}</span>
-              </span>
+            {presence && (
+              <div className="hidden sm:block">
+                <UserPresenceBadge
+                  onlineCount={presence.onlineCount}
+                  onlineEmails={presence.onlineEmails}
+                  totalCount={presence.totalCount}
+                  totalEmails={presence.totalEmails}
+                />
+              </div>
             )}
             <CalendarLink />
             <TipsLink />
