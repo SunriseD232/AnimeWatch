@@ -33,3 +33,22 @@ export async function getUserCount(): Promise<number> {
     return data.users.length;
   });
 }
+
+/**
+ * Сколько пользователей «сейчас онлайн» — по heartbeat (см. миграцию
+ * 0021_user_presence.sql, PresenceHeartbeat.tsx шлёт отметку раз в ~45с,
+ * пока вкладка видима). «Онлайн» — last_seen_at не старше 2 минут (heartbeat
+ * раз в 45с даёт 2 пропуска на сетевые заминки, не показывает уже ушедших
+ * подолгу). Без кэша — это дешёвый индексированный count по своей таблице,
+ * не внешний API, и бейдж должен быть живым, а не отставать на 5 минут, как
+ * getUserCount() выше.
+ */
+export async function getOnlineUserCount(): Promise<number> {
+  const service = createServiceClient();
+  const threshold = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  const { count } = await service
+    .from('user_presence')
+    .select('user_id', { count: 'exact', head: true })
+    .gte('last_seen_at', threshold);
+  return count ?? 0;
+}

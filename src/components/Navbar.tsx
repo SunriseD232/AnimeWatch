@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { getUserCount, isAdminEmail } from '@/lib/admin';
+import { getOnlineUserCount, getUserCount, isAdminEmail } from '@/lib/admin';
 import CalendarLink from './CalendarLink';
 import NotificationBell from './NotificationBell';
 import SearchBox from './SearchBox';
@@ -14,7 +14,9 @@ export default async function Navbar() {
   } = await supabase.auth.getUser();
 
   const isAdmin = isAdminEmail(user?.email);
-  const userCount = isAdmin ? await getUserCount() : null;
+  const [userCount, onlineCount] = isAdmin
+    ? await Promise.all([getUserCount(), getOnlineUserCount()])
+    : [null, null];
 
   let notifications: AppNotification[] = [];
   if (user) {
@@ -65,12 +67,14 @@ export default async function Navbar() {
 
         {user ? (
           <div className="flex shrink-0 items-center gap-1">
-            {isAdmin && userCount !== null && (
+            {isAdmin && onlineCount !== null && (
               <span
-                title="Зарегистрировано пользователей"
-                className="hidden items-center gap-1 rounded-full bg-bg-card px-3 py-1.5 text-xs font-medium text-gray-400 ring-1 ring-white/10 sm:flex"
+                title={`Сейчас онлайн: ${onlineCount} · Зарегистрировано: ${userCount}`}
+                className="hidden items-center gap-1.5 rounded-full bg-bg-card px-3 py-1.5 text-xs font-medium text-gray-400 ring-1 ring-white/10 sm:flex"
               >
-                👤 {userCount}
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                {onlineCount} онлайн
+                <span className="text-gray-600">· {userCount}</span>
               </span>
             )}
             <CalendarLink />
