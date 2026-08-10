@@ -1,17 +1,10 @@
 workflows:
-  ios-ad-hoc:
-    name: MediaWatch iOS (ad-hoc)
+  ios-unsigned:
+    name: MediaWatch iOS (unsigned, для переподписи через eSign)
     max_build_duration: 60
     instance_type: mac_mini_m2
     environment:
-      # CM_CERTIFICATE / CM_CERTIFICATE_PASSWORD / CM_PROVISIONING_PROFILE
-      # заполняются автоматически Codemagic после того, как в UI проекта
-      # (Code signing identities) загружены .p12-сертификат (экспорт из
-      # "CSR for me" в Codemagic) и .mobileprovision-профиль (ad-hoc,
-      # bundle id ru.mediawatch.app, с зарегистрированным UDID телефона) —
-      # см. PLAN.md/README про шаги на developer.apple.com.
       vars:
-        BUNDLE_ID: "ru.mediawatch.app"
         XCODE_SCHEME: "App"
         XCODE_PROJECT: "ios/App/App.xcodeproj"
       node: 22.3.0
@@ -24,22 +17,35 @@ workflows:
         # — pod install не нужен, cap sync сам обновит зависимости плагинов
         # и capacitor.config.json внутри ios/App.
         script: npx cap sync ios
-      - name: Set up code signing
+      - name: Archive without code signing
+        # Никаких сертификатов/профилей/UDID Apple — итоговый .app в архиве
+        # вообще не подписан. Финальную подпись под свой сертификат делает
+        # eSign (сервис резайнинга) уже на телефоне/сайте пользователя, так
+        # что официальный ad-hoc-провижининг (App ID, UDID, provisioning
+        # profile) для этого пайплайна не нужен.
         script: |
-          keychain initialize
-          keychain add-certificates --certificate "$CM_CERTIFICATE" --certificate-password "$CM_CERTIFICATE_PASSWORD"
-          xcode-project use-profiles
-      - name: Build ipa for ad-hoc distribution
+          xcodebuild archive \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -archivePath build/ios/App.xcarchive \
+            -destination "generic/platform=iOS" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS=""
+      - name: Package unsigned .ipa
+        # xcodebuild -exportArchive тут не подходит — он требует
+        # exportOptions.plist с методом подписи/профилем, которых у нас
+        # нет. Вместо этого просто упаковываем .app из архива в
+        # стандартную структуру Payload/*.app внутри .ipa вручную.
         script: |
-          xcode-project build-ipa \
-            --project "$XCODE_PROJECT" \
-            --scheme "$XCODE_SCHEME"
+          mkdir -p build/ios/ipa/Payload
+          cp -r build/ios/App.xcarchive/Products/Applications/App.app build/ios/ipa/Payload/
+          cd build/ios/ipa && zip -qry MediaWatch-unsigned.ipa Payload
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
     publishing:
-      # Ad-hoc-профиль -> Codemagic сам добавляет прямую install-ссылку
-      # (страница сборки в UI) — TestFlight/App Store Connect тут не нужны.
       email:
         recipients:
           - 2000gva@gmail.com
