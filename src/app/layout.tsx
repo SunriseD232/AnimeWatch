@@ -19,6 +19,17 @@ export const metadata: Metadata = {
   title: 'MediaWatch — аниме, фильмы и сериалы',
   description:
     'Смотрите аниме, фильмы и сериалы и продолжайте с того же места на любом устройстве.',
+  // Второй заход на PWA (см. PwaRegister.tsx) — в прошлый раз рендер на
+  // мобильных ломал sw.js (наивно перехватывал ВСЕ fetch, включая навигацию,
+  // и это конфликтовало с RSC-стримингом Next.js), не сам манифест. В этот
+  // раз service worker сознательно не регистрируем вообще — iOS standalone-
+  // режиму («На экран «Домой»») он не нужен, только manifest/appleWebApp.
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'MediaWatch',
+  },
 };
 
 export const viewport: Viewport = {

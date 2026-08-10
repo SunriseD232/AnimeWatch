@@ -1,0 +1,19 @@
+{
+  "name": "MediaWatch",
+  "short_name": "MediaWatch",
+  "description": "Аниме, фильмы и сериалы — смотрите и продолжайте с того же места на любом устройстве.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
