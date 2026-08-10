@@ -1018,7 +1018,15 @@ export default function OwnPlayer({
   // Пока идёт воспроизведение на внешнем экране, локальное <video> ставим на
   // паузу и глушим (звук уже идёт с AVPlayer на стороне очков) — сам hls.js
   // при этом продолжает быть подключён как обычно (проще и безопаснее, чем
-  // на время отключать его пайплайн, см. PLAN.md).
+  // на время отключать его пайплайн, см. PLAN.md). Раньше cleanup этого
+  // эффекта дёргал ExternalDisplay.stop() при КАЖДОМ срабатывании (в т.ч.
+  // просто из-за смены externalScreenConnected) — а нативная сторона теперь
+  // шлёт externalScreenDisconnected не только при реальном отключении
+  // очков, но и при блокировке телефона (см. ExternalDisplayManager.swift),
+  // так что этот stop() гарантированно убивал воспроизведение на
+  // блокировке. Настоящую остановку теперь делает только эффект ниже (по
+  // размонтированию страницы) — play() при смене src сам заменяет плеер на
+  // нативной стороне, отдельный stop() перед этим не нужен.
   useEffect(() => {
     if (!Capacitor.isNativePlatform() || !externalScreenConnected || loadState !== 'ready') return;
     const video = videoRef.current;
@@ -1027,11 +1035,16 @@ export default function OwnPlayer({
       url: new URL(src, window.location.origin).toString(),
       startPositionSeconds: video?.currentTime || resumeFrom || 0,
     }).catch(() => {});
-    return () => {
-      ExternalDisplay.stop().catch(() => {});
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalScreenConnected, loadState, src]);
+
+  // Настоящее размонтирование страницы (не смена серии/озвучки) — вот тут
+  // действительно останавливаем воспроизведение на внешнем экране.
+  useEffect(() => {
+    return () => {
+      if (Capacitor.isNativePlatform()) ExternalDisplay.stop().catch(() => {});
+    };
+  }, []);
 
   // --- Управление -------------------------------------------------------------
   const togglePlay = useCallback(() => {
