@@ -354,12 +354,26 @@ export default function OwnPlayer({
 
   // --- Смена серии: список переводов приходит заново с сервера (новые
   // video_id) — пробуем найти ту же озвучку по названию, иначе первую. ---
+  // ВАЖНО: зависит и от translations, не только от episode. При бесшовном
+  // переключении серии (switchEpisode в Player.tsx/WatchPlayer.tsx) episode
+  // меняется СИНХРОННО, а новый список переводов приходит ПОЗЖЕ, отдельным
+  // рендером (asyncfetch). Раньше эффект был завязан только на [episode] —
+  // срабатывал СРАЗУ со СТАРЫМ (прошлой серии) списком, находил в нём
+  // совпадение по названию и подставлял ЕГО id; когда чуть позже прилетал
+  // настоящий список новой серии, эффект повторно не срабатывал (episode не
+  // менялся), а activeTranslation (см. рендер выше) не находил тот старый id
+  // в новом списке и молча откатывался на translations[0] — выбранная
+  // озвучка «слетала» на первую в списке при каждом переключении серии. С
+  // translations в зависимостях эффект досрабатывает повторно, когда
+  // приходит настоящий список — setTranslationId с тем же результатом
+  // не меняет состояние (React сам не перерендерит на идентичное значение),
+  // так что от нестабильной ссылки translations на каждый рендер это не
+  // зациклится.
   useEffect(() => {
     const wantTitle = activeTranslationTitleRef.current ?? initialTranslationTitle;
     const match = wantTitle ? translations.find((t) => t.title === wantTitle) : undefined;
     setTranslationId(match?.id ?? translations[0]?.id ?? null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [episode]);
+  }, [episode, translations, initialTranslationTitle]);
 
   // --- Громкость: восстановление/сохранение ---------------------------------
   // Читаем сохранённое значение сразу (до монтирования <video> — он рисуется
@@ -454,6 +468,14 @@ export default function OwnPlayer({
   // --- Определение типа потока (HLS/mp4) и подключение источника -----------
   useEffect(() => {
     let cancelled = false;
+    // Раньше отменяли только реакцию на результат (cancelled-флаг), но не сам
+    // запрос — если пользователь уходил с серии на этапе извлечения (HEAD
+    // ещё не ответил), сетевой запрос и вся тяжёлая работа на сервере
+    // (извлечение потока у балансера) всё равно доводились до конца
+    // впустую, просто без видимого эффекта на уже ушедшей странице.
+    // AbortController реально рвёт соединение — сервер увидит отключение
+    // клиента и (если проверяет request.signal) сможет остановиться раньше.
+    const controller = new AbortController();
     setLoadState('probing');
     setBuffering(true);
     setIsEnded(false);
@@ -463,7 +485,7 @@ export default function OwnPlayer({
       let contentType: string | null = null;
       let ok = false;
       try {
-        const res = await fetch(src, { method: 'HEAD' });
+        const res = await fetch(src, { method: 'HEAD', signal: controller.signal });
         ok = res.ok;
         contentType = res.headers.get('content-type');
         dashQualitiesRef.current = res.headers.get('x-video-qualities');
@@ -487,6 +509,7 @@ export default function OwnPlayer({
 
     return () => {
       cancelled = true;
+      controller.abort();
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
@@ -718,14 +741,21 @@ export default function OwnPlayer({
     const applyResumeSeek = () => {
       const target = seekTargetRef.current;
       if (target == null || target <= 1) return;
-      if (Number.isFinite(video.duration) && target >= video.duration) {
-        seekTargetRef.current = null;
-        return;
-      }
       seekTargetRef.current = null;
-      if (Math.abs(video.currentTime - target) > 1) {
+      // Клампим к чуть меньше длительности, а не ОТБРАСЫВАЕМ цель совсем,
+      // как было раньше (target >= video.duration → return без сика). Это
+      // било ИМЕННО по самому частому сбойному сценарию: retry() (см. ниже)
+      // сохраняет currentTime как цель возобновления при фатальной ошибке
+      // hls.js — а такие ошибки (протухший сегмент, 502 от апстрима)
+      // особенно часто ловятся ближе к концу серии. Старая логика в этом
+      // случае просто отбрасывала target и плеер стартовал с нуля — сбой в
+      // последних секундах откатывал всю серию к началу вместо возврата к
+      // месту сбоя (воспроизведено вживую).
+      const dur = video.duration;
+      const clamped = Number.isFinite(dur) && dur > 0 ? Math.min(target, dur - 0.5) : target;
+      if (clamped > 0 && Math.abs(video.currentTime - clamped) > 1) {
         seekPending = true;
-        video.currentTime = target;
+        video.currentTime = clamped;
       }
     };
     // Запускаем воспроизведение сами (вместо атрибута autoPlay на <video>,

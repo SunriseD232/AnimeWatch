@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { Suspense } from 'react';
 import CinemaCard from '@/components/CinemaCard';
 import CinemaEpisodes from '@/components/CinemaEpisodes';
 import ListButton from '@/components/ListButton';
@@ -11,6 +12,56 @@ import { formatTime } from '@/lib/format';
 import { buildVideoseedEmbedUrl } from '@/lib/video/videoseed';
 import { getVibixEmbed } from '@/lib/video/vibix';
 import { createVideoSource } from '@/lib/video/kodik';
+
+/**
+ * «Похожее» — самая необязательная секция страницы (и потенциально самая
+ * медленная, см. collectFiltered в videoseed-catalog.ts: перебор страниц
+ * каталога у редких жанров). Отдельный async-компонент под своим Suspense
+ * ниже — стримится ОТДЕЛЬНЫМ чанком, не блокируя постер/кнопку «Смотреть»/
+ * список серий выше, которые готовы значительно раньше.
+ */
+async function SimilarCinemaTitles({ id, genre }: { id: number; genre: string | null }) {
+  if (!genre) return null;
+  let similar: CinemaShort[] = [];
+  try {
+    const catalogPage = await getCinemaCatalog({
+      type: 'both',
+      genresInclude: [genre],
+      genresExclude: [],
+      sort: 'rating',
+      page: 1,
+      pageSize: 13,
+    });
+    similar = catalogPage.items.filter((s) => s.id !== id).slice(0, 12);
+  } catch {
+    similar = [];
+  }
+  if (similar.length === 0) return null;
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="text-lg font-semibold">Похожее</h2>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+        {similar.map((s) => (
+          <CinemaCard key={s.id} item={s} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SimilarCinemaTitlesSkeleton() {
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="skeleton h-6 w-32 rounded-md" />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+        {Array.from({ length: 6 }).map((_, i) => (
+          // eslint-disable-next-line react/no-array-index-key
+          <div key={i} className="skeleton aspect-[2/3] w-full rounded-2xl" />
+        ))}
+      </div>
+    </section>
+  );
+}
 
 export default async function CinemaPage({
   params,
@@ -49,22 +100,6 @@ export default async function CinemaPage({
   const title = item.title;
   const total = item.episodesTotal;
 
-  // Похожее — по первому жанру тайтла (у Videoseed нет отдельного API
-  // "похожих", в отличие от Shikimori для аниме, см. lib/shikimori.ts).
-  const similarPromise: Promise<CinemaShort[]> =
-    item.genres.length > 0
-      ? getCinemaCatalog({
-          type: 'both',
-          genresInclude: [item.genres[0]],
-          genresExclude: [],
-          sort: 'rating',
-          page: 1,
-          pageSize: 13,
-        })
-          .then((catalogPage) => catalogPage.items.filter((s) => s.id !== id).slice(0, 12))
-          .catch(() => [])
-      : Promise.resolve([]);
-
   // Прогресс и статус списка для этого тайтла (если пользователь вошёл).
   const progressPromise = user
     ? Promise.all([
@@ -88,8 +123,7 @@ export default async function CinemaPage({
       ])
     : null;
 
-  const [similar, hasAnyPlayer, progressResult] = await Promise.all([
-    similarPromise,
+  const [hasAnyPlayer, progressResult] = await Promise.all([
     hasAnyPlayerPromise,
     progressPromise,
   ]);
@@ -254,17 +288,10 @@ export default async function CinemaPage({
         </section>
       )}
 
-      {/* Похожее */}
-      {similar.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-semibold">Похожее</h2>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-            {similar.map((s) => (
-              <CinemaCard key={s.id} item={s} />
-            ))}
-          </div>
-        </section>
-      )}
+      {/* Похожее — отдельный стрим, см. SimilarCinemaTitles/комментарий вверху файла. */}
+      <Suspense fallback={<SimilarCinemaTitlesSkeleton />}>
+        <SimilarCinemaTitles id={id} genre={item.genres[0] ?? null} />
+      </Suspense>
     </div>
   );
 }
