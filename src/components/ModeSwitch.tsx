@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useTransition } from 'react';
+import NavigationOverlay from './NavigationOverlay';
 import type { ContentType } from '@/lib/types';
 
 // href «Аниме» — /?mode=anime, не голый '/': у него отдельный ключ
@@ -81,15 +82,7 @@ export default function ModeSwitch({ active }: { active: ContentType }) {
         })}
       </div>
 
-      {isPending && (
-        <div
-          role="status"
-          aria-label="Загрузка"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-bg/70 backdrop-blur-sm"
-        >
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-white" />
-        </div>
-      )}
+      {isPending && <NavigationOverlay />}
     </>
   );
 }

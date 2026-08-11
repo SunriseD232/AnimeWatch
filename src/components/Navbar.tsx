@@ -4,6 +4,7 @@ import { getOnlineUserCount, isAdminEmail } from '@/lib/admin';
 import CalendarLink from './CalendarLink';
 import NotificationBell from './NotificationBell';
 import SearchBox from './SearchBox';
+import SiteLogoLink from './SiteLogoLink';
 import TipsLink from './TipsLink';
 import UserPresenceBadge from './UserPresenceBadge';
 import type { AppNotification } from '@/lib/types';
@@ -53,15 +54,7 @@ export default async function Navbar() {
   return (
     <header className="glass sticky top-0 z-40 border-b border-white/[0.06]">
       <nav className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
-        <Link
-          href="/"
-          className="flex shrink-0 items-center gap-2 text-lg font-bold"
-        >
-          <span className="grid h-8 w-8 place-items-center rounded-xl bg-accent text-white">
-            ▶
-          </span>
-          <span className="hidden sm:inline">MediaWatch</span>
-        </Link>
+        <SiteLogoLink />
 
         <div className="flex-1">
           <SearchBox />
