@@ -1,9 +1,9 @@
 'use client';
 
-import Link from 'next/link';
 import { useRef, useState } from 'react';
 import type { CinemaShort } from '@/lib/videoseed-catalog';
 import ExpandTitleButton from '@/components/ExpandTitleButton';
+import TransitionLink from '@/components/TransitionLink';
 
 /**
  * Карточка фильма/сериала. Постеры приходят с хоста Videoseed
@@ -25,8 +25,10 @@ export default function CinemaCard({ item }: { item: CinemaShort }) {
           консоли, без notFound/error.tsx — просто пустой <main>, лечится
           только полной перезагрузкой). Разница по времени видна ТОЛЬКО у
           /cinema/[id] (у /anime/[id] — быстрее, без Vibix/Kodik — не
-          воспроизводится), так что отключаем префетч точечно тут. */}
-      <Link href={`/cinema/${item.id}`} prefetch={false} className="flex flex-1 flex-col">
+          воспроизводится), так что отключаем префетч точечно тут.
+          TransitionLink (не голый Link) — показывает лоадер на переходе,
+          та же страница и так не мгновенная. */}
+      <TransitionLink href={`/cinema/${item.id}`} prefetch={false} className="flex flex-1 flex-col">
         <div className="relative aspect-[2/3] w-full overflow-hidden bg-bg-soft">
           {item.poster ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -61,7 +63,7 @@ export default function CinemaCard({ item }: { item: CinemaShort }) {
             {[item.kind, item.year].filter(Boolean).join(' · ')}
           </p>
         </div>
-      </Link>
+      </TransitionLink>
       <ExpandTitleButton
         expanded={expanded}
         onToggle={() => setExpanded((v) => !v)}
