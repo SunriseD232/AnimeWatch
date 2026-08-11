@@ -261,20 +261,6 @@ export default function OwnPlayer({
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onTimeUpdateRef = useRef(onTimeUpdate);
   onTimeUpdateRef.current = onTimeUpdate;
-  const skipOpeningRef = useRef(skipOpening);
-  skipOpeningRef.current = skipOpening;
-  const skipEndingRef = useRef(skipEnding);
-  skipEndingRef.current = skipEnding;
-  // Автопропуск опенинга/титров (см. onTime и performAutoSkip ниже): true —
-  // пользователь нажал «Смотреть», для этой серии сегмент больше не
-  // пропускаем автоматически. Сбрасываются при смене серии/сезона.
-  const optedInOpeningRef = useRef(false);
-  const optedInEndingRef = useRef(false);
-  // Текущая зона (внутри сегмента или нет) — нужна, чтобы ловить именно
-  // МОМЕНТ входа в сегмент (единожды), а не решать на каждом тике timeupdate,
-  // пока играем внутри уже пропущенного/просматриваемого сегмента.
-  const inSkipZoneRef = useRef<'opening' | 'ending' | null>(null);
-  const recentlySkippedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [loadState, setLoadState] = useState<LoadState>('probing');
   // Инкремент форсирует повторный запуск эффекта резолва/подключения
@@ -309,9 +295,6 @@ export default function OwnPlayer({
   const [externalScreenConnected, setExternalScreenConnected] = useState(false);
   const [buffering, setBuffering] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
-  // Сегмент, который только что автопропустили — показываем тост «Опенинг
-  // пропущен · Смотреть» на несколько секунд (см. performAutoSkip/watchSkip).
-  const [recentlySkipped, setRecentlySkipped] = useState<'opening' | 'ending' | null>(null);
   const [isEnded, setIsEnded] = useState(false);
   // Уровни качества из hls.js (только для HLS-источников с несколькими
   // вариантами в master.m3u8 — иначе список пуст, и селектор скрыт).
@@ -430,19 +413,6 @@ export default function OwnPlayer({
     seekTargetRef.current = resumeFrom;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [episode, season, resumeFrom]);
-
-  // Выбор «Смотреть» (не пропускать опенинг/титры автоматически) — только на
-  // текущую серию, новая серия снова стартует с автопропуском по умолчанию.
-  useEffect(() => {
-    optedInOpeningRef.current = false;
-    optedInEndingRef.current = false;
-    inSkipZoneRef.current = null;
-    if (recentlySkippedTimeoutRef.current) {
-      clearTimeout(recentlySkippedTimeoutRef.current);
-      recentlySkippedTimeoutRef.current = null;
-    }
-    setRecentlySkipped(null);
-  }, [episode, season]);
 
   // Явно выбранное DASH-качество (Aksor) не переносится между сериями и
   // сменой озвучки — новый эпизод/дорожка снова стартует с лучшего качества
@@ -689,39 +659,6 @@ export default function OwnPlayer({
     }
   }, [activeSubtitleIndex, subtitles]);
 
-  // Автопропуск: молча перематывает за сегмент и показывает тост-отмену на
-  // несколько секунд («Опенинг пропущен · Смотреть», см. watchSkip ниже) —
-  // используется из обработчика timeupdate ниже, поэтому объявлен раньше.
-  const performAutoSkip = useCallback((type: 'opening' | 'ending', segment: SkipSegment) => {
-    const v = videoRef.current;
-    if (!v) return;
-    v.currentTime = segment.time + segment.length;
-    setRecentlySkipped(type);
-    if (recentlySkippedTimeoutRef.current) clearTimeout(recentlySkippedTimeoutRef.current);
-    recentlySkippedTimeoutRef.current = setTimeout(() => {
-      recentlySkippedTimeoutRef.current = null;
-      setRecentlySkipped(null);
-    }, 8_000);
-  }, []);
-
-  // «Смотреть» на тосте — отматывает назад к началу сегмента и отключает
-  // автопропуск для него на оставшуюся часть ЭТОЙ серии (сброс — см. эффект
-  // выше по [episode, season]).
-  const watchSkip = useCallback(() => {
-    if (!recentlySkipped) return;
-    const segment =
-      recentlySkipped === 'opening' ? skipOpeningRef.current : skipEndingRef.current;
-    if (recentlySkipped === 'opening') optedInOpeningRef.current = true;
-    else optedInEndingRef.current = true;
-    if (recentlySkippedTimeoutRef.current) {
-      clearTimeout(recentlySkippedTimeoutRef.current);
-      recentlySkippedTimeoutRef.current = null;
-    }
-    setRecentlySkipped(null);
-    const v = videoRef.current;
-    if (v && segment) v.currentTime = segment.time;
-  }, [recentlySkipped]);
-
   // --- События <video> -------------------------------------------------------
   useEffect(() => {
     const video = videoRef.current;
@@ -816,27 +753,6 @@ export default function OwnPlayer({
       const t = video.currentTime;
       setCurrentTime(t);
       onTimeUpdateRef.current?.(t, Number.isFinite(video.duration) ? video.duration : null);
-      const op = skipOpeningRef.current;
-      const end = skipEndingRef.current;
-      let zone: 'opening' | 'ending' | null = null;
-      let segment: SkipSegment | null = null;
-      if (op && t >= op.time && t < op.time + op.length) {
-        zone = 'opening';
-        segment = op;
-      } else if (end && t >= end.time && t < end.time + end.length) {
-        zone = 'ending';
-        segment = end;
-      }
-      // Реагируем только на МОМЕНТ входа в сегмент, не на каждый тик, пока мы
-      // уже внутри — иначе автопропуск (или отказ от него через «Смотреть»)
-      // бы повторно решался на каждом timeupdate.
-      if (zone !== inSkipZoneRef.current) {
-        inSkipZoneRef.current = zone;
-        const optedIn = zone === 'opening' ? optedInOpeningRef.current : optedInEndingRef.current;
-        if (zone && segment && !optedIn) {
-          performAutoSkip(zone, segment);
-        }
-      }
     };
     const onProgress = () => {
       try {
@@ -926,7 +842,7 @@ export default function OwnPlayer({
       video.removeEventListener('error', onError);
       clearGapWatchdog();
     };
-  }, [save, onEnded, loadState, performAutoSkip]);
+  }, [save, onEnded, loadState]);
 
   // --- Фуллскрин --------------------------------------------------------------
   useEffect(() => {
@@ -1268,6 +1184,29 @@ export default function OwnPlayer({
   const progressPct = dur > 0 ? (currentTime / dur) * 100 : 0;
   const bufferedPct = dur > 0 ? Math.min(100, (buffered / dur) * 100) : 0;
 
+  // Пропуск опенинга/титров — как на обычных сайтах (Netflix и т.п.): пока
+  // позиция внутри сегмента, показываем кнопку «Пропустить», ничего не
+  // перематываем без действия пользователя. Раньше было наоборот — плеер
+  // молча перематывал сам, а кнопка «Смотреть» появлялась ПОСЛЕ, чтобы
+  // откатить обратно — неожиданный прыжок ощущался криво, особенно если
+  // зритель специально хотел посмотреть опенинг. Кнопка вычисляется прямо
+  // из currentTime на каждый рендер — сама исчезает, как только позиция
+  // выходит за границы сегмента (проскроллили дальше руками, досмотрели до
+  // конца сегмента естественным образом и т.д.), без отдельного состояния и
+  // таймеров.
+  const activeSkip: { type: 'opening' | 'ending'; segment: SkipSegment } | null =
+    skipOpening && currentTime >= skipOpening.time && currentTime < skipOpening.time + skipOpening.length
+      ? { type: 'opening', segment: skipOpening }
+      : skipEnding && currentTime >= skipEnding.time && currentTime < skipEnding.time + skipEnding.length
+        ? { type: 'ending', segment: skipEnding }
+        : null;
+
+  const skipNow = () => {
+    const v = videoRef.current;
+    if (!v || !activeSkip) return;
+    v.currentTime = activeSkip.segment.time + activeSkip.segment.length;
+  };
+
   return (
     <div className="flex flex-col gap-3">
       <div
@@ -1339,17 +1278,17 @@ export default function OwnPlayer({
           </button>
         )}
 
-        {recentlySkipped && (
+        {activeSkip && (
           <button
             type="button"
-            onClick={watchSkip}
+            onClick={skipNow}
             className="absolute bottom-20 right-3 z-10 rounded-lg bg-black/80 px-4 py-2 text-sm font-medium text-white ring-1 ring-white/20 backdrop-blur transition hover:bg-black/95"
           >
-            {recentlySkipped === 'opening' ? 'Опенинг пропущен · Смотреть' : 'Титры пропущены · Смотреть'}
+            {activeSkip.type === 'opening' ? 'Пропустить опенинг' : 'Пропустить титры'} →
           </button>
         )}
 
-        {nearEnd && !recentlySkipped && nextHref && (
+        {nearEnd && !activeSkip && nextHref && (
           onNext ? (
             <button
               type="button"
