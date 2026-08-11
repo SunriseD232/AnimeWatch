@@ -1,13 +1,8 @@
 import { notFound } from 'next/navigation';
+import { Suspense } from 'react';
 import WatchPlayer from '@/components/WatchPlayer';
-import {
-  episodeCount,
-  getAnime,
-  getPrequels,
-  getSequels,
-  getSimilarAnime,
-  imageUrl,
-} from '@/lib/shikimori';
+import { RelatedAnimeSections, RelatedAnimeSectionsSkeleton } from '@/components/RelatedAnimeSections';
+import { episodeCount, getAnime, imageUrl } from '@/lib/shikimori';
 import { createClient } from '@/lib/supabase/server';
 import { resolveAnimeEpisodeSources } from '@/lib/watch/resolveAnimeEpisode';
 import type { WatchProgress } from '@/lib/types';
@@ -79,20 +74,18 @@ export default async function WatchPage({
   // а не по id.
   const savedTranslationTitle = progress?.translation_title ?? null;
 
-  // Готовим Kodik как fallback (AniLibria подбирается на клиенте), Yummy
-  // (второй резервный источник + тайминги пропуска опенинга/эндинга) и
-  // подсказки «продолжение»/«похожее» под плеером — параллельно.
-  const [sources, prequels, sequels, similar] = await Promise.all([
-    resolveAnimeEpisodeSources({
-      shikimoriId,
-      episode,
-      translationId: initialTranslationId,
-      resumeFrom,
-    }),
-    getPrequels(shikimoriId),
-    getSequels(shikimoriId),
-    getSimilarAnime(shikimoriId, 6),
-  ]);
+  // Kodik как fallback (AniLibria подбирается на клиенте), Yummy (второй
+  // резервный источник + тайминги пропуска опенинга/эндинга) — это то, что
+  // реально нужно, чтобы показать плеер. Подсказки «продолжение»/«похожее»
+  // под плеером раньше тоже сидели в этом Promise.all — три отдельных похода
+  // к Shikimori API, вообще не нужных для самого плеера, задерживали его
+  // наравне с ними. Теперь ниже, в своём Suspense (см. RelatedAnimeSections).
+  const sources = await resolveAnimeEpisodeSources({
+    shikimoriId,
+    episode,
+    translationId: initialTranslationId,
+    resumeFrom,
+  });
 
   const total = sources.episodesTotal ?? episodeCount(anime);
   const animeYear = anime.aired_on
@@ -100,31 +93,33 @@ export default async function WatchPage({
     : null;
 
   return (
-    <WatchPlayer
-      shikimoriId={shikimoriId}
-      contentType="anime"
-      episode={episode}
-      total={total}
-      animeTitle={animeTitle}
-      posterUrl={posterUrl}
-      animeRomaji={anime.name}
-      animeRussian={anime.russian}
-      animeYear={animeYear}
-      resumeFrom={resumeFrom}
-      otherEpisode={otherEpisode}
-      isAuthed={!!user}
-      isOngoing={anime.status === 'ongoing'}
-      kodikEmbedUrl={sources.kodikEmbedUrl}
-      kodikTranslations={sources.kodikTranslations}
-      kodikInitialTranslationId={sources.kodikInitialTranslationId}
-      kodikFallback={sources.kodikFallback}
-      yummyTranslations={sources.yummyTranslations}
-      savedTranslationTitle={savedTranslationTitle}
-      skipOpening={sources.skipOpening}
-      skipEnding={sources.skipEnding}
-      prequels={prequels}
-      sequels={sequels}
-      similar={similar}
-    />
+    <div className="flex flex-col gap-4">
+      <WatchPlayer
+        shikimoriId={shikimoriId}
+        contentType="anime"
+        episode={episode}
+        total={total}
+        animeTitle={animeTitle}
+        posterUrl={posterUrl}
+        animeRomaji={anime.name}
+        animeRussian={anime.russian}
+        animeYear={animeYear}
+        resumeFrom={resumeFrom}
+        otherEpisode={otherEpisode}
+        isAuthed={!!user}
+        isOngoing={anime.status === 'ongoing'}
+        kodikEmbedUrl={sources.kodikEmbedUrl}
+        kodikTranslations={sources.kodikTranslations}
+        kodikInitialTranslationId={sources.kodikInitialTranslationId}
+        kodikFallback={sources.kodikFallback}
+        yummyTranslations={sources.yummyTranslations}
+        savedTranslationTitle={savedTranslationTitle}
+        skipOpening={sources.skipOpening}
+        skipEnding={sources.skipEnding}
+      />
+      <Suspense fallback={<RelatedAnimeSectionsSkeleton compact />}>
+        <RelatedAnimeSections id={shikimoriId} compact similarLimit={6} />
+      </Suspense>
+    </div>
   );
 }

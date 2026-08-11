@@ -93,7 +93,20 @@ async function handleGet(
   const tRaw = request.nextUrl.searchParams.get('t');
   const translationId = tRaw != null && Number.isFinite(Number(tRaw)) ? Number(tRaw) : undefined;
 
-  const resolveArgs = { contentType, shikimoriId, season, episode, source, translationId };
+  // request.signal — отражает реальное отключение клиента (Node.js runtime,
+  // см. export const runtime='nodejs' выше). Пробрасываем до extractViaVps
+  // (см. resolve.ts/vpsExtractor.ts) — если пользователь ушёл со страницы
+  // или переключил серию/озвучку на этапе тяжёлого извлечения (Puppeteer на
+  // VPS), не смысла его доводить до конца.
+  const resolveArgs = {
+    contentType,
+    shikimoriId,
+    season,
+    episode,
+    source,
+    translationId,
+    signal: request.signal,
+  };
   const resolved = await resolveStream(resolveArgs);
   if (!resolved) {
     return NextResponse.json({ error: 'not_found' }, { status: 404 });

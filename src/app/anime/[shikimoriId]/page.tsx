@@ -1,15 +1,13 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import AnimeCard from '@/components/AnimeCard';
+import { Suspense } from 'react';
 import EpisodeGrid from '@/components/EpisodeGrid';
 import ListButton from '@/components/ListButton';
+import { RelatedAnimeSections, RelatedAnimeSectionsSkeleton } from '@/components/RelatedAnimeSections';
 import TrailerButton from '@/components/TrailerButton';
 import {
   episodeCount,
   getAnime,
-  getPrequels,
-  getSequels,
-  getSimilarAnime,
   imageUrl,
   stripBbCode,
   trailerEmbedUrl,
@@ -60,12 +58,9 @@ export default async function AnimePage({
 
   // Прогресс и статус списка для этого тайтла (если пользователь вошёл).
   const supabase = createClient();
-  const [{ data: { user } }, prequels, sequels, similar] = await Promise.all([
-    supabase.auth.getUser(),
-    getPrequels(id),
-    getSequels(id),
-    getSimilarAnime(id),
-  ]);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   let progress: WatchProgress | null = null;
   let listItem: UserListItem | null = null;
@@ -228,41 +223,11 @@ export default async function AnimePage({
         </section>
       )}
 
-      {/* Предыдущий сезон (приквел франшизы) */}
-      {prequels.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-semibold">Предыдущий сезон</h2>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-            {prequels.map((a) => (
-              <AnimeCard key={a.id} anime={a} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Продолжение (сиквел франшизы) */}
-      {sequels.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-semibold">Продолжение</h2>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-            {sequels.map((a) => (
-              <AnimeCard key={a.id} anime={a} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Похожее */}
-      {similar.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-semibold">Похожее</h2>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-            {similar.map((a) => (
-              <AnimeCard key={a.id} anime={a} />
-            ))}
-          </div>
-        </section>
-      )}
+      {/* Приквел/сиквел/похожее — отдельный стрим, см. RelatedAnimeSections/
+          комментарий вверху файла. */}
+      <Suspense fallback={<RelatedAnimeSectionsSkeleton />}>
+        <RelatedAnimeSections id={id} />
+      </Suspense>
     </div>
   );
 }

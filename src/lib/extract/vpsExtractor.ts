@@ -10,6 +10,12 @@ import type { ExtractParams, ExtractSource, ResolvedStream } from './types';
 export async function extractViaVps(
   source: ExtractSource,
   { shikimoriId, season, episode, embedUrl }: ExtractParams,
+  /** Сигнал отмены исходного запроса клиента (см. request.signal в
+   *  /api/proxy/.../route.ts) — если пользователь ушёл со страницы/сменил
+   *  серию, пока это ещё выполняется, не смысла продолжать тяжёлое
+   *  извлечение (headless Chromium на VPS) впустую. Объединяется с
+   *  собственным таймаутом, а не заменяет его. */
+  signal?: AbortSignal,
 ): Promise<ResolvedStream | null> {
   const baseUrl = process.env.VPS_EXTRACTOR_URL;
   const token = process.env.VPS_EXTRACTOR_TOKEN;
@@ -17,6 +23,11 @@ export async function extractViaVps(
     console.error('[vpsExtractor] VPS_EXTRACTOR_URL/VPS_EXTRACTOR_TOKEN не заданы в окружении');
     return null;
   }
+
+  // Puppeteer на VPS может перебирать несколько эмбед-кандидатов подряд —
+  // даём запас (сама функция /api/proxy тоже ограничена maxDuration).
+  const timeoutSignal = AbortSignal.timeout(55_000);
+  const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 
   let res: Response;
   try {
@@ -27,11 +38,12 @@ export async function extractViaVps(
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ source, shikimoriId, season, episode, embedUrl }),
-      // Puppeteer на VPS может перебирать несколько эмбед-кандидатов подряд —
-      // даём запас (сама функция /api/proxy тоже ограничена maxDuration).
-      signal: AbortSignal.timeout(55_000),
+      signal: combinedSignal,
     });
   } catch (err) {
+    // Отмена самим клиентом (ушёл со страницы/сменил серию) — не настоящий
+    // сбой, не засоряем логи ошибкой.
+    if (signal?.aborted) return null;
     console.error('[vpsExtractor] fetch к VPS упал:', err);
     return null;
   }

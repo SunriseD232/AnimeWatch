@@ -29,6 +29,10 @@ interface Args {
    *  закэшированная ссылка уже протухла у апстрима раньше своего TTL
    *  (видел на Videoseed: подписанные CDN-ссылки живут короче 15 минут). */
   forceFresh?: boolean;
+  /** Сигнал отмены исходного запроса — прокидывается до extractViaVps, см.
+   *  комментарий там. Кэш-хит игнорирует его (быстрый путь, отменять
+   *  нечего), важен только на пути реального извлечения. */
+  signal?: AbortSignal;
 }
 
 /** Резолвит прямую ссылку на видео с кэшированием в Supabase (общий для всех). */
@@ -40,6 +44,7 @@ export async function resolveStream({
   source,
   translationId,
   forceFresh,
+  signal,
 }: Args): Promise<ResolvedStream | null> {
   const supabase = createServiceClient();
   // 0 — слот "без явного выбора озвучки" (старое поведение, VPS сам перебирает).
@@ -87,7 +92,8 @@ export async function resolveStream({
     }
   }
 
-  const resolved = await extractViaVps(source, { shikimoriId, season, episode, embedUrl });
+  if (signal?.aborted) return null;
+  const resolved = await extractViaVps(source, { shikimoriId, season, episode, embedUrl }, signal);
   if (!resolved) return null;
 
   await supabase.from('resolved_streams').upsert(

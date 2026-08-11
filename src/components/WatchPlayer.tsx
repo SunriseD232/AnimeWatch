@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
-import AnimeCard from '@/components/AnimeCard';
 import HlsPlayer from '@/components/HlsPlayer';
 import KodikPlayer from '@/components/KodikPlayer';
 import YummyPlayer from '@/components/YummyPlayer';
@@ -18,7 +17,6 @@ import {
 } from '@/lib/anilibria';
 import type { Translation } from '@/lib/video/types';
 import type { YummyTranslation } from '@/lib/video/yummy';
-import type { ShikimoriAnimeShort } from '@/lib/shikimori';
 import type { ContentType, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
 import { usePipPlayerHost } from '@/components/pip/PipPlayerHost';
@@ -54,10 +52,6 @@ interface Props {
   savedTranslationTitle: string | null;
   skipOpening: SkipSegment | null;
   skipEnding: SkipSegment | null;
-  // Подсказки под плеером: прямое продолжение франшизы и похожие тайтлы.
-  prequels: ShikimoriAnimeShort[];
-  sequels: ShikimoriAnimeShort[];
-  similar: ShikimoriAnimeShort[];
 }
 
 type Source = 'hls' | 'kodik' | 'yummy' | 'own';
@@ -110,9 +104,6 @@ export default function WatchPlayer({
   savedTranslationTitle,
   skipOpening: initialSkipOpening,
   skipEnding: initialSkipEnding,
-  prequels,
-  sequels,
-  similar,
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
@@ -831,41 +822,11 @@ export default function WatchPlayer({
         </p>
       )}
 
-      {/* Предыдущий сезон франшизы — компактно, под плеером */}
-      {prequels.length > 0 && (
-        <section className="flex flex-col gap-3 border-t border-white/5 pt-4">
-          <h2 className="text-base font-semibold">Предыдущий сезон</h2>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-            {prequels.map((a) => (
-              <AnimeCard key={a.id} anime={a} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Продолжение франшизы — компактно, под плеером */}
-      {sequels.length > 0 && (
-        <section className="flex flex-col gap-3 border-t border-white/5 pt-4">
-          <h2 className="text-base font-semibold">Продолжение</h2>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-            {sequels.map((a) => (
-              <AnimeCard key={a.id} anime={a} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Похожее — компактно, под плеером */}
-      {similar.length > 0 && (
-        <section className="flex flex-col gap-3 border-t border-white/5 pt-4">
-          <h2 className="text-base font-semibold">Похожее</h2>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-            {similar.map((a) => (
-              <AnimeCard key={a.id} anime={a} />
-            ))}
-          </div>
-        </section>
-      )}
+      {/* Предыдущий сезон/продолжение/похожее теперь рендерятся страницей
+          (watch/[shikimoriId]/[episode]/page.tsx) отдельным Suspense-блоком
+          ПОСЛЕ этого компонента — раньше три похода к Shikimori API для этих
+          подсказок сидели в том же Promise.all, что и сами источники плеера,
+          и задерживали появление самого плеера наравне с ними. */}
     </div>
   );
 }

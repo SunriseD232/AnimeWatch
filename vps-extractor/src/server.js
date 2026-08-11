@@ -134,6 +134,19 @@ app.get('/relay', requireAuth, async (req, res) => {
 });
 
 app.post('/extract', requireAuth, async (req, res) => {
+  // Клиент (основной сайт, см. vpsExtractor.ts) отменяет fetch, когда
+  // пользователь уходит со страницы/меняет серию/озвучку — Node закрывает
+  // сокет, и 'close' долетает сюда. Alloha/Videoseed-извлечения идут через
+  // serialized() (один Chromium разом, VPS на 1ГБ RAM) — если не проверять
+  // этот флаг ПЕРЕД стартом, уже ненужное извлечение всё равно съедало бы
+  // свою очередь и держало бы следующий, РЕАЛЬНО нужный запрос в ожидании.
+  // Уже НАЧАВШееся извлечение не прерываем — Puppeteer-сессию так просто не
+  // остановить, риск оставить браузер в плохом состоянии не стоит выигрыша.
+  let clientClosed = false;
+  req.on('close', () => {
+    clientClosed = true;
+  });
+
   const { source, shikimoriId, season, episode, embedUrl } = req.body || {};
   const id = Number(shikimoriId);
   const ep = Number(episode);
@@ -180,18 +193,28 @@ app.post('/extract', requireAuth, async (req, res) => {
     } else if (source === 'aksor') {
       result = await extractAksor({ embedUrl: safeEmbedUrl });
     } else {
-      result = await serialized(() =>
-        source === 'alloha'
+      result = await serialized(() => {
+        // Проверяем ПРЯМО перед стартом Puppeteer, а не в момент постановки
+        // в очередь — клиент мог отвалиться, пока это ждало своей очереди.
+        if (clientClosed) {
+          console.error(`[server] Клиент ушёл, пока извлечение ждало очередь — пропускаем: source=${source} shikimoriId=${id}`);
+          return null;
+        }
+        return source === 'alloha'
           ? extractAlloha({ shikimoriId: id, episode: ep, embedUrl: safeEmbedUrl })
-          : extractVideoseed({ shikimoriId: id, season: se, episode: ep, embedUrl: safeEmbedUrl }),
-      );
+          : extractVideoseed({ shikimoriId: id, season: se, episode: ep, embedUrl: safeEmbedUrl });
+      });
     }
+    // Отвечать уже некому — не пишем в закрытый сокет (Express сам не упадёт
+    // от этого, но лишний ERR_STREAM_WRITE_AFTER_END в логах ни к чему).
+    if (clientClosed || res.writableEnded) return;
     if (!result) {
       return res.status(404).json({ error: 'not_found' });
     }
     return res.json(result);
   } catch (err) {
     console.error('[server] Извлечение упало:', err);
+    if (clientClosed || res.writableEnded) return;
     return res.status(502).json({ error: 'extract_failed', message: String(err && err.message) });
   }
 });
