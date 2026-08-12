@@ -1,9 +1,9 @@
 'use client';
 
+import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { imageUrl, type ShikimoriAnimeShort } from '@/lib/shikimori';
 import ExpandTitleButton from '@/components/ExpandTitleButton';
-import TransitionLink from '@/components/TransitionLink';
 
 const KIND_LABELS: Record<string, string> = {
   tv: 'ТВ',
@@ -30,7 +30,7 @@ export default function AnimeCard({
 
   return (
     <div className="card-lift group relative flex flex-col overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60">
-      <TransitionLink href={`/anime/${anime.id}`} className="flex flex-1 flex-col">
+      <Link href={`/anime/${anime.id}`} className="flex flex-1 flex-col">
         <div className="relative aspect-[2/3] w-full overflow-hidden bg-bg-soft">
           {poster ? (
             // Обычный <img> с no-referrer: Shikimori режет хотлинк по Referer,
@@ -74,7 +74,7 @@ export default function AnimeCard({
             {[kind, year].filter(Boolean).join(' · ')}
           </p>
         </div>
-      </TransitionLink>
+      </Link>
       <ExpandTitleButton
         expanded={expanded}
         onToggle={() => setExpanded((v) => !v)}
