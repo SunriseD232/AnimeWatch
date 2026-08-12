@@ -58,6 +58,14 @@ export default function ModeSwitch({ active }: { active: ContentType }) {
             <Link
               key={tab.value}
               href={tab.href}
+              // prefetch={false}: переход тут всегда идёт вручную через
+              // router.push (см. onClick) — автопрефетч Next.js для этих
+              // ссылок (видимы в шапке с самого рендера) избыточен и может
+              // выстрелить вторым RSC-запросом почти одновременно с реальным
+              // переходом по клику, поймав клиентский роутер в ту же гонку,
+              // что уже чинили у /cinema/[id] (см. CinemaCard) — итог: пустая
+              // страница после переключения раздела без ошибки в консоли.
+              prefetch={false}
               aria-current={isActive ? 'page' : undefined}
               onClick={(e) => {
                 if (isActive) return;

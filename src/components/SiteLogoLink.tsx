@@ -22,6 +22,10 @@ export default function SiteLogoLink() {
     <>
       <Link
         href="/"
+        // prefetch={false}: переход выполняется вручную через router.push
+        // (см. onClick), автопрефетч избыточен и рискует той же гонкой
+        // клиентского роутера, что уже чинили у ModeSwitch/CinemaCard.
+        prefetch={false}
         onClick={(e) => {
           if (alreadyHome) return;
           e.preventDefault();
