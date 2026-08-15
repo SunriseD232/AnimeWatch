@@ -10,6 +10,9 @@
  */
 
 const TMDB_API = 'https://api.themoviedb.org/3';
+// См. VS_FETCH_TIMEOUT_MS в videoseed-catalog.ts — без таймаута зависший
+// апстрим вешает страницу целиком.
+const TMDB_FETCH_TIMEOUT_MS = 8_000;
 
 function apiKey(): string | undefined {
   return process.env.TMDB_API_KEY;
@@ -33,7 +36,7 @@ async function findTmdbEntry(imdbId: string): Promise<TmdbEntry | null> {
   try {
     const res = await fetch(
       `${TMDB_API}/find/${imdbId}?external_source=imdb_id&api_key=${key}`,
-      { next: { revalidate: 86400 } },
+      { next: { revalidate: 86400 }, signal: AbortSignal.timeout(TMDB_FETCH_TIMEOUT_MS) },
     );
     if (!res.ok) return null;
     const data = (await res.json()) as TmdbFindResult;
@@ -78,7 +81,10 @@ function pickTrailerKey(videos: TmdbVideo[]): string | null {
 
 async function fetchTrailerKey(url: string): Promise<string | null> {
   try {
-    const res = await fetch(url, { next: { revalidate: 86400 } });
+    const res = await fetch(url, {
+      next: { revalidate: 86400 },
+      signal: AbortSignal.timeout(TMDB_FETCH_TIMEOUT_MS),
+    });
     if (!res.ok) return null;
     const data = (await res.json()) as { results?: TmdbVideo[] };
     return pickTrailerKey(data.results ?? []);

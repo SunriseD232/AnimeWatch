@@ -88,11 +88,16 @@ function absolutize(url: string): string {
   return url.startsWith('//') ? `https:${url}` : url;
 }
 
+// См. VS_FETCH_TIMEOUT_MS в videoseed-catalog.ts — без таймаута зависший
+// апстрим вешает страницу просмотра целиком.
+const YUMMY_FETCH_TIMEOUT_MS = 8_000;
+
 async function yummyFetch<T>(path: string, revalidate: number): Promise<T | null> {
   try {
     const res = await fetch(`${BASE}${path}`, {
       headers: { Accept: 'application/json' },
       next: { revalidate },
+      signal: AbortSignal.timeout(YUMMY_FETCH_TIMEOUT_MS),
     });
     if (!res.ok) return null;
     return (await res.json()) as T;

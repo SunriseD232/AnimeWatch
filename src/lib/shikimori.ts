@@ -90,6 +90,11 @@ async function throttle(): Promise<void> {
   countInWindow += 1;
 }
 
+// См. VS_FETCH_TIMEOUT_MS в videoseed-catalog.ts — без таймаута зависший
+// апстрим вешает любую страницу, зависящую от Shikimori (а это большая
+// часть сайта: главная, каталог, тайтл, просмотр, календарь, поиск).
+const SHIKIMORI_FETCH_TIMEOUT_MS = 8_000;
+
 async function shikimoriFetch<T>(
   path: string,
   revalidate: number,
@@ -101,6 +106,7 @@ async function shikimoriFetch<T>(
       Accept: 'application/json',
     },
     next: { revalidate },
+    signal: AbortSignal.timeout(SHIKIMORI_FETCH_TIMEOUT_MS),
   });
 
   if (!res.ok) {
