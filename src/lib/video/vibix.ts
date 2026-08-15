@@ -17,6 +17,9 @@
 import { getCachedJson } from '@/lib/cache/apiCache';
 
 const VIBIX_API = 'https://vibix.org/api/v1';
+// См. VS_FETCH_TIMEOUT_MS в videoseed-catalog.ts — без таймаута зависший
+// апстрим вешает страницу тайтла/просмотра целиком.
+const VIBIX_FETCH_TIMEOUT_MS = 8_000;
 
 export interface VibixEmbed {
   /** Publisher ID аккаунта (публичный, из embed_code). */
@@ -61,6 +64,7 @@ export async function getVibixEmbed(
             Accept: 'application/json',
           },
           cache: 'no-store',
+          signal: AbortSignal.timeout(VIBIX_FETCH_TIMEOUT_MS),
         },
       );
       if (!res.ok) {

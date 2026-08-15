@@ -93,10 +93,7 @@ async function DiscoverGrid({ tab, page }: { tab: string; page: number }) {
         {page > 1 ? (
           'Дальше ничего нет.'
         ) : (
-          <>
-            Каталог кино недоступен. Убедитесь, что задан{' '}
-            <code className="rounded bg-black/30 px-1">VIDEOSEED_API_TOKEN</code>.
-          </>
+          'Каталог Videoseed сейчас недоступен — попробуйте обновить страницу через минуту.'
         )}
       </div>
     );

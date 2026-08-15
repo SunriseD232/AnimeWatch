@@ -105,6 +105,16 @@ function token(): string | undefined {
   return process.env.VIDEOSEED_API_TOKEN;
 }
 
+// Апстрим Videoseed изредка зависает на list=... (проверено вживую: один
+// запрос не отвечал больше 60с, при этом item=search тогда же отвечал за
+// 0.2с) — без таймаута fetch() ничем не ограничен и вешает всю страницу
+// (каталог/тайтл) до тех пор, пока не сработает proxy_read_timeout nginx
+// (90с) или дефолтный таймаут undici. 8с достаточно с запасом (обычный
+// ответ — доли секунды), а рано оборвавшийся запрос просто деградирует до
+// пустого списка для этого типа/страницы (см. Promise.allSettled в
+// getCinemaCatalog) вместо того, чтобы держать пользователя на скелетоне.
+const VS_FETCH_TIMEOUT_MS = 8_000;
+
 async function vsFetch(
   params: Record<string, string>,
   revalidate: number,
@@ -120,6 +130,7 @@ async function vsFetch(
     const search = new URLSearchParams({ token: t, ...params });
     const res = await fetch(`${VIDEOSEED_API}?${search.toString()}`, {
       cache: 'no-store',
+      signal: AbortSignal.timeout(VS_FETCH_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`Videoseed API error ${res.status}`);
     const data = (await res.json()) as VsResponse;

@@ -19,6 +19,9 @@ import type { OwnPlayerTranslation } from '@/lib/extract/types';
 
 // Актуальный домен API Kodik — с дефисом (старый kodikapi.com больше не резолвится).
 const KODIK_API = 'https://kodik-api.com/search';
+// См. VS_FETCH_TIMEOUT_MS в videoseed-catalog.ts — без таймаута зависший
+// апстрим вешает страницу тайтла/просмотра целиком.
+const KODIK_FETCH_TIMEOUT_MS = 8_000;
 
 interface KodikTranslation {
   id: number;
@@ -86,6 +89,7 @@ async function fetchKodikSearch(
   return getCachedJson(cacheKey, 600, async () => {
     const res = await fetch(`${KODIK_API}?${search.toString()}`, {
       cache: 'no-store',
+      signal: AbortSignal.timeout(KODIK_FETCH_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`Kodik API error ${res.status}`);
     return (await res.json()) as KodikSearchResponse;

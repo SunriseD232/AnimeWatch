@@ -32,10 +32,7 @@ export default async function NewCinemaPage({
         {page > 1 ? (
           'Дальше ничего нет.'
         ) : (
-          <>
-            Каталог кино недоступен. Убедитесь, что задан{' '}
-            <code className="rounded bg-black/30 px-1">VIDEOSEED_API_TOKEN</code>.
-          </>
+          'Каталог Videoseed сейчас недоступен — попробуйте обновить страницу через минуту.'
         )}
       </div>
     );
