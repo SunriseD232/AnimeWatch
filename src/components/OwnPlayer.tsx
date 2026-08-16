@@ -82,7 +82,7 @@ const VOLUME_KEY = 'aw:ownPlayerVolume';
 const SPEED_KEY = 'aw:ownPlayerSpeed';
 const NEXT_BUTTON_WINDOW_S = 45;
 const CONTROLS_HIDE_MS = 3_000;
-const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3, 3.5, 4, 4.5, 5];
 
 const SOURCE_LABELS: Record<ExtractSource, string> = {
   alloha: 'Alloha',
