@@ -85,6 +85,7 @@ export async function resolveMagnetDirectUrl(
     const upload = await adPost<UploadResponse>('/magnet/upload', key, {
       'magnets[]': `magnet:?xt=urn:btih:${infoHash}`,
     });
+    console.log('[alldebrid-debug] upload=', JSON.stringify(upload));
     if (upload.status !== 'success') return null;
     const magnet = upload.data?.magnets?.[0];
     if (!magnet?.ready || magnet.id == null) return null;
@@ -92,6 +93,7 @@ export async function resolveMagnetDirectUrl(
     const filesRes = await adPost<FilesResponse>('/magnet/files', key, {
       'id[]': String(magnet.id),
     });
+    console.log('[alldebrid-debug] files=', JSON.stringify(filesRes));
     const files = filesRes.data?.magnets?.[0]?.files ?? [];
     const picked = pickFile(files, fileIdx);
     if (!picked) return null;
@@ -99,10 +101,12 @@ export async function resolveMagnetDirectUrl(
     const unlock = await adPost<UnlockResponse>('/link/unlock', key, {
       link: picked.l,
     });
+    console.log('[alldebrid-debug] unlock=', JSON.stringify(unlock));
     if (unlock.status !== 'success' || !unlock.data?.link) return null;
 
     return { url: unlock.data.link };
-  } catch {
+  } catch (err) {
+    console.log('[alldebrid-debug] EXCEPTION', err);
     return null;
   }
 }
