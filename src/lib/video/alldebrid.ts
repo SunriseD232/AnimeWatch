@@ -20,8 +20,28 @@ function apiKey(): string | undefined {
 
 interface AllDebridFile {
   n: string;
-  s: number;
-  l: string;
+  /** s/l отсутствуют у элементов-папок (см. flattenFiles) — там вместо них e[]. */
+  s?: number;
+  l?: string;
+  /** Торрент с несколькими файлами (например, mp4 + постер + nfo) приходит
+   *  НЕ плоским списком — один элемент-«папка» {n, e: [...]}, а реальные
+   *  файлы со своими l — внутри e[] (проверено вживую: тот же
+   *  /magnet/files для однофайлового и многофайлового торрента отдаёт
+   *  структурно разные ответы). См. flattenFiles. */
+  e?: AllDebridFile[];
+}
+
+/** Расплющивает files[] в плоский список настоящих файлов (с l) — папки
+ *  (e[] без своего l) разворачиваются рекурсивно. Без этого шага элемент-
+ *  папка мог попасть в pickFile и уйти в /link/unlock без l вовсе (см.
+ *  комментарий у AllDebridFile.e — так и было найдено вживую). */
+function flattenFiles(files: AllDebridFile[]): AllDebridFile[] {
+  const out: AllDebridFile[] = [];
+  for (const f of files) {
+    if (f.e && f.e.length > 0) out.push(...flattenFiles(f.e));
+    else if (f.l) out.push(f);
+  }
+  return out;
 }
 
 interface UploadResponse {
@@ -71,7 +91,7 @@ function pickFile(files: AllDebridFile[], fileIdx: number | null): AllDebridFile
   if (byIndex && VIDEO_EXT.test(byIndex.n)) return byIndex;
   const videoFiles = files.filter((f) => VIDEO_EXT.test(f.n));
   const pool = videoFiles.length > 0 ? videoFiles : files;
-  return pool.reduce((a, b) => (b.s > a.s ? b : a));
+  return pool.reduce((a, b) => ((b.s ?? 0) > (a.s ?? 0) ? b : a));
 }
 
 /**
@@ -104,9 +124,9 @@ export async function resolveMagnetDirectUrl(
       'id[]': String(magnet.id),
     });
     console.log('[alldebrid-debug] files=', JSON.stringify(filesRes));
-    const files = filesRes.data?.magnets?.[0]?.files ?? [];
+    const files = flattenFiles(filesRes.data?.magnets?.[0]?.files ?? []);
     const picked = pickFile(files, fileIdx);
-    if (!picked) return null;
+    if (!picked?.l) return null;
 
     const unlock = await adPost<UnlockResponse>('/link/unlock', key, {
       link: picked.l,
