@@ -2,6 +2,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { getYummyEpisode } from '@/lib/video/yummy';
 import { getKodikOwnPlayerTranslations } from '@/lib/video/kodik';
 import { getVideoseedOwnPlayerTranslations } from '@/lib/videoseed-catalog';
+import { resolveAllDebridStream } from '@/lib/video/alldebridResolve';
 import { extractViaVps } from './vpsExtractor';
 import type { ExtractSource, ResolvedStream } from './types';
 
@@ -93,7 +94,14 @@ export async function resolveStream({
   }
 
   if (signal?.aborted) return null;
-  const resolved = await extractViaVps(source, { shikimoriId, season, episode, embedUrl }, signal);
+  // alldebrid не идёт через VPS-экстрактор (Puppeteer тут не нужен) — magnet
+  // → прямая ссылка резолвится отдельной связкой Torrentio+AllDebrid, см.
+  // lib/video/alldebridResolve.ts. Результат кэшируется и проксируется тем
+  // же общим путём ниже, что и любой другой источник.
+  const resolved =
+    source === 'alldebrid'
+      ? await resolveAllDebridStream({ contentType, shikimoriId, season, episode })
+      : await extractViaVps(source, { shikimoriId, season, episode, embedUrl }, signal);
   if (!resolved) return null;
 
   await supabase.from('resolved_streams').upsert(

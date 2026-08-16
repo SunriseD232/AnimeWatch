@@ -17,6 +17,7 @@ import {
 } from '@/lib/anilibria';
 import type { Translation } from '@/lib/video/types';
 import type { YummyTranslation } from '@/lib/video/yummy';
+import type { OwnPlayerTranslation } from '@/lib/extract/types';
 import type { ContentType, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
 import { usePipPlayerHost } from '@/components/pip/PipPlayerHost';
@@ -48,6 +49,8 @@ interface Props {
   kodikFallback: boolean;
   // Данные Yummy (резервный источник) и тайминги пропуска для AniLibria.
   yummyTranslations: YummyTranslation[];
+  /** AllDebrid — отдельно от yummyTranslations, см. resolveAnimeEpisode.ts. */
+  alldebridTranslations: OwnPlayerTranslation[];
   /** Сохранённая озвучка (по названию — см. миграцию 0008) для OwnPlayer. */
   savedTranslationTitle: string | null;
   skipOpening: SkipSegment | null;
@@ -72,6 +75,7 @@ interface EpisodeSourcesResponse {
   kodikFallback: boolean;
   episodesTotal: number | null;
   yummyTranslations: YummyTranslation[];
+  alldebridTranslations: OwnPlayerTranslation[];
   skipOpening: SkipSegment | null;
   skipEnding: SkipSegment | null;
   resumeFrom: number | null;
@@ -101,6 +105,7 @@ export default function WatchPlayer({
   kodikInitialTranslationId: initialKodikInitialTranslationId,
   kodikFallback: initialKodikFallback,
   yummyTranslations: initialYummyTranslations,
+  alldebridTranslations: initialAlldebridTranslations,
   savedTranslationTitle,
   skipOpening: initialSkipOpening,
   skipEnding: initialSkipEnding,
@@ -123,6 +128,7 @@ export default function WatchPlayer({
   );
   const [kodikFallback, setKodikFallback] = useState(initialKodikFallback);
   const [yummyTranslations, setYummyTranslations] = useState(initialYummyTranslations);
+  const [alldebridTranslations, setAlldebridTranslations] = useState(initialAlldebridTranslations);
   const [skipOpening, setSkipOpening] = useState(initialSkipOpening);
   const [skipEnding, setSkipEnding] = useState(initialSkipEnding);
   const [resumeFrom, setResumeFrom] = useState(initialResumeFrom);
@@ -165,7 +171,10 @@ export default function WatchPlayer({
   // извлечение на VPS (source != null, см. lib/video/yummy.ts detectSource) —
   // остальные балансеры Yummy (Kodik/CVH/Aksor/...) пока доступны только
   // через iframe-плеер Yummy (вкладка «Yummy»).
-  const ownPlayerTranslations = yummyTranslations.filter((t) => t.source != null);
+  const ownPlayerTranslations = [
+    ...yummyTranslations.filter((t) => t.source != null),
+    ...alldebridTranslations,
+  ];
   const hasOwnPlayer = ownPlayerTranslations.length > 0;
 
   const playingRef = useRef(false);
@@ -441,6 +450,7 @@ export default function WatchPlayer({
         setKodikInitialTranslationId(data.kodikInitialTranslationId);
         setKodikFallback(data.kodikFallback);
         setYummyTranslations(data.yummyTranslations);
+        setAlldebridTranslations(data.alldebridTranslations);
         setSkipOpening(data.skipOpening);
         setSkipEnding(data.skipEnding);
         setResumeFrom(data.resumeFrom);

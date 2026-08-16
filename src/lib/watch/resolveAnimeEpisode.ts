@@ -1,6 +1,7 @@
 import { createVideoSource } from '@/lib/video/kodik';
 import { getYummyEpisode, type YummyTranslation } from '@/lib/video/yummy';
 import type { Translation } from '@/lib/video/types';
+import type { OwnPlayerTranslation } from '@/lib/extract/types';
 
 interface SkipSegment {
   time: number;
@@ -14,6 +15,11 @@ export interface AnimeEpisodeSources {
   kodikFallback: boolean;
   episodesTotal: number | null;
   yummyTranslations: YummyTranslation[];
+  /** AllDebrid — отдельно от yummyTranslations: тот список идёт ЕЩЁ и в
+   *  iframe-плеер Yummy (см. WatchPlayer.tsx), а у AllDebrid нет embedUrl
+   *  для iframe, только для «Наш плеер» (см. resolveCinemaEpisode.ts —
+   *  тот же приём для кино). */
+  alldebridTranslations: OwnPlayerTranslation[];
   skipOpening: SkipSegment | null;
   skipEnding: SkipSegment | null;
 }
@@ -56,6 +62,11 @@ export async function resolveAnimeEpisodeSources({
     kodikFallback: embed.fallback,
     episodesTotal: embed.episodesTotal,
     yummyTranslations: yummy?.translations ?? [],
+    // Доступность конкретного торрента по Kitsu id известна только в момент
+    // резолва (см. alldebridResolve.ts) — вкладку добавляем всегда, а не
+    // найдётся источник, «Наш плеер» покажет обычную ошибку, как для любого
+    // другого несработавшего экстракта.
+    alldebridTranslations: [{ id: -1, title: 'AllDebrid', embedUrl: '', source: 'alldebrid' }],
     skipOpening: yummy?.skipOpening ?? null,
     skipEnding: yummy?.skipEnding ?? null,
   };

@@ -91,6 +91,7 @@ const SOURCE_LABELS: Record<ExtractSource, string> = {
   kodik: 'Kodik',
   cvh: 'CVH',
   aksor: 'Aksor',
+  alldebrid: 'AllDebrid',
 };
 
 type LoadState = 'probing' | 'ready' | 'unavailable' | 'failed';

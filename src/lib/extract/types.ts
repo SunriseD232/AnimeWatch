@@ -1,4 +1,4 @@
-export type ExtractSource = 'alloha' | 'videoseed' | 'sibnet' | 'kodik' | 'cvh' | 'aksor';
+export type ExtractSource = 'alloha' | 'videoseed' | 'sibnet' | 'kodik' | 'cvh' | 'aksor' | 'alldebrid';
 
 export interface ResolvedStream {
   /** Прямая ссылка на .mp4/.m3u8/.mpd, перехваченная у эмбед-плеера источника. */

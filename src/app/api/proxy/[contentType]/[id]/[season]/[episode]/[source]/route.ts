@@ -29,7 +29,15 @@ export const dynamic = 'force-dynamic';
 // vpsExtractor.ts, чуть меньше этого значения).
 export const maxDuration = 60;
 
-const ALLOWED_SOURCES = new Set<ExtractSource>(['alloha', 'videoseed', 'sibnet', 'kodik', 'cvh', 'aksor']);
+const ALLOWED_SOURCES = new Set<ExtractSource>([
+  'alloha',
+  'videoseed',
+  'sibnet',
+  'kodik',
+  'cvh',
+  'aksor',
+  'alldebrid',
+]);
 
 interface RouteParams {
   contentType: string;
