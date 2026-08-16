@@ -42,10 +42,20 @@ interface UnlockResponse {
 const VIDEO_EXT = /\.(mp4|mkv|avi|webm|mov|m4v)$/i;
 
 async function adPost<T>(path: string, key: string, body: Record<string, string>): Promise<T> {
+  // Content-Type выставляем явно и тело шлём уже сериализованной строкой —
+  // Next.js патчит глобальный fetch, и авто-выставление Content-Type у
+  // URLSearchParams-тела (обычное поведение fetch) через этот патч не
+  // доходило до апстрима: AllDebrid получал запрос без нужного заголовка,
+  // не мог разобрать параметр и отвечал невпопад (LINK_HOST_NOT_SUPPORTED
+  // на /link/unlock с абсолютно валидной ссылкой — проверено вживую: тот
+  // же вызов голым curl/node с той же машины отрабатывал нормально).
   const res = await fetch(`${ALLDEBRID_API}${path}?agent=${AGENT}`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${key}` },
-    body: new URLSearchParams(body),
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams(body).toString(),
     signal: AbortSignal.timeout(ALLDEBRID_TIMEOUT_MS),
   });
   return (await res.json()) as T;
