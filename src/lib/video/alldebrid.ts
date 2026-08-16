@@ -62,13 +62,10 @@ interface UnlockResponse {
 const VIDEO_EXT = /\.(mp4|mkv|avi|webm|mov|m4v)$/i;
 
 async function adPost<T>(path: string, key: string, body: Record<string, string>): Promise<T> {
-  // Content-Type выставляем явно и тело шлём уже сериализованной строкой —
-  // Next.js патчит глобальный fetch, и авто-выставление Content-Type у
-  // URLSearchParams-тела (обычное поведение fetch) через этот патч не
-  // доходило до апстрима: AllDebrid получал запрос без нужного заголовка,
-  // не мог разобрать параметр и отвечал невпопад (LINK_HOST_NOT_SUPPORTED
-  // на /link/unlock с абсолютно валидной ссылкой — проверено вживую: тот
-  // же вызов голым curl/node с той же машины отрабатывал нормально).
+  // Content-Type выставлен явно, тело — уже сериализованная строка, а не
+  // сам объект URLSearchParams: подстраховка про запас, не обязательная
+  // (реальная причина LINK_HOST_NOT_SUPPORTED, найденная при отладке этой
+  // интеграции, была в другом месте — см. AllDebridFile.e/flattenFiles).
   const res = await fetch(`${ALLDEBRID_API}${path}?agent=${AGENT}`, {
     method: 'POST',
     headers: {
@@ -115,7 +112,6 @@ export async function resolveMagnetDirectUrl(
     const upload = await adPost<UploadResponse>('/magnet/upload', key, {
       'magnets[]': `magnet:?xt=urn:btih:${infoHash}`,
     });
-    console.log('[alldebrid-debug] upload=', JSON.stringify(upload));
     if (upload.status !== 'success') return null;
     const magnet = upload.data?.magnets?.[0];
     if (!magnet?.ready || magnet.id == null) return null;
@@ -123,7 +119,6 @@ export async function resolveMagnetDirectUrl(
     const filesRes = await adPost<FilesResponse>('/magnet/files', key, {
       'id[]': String(magnet.id),
     });
-    console.log('[alldebrid-debug] files=', JSON.stringify(filesRes));
     const files = flattenFiles(filesRes.data?.magnets?.[0]?.files ?? []);
     const picked = pickFile(files, fileIdx);
     if (!picked?.l) return null;
@@ -131,12 +126,10 @@ export async function resolveMagnetDirectUrl(
     const unlock = await adPost<UnlockResponse>('/link/unlock', key, {
       link: picked.l,
     });
-    console.log('[alldebrid-debug] unlock=', JSON.stringify(unlock));
     if (unlock.status !== 'success' || !unlock.data?.link) return null;
 
     return { url: unlock.data.link };
-  } catch (err) {
-    console.log('[alldebrid-debug] EXCEPTION', err);
+  } catch {
     return null;
   }
 }
