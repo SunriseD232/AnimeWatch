@@ -10,25 +10,28 @@ import type { ResolvedStream } from '@/lib/extract/types';
  * позволял batch-проверкой узнать закэшированные хэши без добавления в
  * аккаунт, теперь эту лазейку прикрыли у всех дебрид-сервисов), так что
  * единственный способ узнать, закэширован ли торрент — реально попробовать
- * через addMagnet. Компенсируем это широким пулом кандидатов ЗАПУЩЕННЫХ
- * ПАРАЛЛЕЛЬНО (см. tryStreams) — на популярных тайтлах топ по сидам часто
- * состоит из 4K/UHD-релизов, которые редко закэшированы, а рабочий вариант
- * может быть 8-м–15-м в списке; при последовательном переборе это было бы
- * непозволительно долго, при параллельном — общее время ограничено самым
- * медленным ОДНИМ кандидатом, а не суммой всех.
+ * через addMagnet. Компенсируем это широким пулом кандидатов — на
+ * популярных тайтлах топ по сидам часто состоит из 4K/UHD-релизов, которые
+ * редко закэшированы, а рабочий вариант может быть 8-м–15-м в списке.
+ *
+ * Перебор СТРОГО последовательный, не параллельный — проверено вживую: наш
+ * VLESS-туннель к Real-Debrid (см. realdebrid.ts) полностью зависает при
+ * ЛЮБЫХ двух одновременных запросах, даже с mux в конфиге Xray. Параллельный
+ * Promise.all по кандидатам однажды заваливал вообще все 15 кандидатов сразу
+ * (каждый рано или поздно бьёт в этот затор). Последовательно с ранним
+ * выходом на первом успехе — почти всегда быстрее по факту: "мимо" кандидат
+ * стоит 1-2 запроса (addMagnet + info) без опроса статуса, дорогой опрос
+ * (до 6×1с) платится только один раз — на кандидате, который сработал.
  */
 const MAX_CANDIDATES = 15;
 
 async function tryStreams(streams: TorrentioStream[]): Promise<ResolvedStream | null> {
   const candidates = streams.slice(0, MAX_CANDIDATES);
-  const results = await Promise.all(
-    candidates.map((s) => resolveMagnetDirectUrl(s.infoHash, s.fileIdx)),
-  );
-  // find(), не результат гонки — сохраняем приоритет исходной сортировки
-  // (по сидам/размеру, см. torrentio.ts), даже если менее приоритетный
-  // кандидат ответил быстрее.
-  const direct = results.find((r): r is { url: string } => r !== null);
-  return direct ? { url: direct.url, headers: {}, isHls: false } : null;
+  for (const candidate of candidates) {
+    const direct = await resolveMagnetDirectUrl(candidate.infoHash, candidate.fileIdx);
+    if (direct) return { url: direct.url, headers: {}, isHls: false };
+  }
+  return null;
 }
 
 async function cinemaStreams(

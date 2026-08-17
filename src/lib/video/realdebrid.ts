@@ -6,7 +6,13 @@
  *
  * Все запросы идут через локальный VLESS-туннель (см. lib/net/vlessProxy.ts)
  * — без него устойчивая передача байт с этой VPS к их CDN обрывается на
- * ~16KB, тоже проверено вживую.
+ * ~16KB, тоже проверено вживую. Туннель при этом надёжен только при СТРОГО
+ * последовательных запросах — проверено вживую: одиночные запросы проходят
+ * за ~0.3с, а любые ДВА одновременных запроса зависают оба без ответа
+ * (voспроизведено многократно, mux в конфиге Xray не помог). Поэтому вызовы
+ * к Real-Debrid внутри одного кандидата идут строго друг за другом (никогда
+ * Promise.all), а перебор кандидатов в realdebridResolve.ts тоже
+ * последовательный, не параллельный.
  */
 import { vlessDispatcher } from '@/lib/net/vlessProxy';
 
@@ -105,16 +111,9 @@ export async function resolveMagnetDirectUrl(
       // сотни, первым файлом по алфавиту — совсем другой фильм; Torrentio
       // отдал fileIdx=0, который тут ничего не значит). Индексу Torrentio
       // можно доверять только у обычных одно-/малофайловых раздач.
-      console.log(`[rd-debug] ${infoHash} files.length=${files.length}`);
-      if (files.length > MAX_FILES_IN_TORRENT) {
-        console.log(`[rd-debug] ${infoHash} skipped: too many files`);
-        return null;
-      }
+      if (files.length > MAX_FILES_IN_TORRENT) return null;
       const picked = pickFile(files, fileIdx);
-      if (!picked) {
-        console.log(`[rd-debug] ${infoHash} skipped: no video file found`);
-        return null;
-      }
+      if (!picked) return null;
       await rdFetch(`/torrents/selectFiles/${torrentId}`, key, {
         files: String(picked.id),
       });
@@ -122,23 +121,15 @@ export async function resolveMagnetDirectUrl(
       // в "downloaded" не сразу после selectFiles — задержка на стороне
       // Real-Debrid бывает больше пары секунд, проверено вживую (кандидат,
       // вручную подтверждённый как закэшированный, не укладывался в старый
-      // бюджет 3×500мс=1.5с и терялся). Раньше бюджет держали маленьким
-      // из расчёта на последовательный перебор кандидатов — теперь кандидаты
-      // идут параллельно (см. realdebridResolve.ts), общее время ограничено
-      // самым медленным ОДНИМ кандидатом, так что можно позволить каждому
-      // больше времени, не наказывая остальных.
+      // бюджет 3×500мс=1.5с и терялся).
       for (let attempt = 0; attempt < 6; attempt += 1) {
         info = await rdFetch<RdTorrentInfo>(`/torrents/info/${torrentId}`, key);
-        console.log(`[rd-debug] ${infoHash} poll#${attempt} status=${info.status}`);
         if (info.status !== 'waiting_files_selection' && info.status !== 'queued') break;
         await new Promise((r) => setTimeout(r, 1000));
       }
     }
 
-    if (info.status !== 'downloaded' || !info.links?.[0]) {
-      console.log(`[rd-debug] ${infoHash} giving up: status=${info.status} links=${info.links?.length ?? 0}`);
-      return null;
-    }
+    if (info.status !== 'downloaded' || !info.links?.[0]) return null;
 
     const unrestricted = await rdFetch<RdUnrestrict>('/unrestrict/link', key, {
       link: info.links[0],
@@ -146,13 +137,14 @@ export async function resolveMagnetDirectUrl(
     if (!unrestricted.download) return null;
 
     return { url: unrestricted.download };
-  } catch (err) {
-    console.log(`[rd-debug] ${infoHash} threw:`, err);
+  } catch {
     return null;
   } finally {
-    // Не держим торрент в аккаунте — best-effort, не блокирует основной путь.
+    // Не держим торрент в аккаунте — ждём (не fire-and-forget): туннель не
+    // переживает даже один лишний параллельный запрос (см. комментарий выше),
+    // а следующий кандидат в очереди начнёт слать запросы сразу после return.
     if (torrentId) {
-      rdFetch(`/torrents/delete/${torrentId}`, key).catch(() => {});
+      await rdFetch(`/torrents/delete/${torrentId}`, key).catch(() => {});
     }
   }
 }
