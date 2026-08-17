@@ -1,7 +1,7 @@
 import { createVideoSource, getKodikOwnPlayerTranslations } from '@/lib/video/kodik';
 import { buildVideoseedEmbedUrl } from '@/lib/video/videoseed';
 import { getVideoseedOwnPlayerTranslations } from '@/lib/videoseed-catalog';
-import { getAllohaOwnPlayerTranslations } from '@/lib/video/alloha';
+import { getAllohaEmbedUrl } from '@/lib/video/alloha';
 import type { OwnPlayerTranslation } from '@/lib/extract/types';
 import type { Translation } from '@/lib/video/types';
 
@@ -13,6 +13,9 @@ export interface CinemaEpisodeSources {
   /** null — токен Videoseed не задан. */
   videoseedUrl: string | null;
   videoseedStart: number;
+  /** null — нет тайтла у Alloha / токены не заданы. Родной iframe плеера
+   *  Alloha (не наше извлечение) — см. lib/video/alloha.ts. */
+  allohaUrl: string | null;
   ownPlayerTranslations: OwnPlayerTranslation[];
 }
 
@@ -38,7 +41,7 @@ export async function resolveCinemaEpisodeSources({
   resumeFrom: number | null;
 }): Promise<CinemaEpisodeSources> {
   const source = createVideoSource();
-  const [embed, kodikOwnPlayerTranslations, videoseedOwnPlayerTranslations, allohaOwnPlayerTranslations] =
+  const [embed, kodikOwnPlayerTranslations, videoseedOwnPlayerTranslations, allohaUrl] =
     await Promise.all([
       source.getEmbedUrl({
         kinopoiskId,
@@ -51,7 +54,7 @@ export async function resolveCinemaEpisodeSources({
       getVideoseedOwnPlayerTranslations(kinopoiskId, season, episode),
       // Только фильмы — прямой API Alloha резолвится по kinopoisk_id без
       // сезона/серии, для сериалов формат неизвестен (не проверяли вживую).
-      isSerial ? Promise.resolve([]) : getAllohaOwnPlayerTranslations(kinopoiskId),
+      isSerial ? Promise.resolve(null) : getAllohaEmbedUrl(kinopoiskId),
     ]);
 
   const resolvedTranslationId = translationId ?? embed.translations[0]?.id ?? null;
@@ -82,7 +85,6 @@ export async function resolveCinemaEpisodeSources({
       : videoseedUrl
         ? [{ id: 0, title: 'Videoseed', embedUrl: '', source: 'videoseed' as const }]
         : []),
-    ...allohaOwnPlayerTranslations,
     { id: -1, title: 'Real-Debrid', embedUrl: '', source: 'realdebrid' as const },
   ];
 
@@ -93,6 +95,7 @@ export async function resolveCinemaEpisodeSources({
     kodikFallback: embed.fallback,
     videoseedUrl,
     videoseedStart,
+    allohaUrl,
     ownPlayerTranslations,
   };
 }

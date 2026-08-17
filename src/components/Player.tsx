@@ -43,6 +43,9 @@ interface Props {
   videoseedUrl: string | null;
   /** Секунда, с которой реально стартует embed Videoseed (параметр start). */
   videoseedStart: number;
+  /** Родной iframe-эмбед Alloha (кино, по kinopoisk_id) или null — нет
+   *  тайтла у Alloha / токены не заданы. См. lib/video/alloha.ts. */
+  allohaUrl: string | null;
   /** Длительность контента в секундах (фильмы; для сериалов null). */
   durationSeconds: number | null;
   translations: Translation[];
@@ -78,7 +81,7 @@ const AUTO_NEXT_DELAY_MS = 3_000;
 const PREWARM_WINDOW_S = 300;
 const PREWARM_POLL_MS = 15_000;
 
-type PlayerKind = 'vibix' | 'videoseed' | 'kodik' | 'own';
+type PlayerKind = 'vibix' | 'videoseed' | 'alloha' | 'kodik' | 'own';
 
 /**
  * Событие плеера Vibix — ПЛОСКИЙ нативный формат Playerjs (выяснено
@@ -105,6 +108,7 @@ interface EpisodeSourcesResponse {
   kodikFallback: boolean;
   videoseedUrl: string | null;
   videoseedStart: number;
+  allohaUrl: string | null;
   ownPlayerTranslations: OwnPlayerTranslation[];
   resumeFrom: number | null;
 }
@@ -149,6 +153,7 @@ export default function Player({
   vibixEmbed,
   videoseedUrl: initialVideoseedUrl,
   videoseedStart: initialVideoseedStart,
+  allohaUrl: initialAllohaUrl,
   durationSeconds,
   translations: initialTranslations,
   initialTranslationId,
@@ -188,6 +193,7 @@ export default function Player({
   const [translations, setTranslations] = useState(initialTranslations);
   const [videoseedUrl, setVideoseedUrl] = useState(initialVideoseedUrl);
   const [videoseedStart, setVideoseedStart] = useState(initialVideoseedStart);
+  const [allohaUrl, setAllohaUrl] = useState(initialAllohaUrl);
   const [ownPlayerTranslations, setOwnPlayerTranslations] = useState(
     initialOwnPlayerTranslations,
   );
@@ -197,14 +203,24 @@ export default function Player({
   // замена всей страницы (см. switchEpisode).
   const [switchingEpisode, setSwitchingEpisode] = useState(false);
 
-  // Плееры по приоритету: Наш плеер (свой проксирующий стрим, без стороннего
-  // iframe/рекламы) → Vibix (точный трекинг позиции) → Videoseed → Kodik.
-  // Vibix/Videoseed доступны при наличии токенов и тайтла в их каталогах.
+  // Плееры по приоритету: Vibix (основной — точный трекинг позиции) → Наш
+  // плеер (свой проксирующий стрим, без стороннего iframe/рекламы) →
+  // Videoseed → Alloha → Kodik. Vibix/Videoseed/Alloha доступны при наличии
+  // токенов и тайтла в их каталогах.
   const hasVibix = vibixEmbed !== null;
   const hasVideoseed = videoseedUrl !== null;
+  const hasAlloha = allohaUrl !== null;
   const hasOwnPlayer = ownPlayerTranslations.length > 0;
   const [player, setPlayer] = useState<PlayerKind>(
-    hasOwnPlayer ? 'own' : hasVibix ? 'vibix' : hasVideoseed ? 'videoseed' : 'kodik',
+    hasVibix
+      ? 'vibix'
+      : hasOwnPlayer
+        ? 'own'
+        : hasVideoseed
+          ? 'videoseed'
+          : hasAlloha
+            ? 'alloha'
+            : 'kodik',
   );
 
   const [playing, setPlaying] = useState(false);
@@ -228,6 +244,9 @@ export default function Player({
   const durationRef = useRef<number | null>(null);
   // iframe Videoseed — нужен оценщику позиции (клики, fullscreen).
   const vsIframeRef = useRef<HTMLIFrameElement>(null);
+  // iframe Alloha — тот же оценщик позиции, что у Videoseed (родной плеер,
+  // без postMessage-протокола, см. lib/video/alloha.ts).
+  const alIframeRef = useRef<HTMLIFrameElement>(null);
   // Контейнер, в который PipPlayerHost порталит реальный OwnPlayer (см.
   // эффект show/hide ниже и components/pip/PipPlayerHost.tsx).
   const ownPlayerDockRef = useRef<HTMLDivElement | null>(null);
@@ -273,11 +292,12 @@ export default function Player({
       pref === 'kodik' ||
       (pref === 'videoseed' && hasVideoseed) ||
       (pref === 'vibix' && hasVibix) ||
+      (pref === 'alloha' && hasAlloha) ||
       (pref === 'own' && hasOwnPlayer)
     ) {
       setPlayer(pref);
     }
-  }, [hasVideoseed, hasVibix, hasOwnPlayer]);
+  }, [hasVideoseed, hasVibix, hasAlloha, hasOwnPlayer]);
 
   // Переключение плеера с сохранением выбора.
   const switchPlayer = useCallback((next: PlayerKind) => {
@@ -384,6 +404,28 @@ export default function Player({
     anchor: videoseedStart,
     durationSeconds,
     srcKey: videoseedUrl,
+    onPlayingChange: (next) => {
+      setPlaying(next);
+      if (!next) saveProgress();
+    },
+    onTick: (pos) => {
+      currentTimeRef.current = pos;
+      if (durationSeconds && durationRef.current == null) {
+        durationRef.current = durationSeconds;
+      }
+    },
+  });
+
+  // --- Оценка позиции на Alloha (родной плеер, тоже без событий) ---------
+  // anchor всегда 0 — их embed не поддерживает параметр стартовой секунды
+  // (в отличие от Videoseed), так что восстановленная позиция не двигает
+  // сам плеер, только наш прогресс-конвейер начинает отсчёт заново.
+  useVideoseedEstimator({
+    enabled: player === 'alloha' && hasAlloha && isCinema,
+    iframeRef: alIframeRef,
+    anchor: 0,
+    durationSeconds,
+    srcKey: allohaUrl,
     onPlayingChange: (next) => {
       setPlaying(next);
       if (!next) saveProgress();
@@ -721,6 +763,7 @@ export default function Player({
         setFallback(data.kodikFallback);
         setVideoseedUrl(data.videoseedUrl);
         setVideoseedStart(data.videoseedStart);
+        setAllohaUrl(data.allohaUrl);
         setOwnPlayerTranslations(data.ownPlayerTranslations);
         setResumeFrom(data.resumeFrom);
         vibixSeekRef.current = data.resumeFrom;
@@ -939,17 +982,18 @@ export default function Player({
       )}
 
       {/* Переключатель плеера — когда есть альтернативы Kodik */}
-      {(hasVibix || hasVideoseed || hasOwnPlayer) && (
+      {(hasVibix || hasVideoseed || hasAlloha || hasOwnPlayer) && (
         <div className="flex items-center gap-2 text-sm">
           <span className="shrink-0 text-gray-400">Плеер:</span>
-          {/* overflow-x-auto + whitespace-nowrap — на узких экранах 4 вкладки
-              (Vibix/Videoseed/Kodik/Наш плеер) не влезают в строку без этого:
-              «Наш плеер» переносился на два ряда внутри своей же пилюли. */}
+          {/* overflow-x-auto + whitespace-nowrap — на узких экранах 5 вкладок
+              (Vibix/Videoseed/Alloha/Kodik/Наш плеер) не влезают в строку без
+              этого: «Наш плеер» переносился на два ряда внутри своей пилюли. */}
           <div className="inline-flex max-w-full overflow-x-auto rounded-full bg-bg-card p-0.5 ring-1 ring-white/5">
             {(
               [
                 hasVibix ? (['vibix', 'Vibix'] as const) : null,
                 hasVideoseed ? (['videoseed', 'Videoseed'] as const) : null,
+                hasAlloha ? (['alloha', 'Alloha'] as const) : null,
                 ['kodik', 'Kodik'] as const,
                 hasOwnPlayer ? (['own', 'Наш плеер'] as const) : null,
               ].filter(Boolean) as ReadonlyArray<readonly [PlayerKind, string]>
@@ -1006,6 +1050,16 @@ export default function Player({
             allow="autoplay *; fullscreen *"
             className="absolute inset-0 h-full w-full border-0"
           />
+        ) : player === 'alloha' && allohaUrl ? (
+          <iframe
+            ref={alIframeRef}
+            key={`al-${allohaUrl}`}
+            src={allohaUrl}
+            title={`${animeTitle} — серия ${activeEpisode}`}
+            allowFullScreen
+            allow="autoplay *; fullscreen *"
+            className="absolute inset-0 h-full w-full border-0"
+          />
         ) : fallback ? (
           // Kodik не нашёл этот тайтл (или не настроен) — не встраиваем
           // битый iframe. Формулировка зависит от того, есть ли ещё
@@ -1019,7 +1073,7 @@ export default function Player({
               Этот источник сейчас недоступен
             </p>
             <p className="max-w-md text-xs leading-relaxed text-gray-400">
-              {hasVibix || hasVideoseed || hasOwnPlayer
+              {hasVibix || hasVideoseed || hasAlloha || hasOwnPlayer
                 ? 'Попробуйте другой плеер в переключателе выше.'
                 : 'Попробуйте зайти позже.'}
             </p>

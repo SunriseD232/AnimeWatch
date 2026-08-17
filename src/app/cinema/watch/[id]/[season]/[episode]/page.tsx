@@ -111,6 +111,7 @@ export default async function CinemaWatchPage({
       vibixEmbed={vibixEmbed}
       videoseedUrl={sources.videoseedUrl}
       videoseedStart={sources.videoseedStart}
+      allohaUrl={sources.allohaUrl}
       durationSeconds={item.durationSeconds}
       translations={sources.kodikTranslations}
       initialTranslationId={sources.kodikInitialTranslationId}
