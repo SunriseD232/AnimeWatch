@@ -178,7 +178,6 @@ async function interceptVideoUrl(browser, rawEmbedUrl) {
         `[alloha] ${embedUrl}: 0 видео-URL. Запросов всего: ${allUrls.length}. Последние 8: ${JSON.stringify(allUrls.slice(-8))}. /bnsi/: ${JSON.stringify(bnsiStatuses)}`,
       );
     }
-    console.error(`[alloha-debug] videoUrls: ${JSON.stringify(videoUrls)}`);
 
     // Alloha отдаёт фрагментированный CMAF (master.m3u8 → index-*.m3u8 →
     // init-*.mp4 + seg-*.m4s) — init-сегмент сам по себе крошечный (~1КБ,
