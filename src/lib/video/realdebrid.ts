@@ -90,17 +90,21 @@ export async function resolveMagnetDirectUrl(
       magnet: `magnet:?xt=urn:btih:${infoHash}`,
     });
     torrentId = added.id;
+    console.log('[rd-debug] added=', JSON.stringify(added));
     if (!torrentId) return null;
 
     let info = await rdFetch<RdTorrentInfo>(`/torrents/info/${torrentId}`, key);
+    console.log('[rd-debug] info1=', JSON.stringify(info));
     if (info.status === 'waiting_files_selection') {
       const files = info.files ?? [];
       const picked = pickFile(files, fileIdx);
+      console.log('[rd-debug] picked=', JSON.stringify(picked));
       if (!picked) return null;
       await rdFetch(`/torrents/selectFiles/${torrentId}`, key, {
         files: String(picked.id),
       });
       info = await rdFetch<RdTorrentInfo>(`/torrents/info/${torrentId}`, key);
+      console.log('[rd-debug] info2=', JSON.stringify(info));
     }
 
     if (info.status !== 'downloaded' || !info.links?.[0]) return null;
@@ -108,10 +112,12 @@ export async function resolveMagnetDirectUrl(
     const unrestricted = await rdFetch<RdUnrestrict>('/unrestrict/link', key, {
       link: info.links[0],
     });
+    console.log('[rd-debug] unrestricted=', JSON.stringify(unrestricted));
     if (!unrestricted.download) return null;
 
     return { url: unrestricted.download };
-  } catch {
+  } catch (err) {
+    console.log('[rd-debug] EXCEPTION', err);
     return null;
   } finally {
     // Не держим торрент в аккаунте — best-effort, не блокирует основной путь.
