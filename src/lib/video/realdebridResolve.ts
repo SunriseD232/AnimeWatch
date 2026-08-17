@@ -4,19 +4,31 @@ import { getMovieStreams, getSeriesStreams, getAnimeStreams, type TorrentioStrea
 import { resolveMagnetDirectUrl } from './realdebrid';
 import type { ResolvedStream } from '@/lib/extract/types';
 
-/** Сколько кандидатов из Torrentio пробовать, пока не найдётся уже
- *  закэшированный на Real-Debrid (см. resolveMagnetDirectUrl — некэшированный
- *  торрент не ждём, сразу пробуем следующий). Каждая попытка — не больше
- *  нескольких секунд (см. цикл опроса в realdebrid.ts), так что верхняя
- *  граница ожидания ограничена даже при 6 кандидатах. */
-const MAX_CANDIDATES = 6;
+/**
+ * Сколько кандидатов из Torrentio пробовать. Real-Debrid отключил
+ * instantAvailability (проверено вживую: "disabled_endpoint" — раньше
+ * позволял batch-проверкой узнать закэшированные хэши без добавления в
+ * аккаунт, теперь эту лазейку прикрыли у всех дебрид-сервисов), так что
+ * единственный способ узнать, закэширован ли торрент — реально попробовать
+ * через addMagnet. Компенсируем это широким пулом кандидатов ЗАПУЩЕННЫХ
+ * ПАРАЛЛЕЛЬНО (см. tryStreams) — на популярных тайтлах топ по сидам часто
+ * состоит из 4K/UHD-релизов, которые редко закэшированы, а рабочий вариант
+ * может быть 8-м–15-м в списке; при последовательном переборе это было бы
+ * непозволительно долго, при параллельном — общее время ограничено самым
+ * медленным ОДНИМ кандидатом, а не суммой всех.
+ */
+const MAX_CANDIDATES = 15;
 
 async function tryStreams(streams: TorrentioStream[]): Promise<ResolvedStream | null> {
-  for (const stream of streams.slice(0, MAX_CANDIDATES)) {
-    const direct = await resolveMagnetDirectUrl(stream.infoHash, stream.fileIdx);
-    if (direct) return { url: direct.url, headers: {}, isHls: false };
-  }
-  return null;
+  const candidates = streams.slice(0, MAX_CANDIDATES);
+  const results = await Promise.all(
+    candidates.map((s) => resolveMagnetDirectUrl(s.infoHash, s.fileIdx)),
+  );
+  // find(), не результат гонки — сохраняем приоритет исходной сортировки
+  // (по сидам/размеру, см. torrentio.ts), даже если менее приоритетный
+  // кандидат ответил быстрее.
+  const direct = results.find((r): r is { url: string } => r !== null);
+  return direct ? { url: direct.url, headers: {}, isHls: false } : null;
 }
 
 async function cinemaStreams(
