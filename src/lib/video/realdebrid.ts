@@ -103,8 +103,18 @@ export async function resolveMagnetDirectUrl(
       await rdFetch(`/torrents/selectFiles/${torrentId}`, key, {
         files: String(picked.id),
       });
-      info = await rdFetch<RdTorrentInfo>(`/torrents/info/${torrentId}`, key);
-      console.log('[rd-debug] info2=', JSON.stringify(info));
+      // Даже у уже закэшированного (мгновенного) торрента статус переходит
+      // в "downloaded" не сразу после selectFiles — короткая задержка на
+      // стороне Real-Debrid, проверено вживую (первый info сразу после
+      // selectFiles ещё показывал "waiting_files_selection", повторный
+      // запрос секунды спустя — уже "downloaded"). Опрашиваем несколько раз
+      // с паузой вместо одной попытки.
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        info = await rdFetch<RdTorrentInfo>(`/torrents/info/${torrentId}`, key);
+        console.log('[rd-debug] poll', attempt, JSON.stringify(info));
+        if (info.status !== 'waiting_files_selection' && info.status !== 'queued') break;
+        await new Promise((r) => setTimeout(r, 700));
+      }
     }
 
     if (info.status !== 'downloaded' || !info.links?.[0]) return null;
