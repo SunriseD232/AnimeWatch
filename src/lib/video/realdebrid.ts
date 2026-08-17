@@ -105,9 +105,16 @@ export async function resolveMagnetDirectUrl(
       // сотни, первым файлом по алфавиту — совсем другой фильм; Torrentio
       // отдал fileIdx=0, который тут ничего не значит). Индексу Torrentio
       // можно доверять только у обычных одно-/малофайловых раздач.
-      if (files.length > MAX_FILES_IN_TORRENT) return null;
+      console.log(`[rd-debug] ${infoHash} files.length=${files.length}`);
+      if (files.length > MAX_FILES_IN_TORRENT) {
+        console.log(`[rd-debug] ${infoHash} skipped: too many files`);
+        return null;
+      }
       const picked = pickFile(files, fileIdx);
-      if (!picked) return null;
+      if (!picked) {
+        console.log(`[rd-debug] ${infoHash} skipped: no video file found`);
+        return null;
+      }
       await rdFetch(`/torrents/selectFiles/${torrentId}`, key, {
         files: String(picked.id),
       });
@@ -122,12 +129,16 @@ export async function resolveMagnetDirectUrl(
       // больше времени, не наказывая остальных.
       for (let attempt = 0; attempt < 6; attempt += 1) {
         info = await rdFetch<RdTorrentInfo>(`/torrents/info/${torrentId}`, key);
+        console.log(`[rd-debug] ${infoHash} poll#${attempt} status=${info.status}`);
         if (info.status !== 'waiting_files_selection' && info.status !== 'queued') break;
         await new Promise((r) => setTimeout(r, 1000));
       }
     }
 
-    if (info.status !== 'downloaded' || !info.links?.[0]) return null;
+    if (info.status !== 'downloaded' || !info.links?.[0]) {
+      console.log(`[rd-debug] ${infoHash} giving up: status=${info.status} links=${info.links?.length ?? 0}`);
+      return null;
+    }
 
     const unrestricted = await rdFetch<RdUnrestrict>('/unrestrict/link', key, {
       link: info.links[0],
@@ -135,7 +146,8 @@ export async function resolveMagnetDirectUrl(
     if (!unrestricted.download) return null;
 
     return { url: unrestricted.download };
-  } catch {
+  } catch (err) {
+    console.log(`[rd-debug] ${infoHash} threw:`, err);
     return null;
   } finally {
     // Не держим торрент в аккаунте — best-effort, не блокирует основной путь.
