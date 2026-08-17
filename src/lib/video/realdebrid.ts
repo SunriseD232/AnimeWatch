@@ -112,17 +112,18 @@ export async function resolveMagnetDirectUrl(
         files: String(picked.id),
       });
       // Даже у уже закэшированного (мгновенного) торрента статус переходит
-      // в "downloaded" не сразу после selectFiles — короткая задержка на
-      // стороне Real-Debrid, проверено вживую (первый info сразу после
-      // selectFiles ещё показывал "waiting_files_selection", повторный
-      // запрос секунды спустя — уже "downloaded"). Опрашиваем несколько раз
-      // с паузой вместо одной попытки — бюджет небольшой (пробуем несколько
-      // кандидатов подряд, см. realdebridResolve.ts, и не хотим копить
-      // задержку на каждом неготовом).
-      for (let attempt = 0; attempt < 3; attempt += 1) {
+      // в "downloaded" не сразу после selectFiles — задержка на стороне
+      // Real-Debrid бывает больше пары секунд, проверено вживую (кандидат,
+      // вручную подтверждённый как закэшированный, не укладывался в старый
+      // бюджет 3×500мс=1.5с и терялся). Раньше бюджет держали маленьким
+      // из расчёта на последовательный перебор кандидатов — теперь кандидаты
+      // идут параллельно (см. realdebridResolve.ts), общее время ограничено
+      // самым медленным ОДНИМ кандидатом, так что можно позволить каждому
+      // больше времени, не наказывая остальных.
+      for (let attempt = 0; attempt < 6; attempt += 1) {
         info = await rdFetch<RdTorrentInfo>(`/torrents/info/${torrentId}`, key);
         if (info.status !== 'waiting_files_selection' && info.status !== 'queued') break;
-        await new Promise((r) => setTimeout(r, 500));
+        await new Promise((r) => setTimeout(r, 1000));
       }
     }
 
