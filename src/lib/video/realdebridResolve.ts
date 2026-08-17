@@ -12,8 +12,10 @@ import type { ResolvedStream } from '@/lib/extract/types';
 const MAX_CANDIDATES = 6;
 
 async function tryStreams(streams: TorrentioStream[]): Promise<ResolvedStream | null> {
+  console.log('[rd-debug] candidates=', JSON.stringify(streams.slice(0, MAX_CANDIDATES).map((s) => ({ h: s.infoHash, seeders: s.seeders, size: s.sizeBytes }))));
   for (const stream of streams.slice(0, MAX_CANDIDATES)) {
     const direct = await resolveMagnetDirectUrl(stream.infoHash, stream.fileIdx);
+    console.log('[rd-debug]', stream.infoHash, '->', direct);
     if (direct) return { url: direct.url, headers: {}, isHls: false };
   }
   return null;
