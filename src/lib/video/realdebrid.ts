@@ -35,6 +35,10 @@ interface RdUnrestrict {
 }
 
 const VIDEO_EXT = /\.(mp4|mkv|avi|webm|mov|m4v)$/i;
+// Порог, отделяющий обычную раздачу (фильм ± сэмпл/сабы/постер) от
+// мусорного "сборника" на сотни чужих файлов — см. комментарий у проверки
+// ниже.
+const MAX_FILES_IN_TORRENT = 20;
 
 async function rdFetch<T>(
   path: string,
@@ -95,6 +99,13 @@ export async function resolveMagnetDirectUrl(
     let info = await rdFetch<RdTorrentInfo>(`/torrents/info/${torrentId}`, key);
     if (info.status === 'waiting_files_selection') {
       const files = info.files ?? [];
+      // Некоторые "торренты" на деле — мусорные сборники из сотен чужих
+      // фильмов под одной раздачей (проверено вживую: топ-кандидат по
+      // сидам для конкретного фильма оказался торрентом с files.length в
+      // сотни, первым файлом по алфавиту — совсем другой фильм; Torrentio
+      // отдал fileIdx=0, который тут ничего не значит). Индексу Torrentio
+      // можно доверять только у обычных одно-/малофайловых раздач.
+      if (files.length > MAX_FILES_IN_TORRENT) return null;
       const picked = pickFile(files, fileIdx);
       if (!picked) return null;
       await rdFetch(`/torrents/selectFiles/${torrentId}`, key, {
