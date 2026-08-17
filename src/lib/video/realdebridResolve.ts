@@ -11,11 +11,8 @@ import type { ResolvedStream } from '@/lib/extract/types';
 const MAX_CANDIDATES = 3;
 
 async function tryStreams(streams: TorrentioStream[]): Promise<ResolvedStream | null> {
-  console.log('[rd-debug] tryStreams count=', streams.length);
   for (const stream of streams.slice(0, MAX_CANDIDATES)) {
-    console.log('[rd-debug] trying', stream.infoHash, stream.fileIdx);
     const direct = await resolveMagnetDirectUrl(stream.infoHash, stream.fileIdx);
-    console.log('[rd-debug] result', direct);
     if (direct) return { url: direct.url, headers: {}, isHls: false };
   }
   return null;
@@ -27,13 +24,10 @@ async function cinemaStreams(
   episode: number,
 ): Promise<TorrentioStream[]> {
   const item = await getCinemaById(kinopoiskId);
-  console.log('[rd-debug] item.idImdb=', item?.idImdb, 'isSerial=', item?.isSerial);
   if (!item?.idImdb) return [];
-  const streams = item.isSerial
-    ? await getSeriesStreams(item.idImdb, season, episode)
-    : await getMovieStreams(item.idImdb);
-  console.log('[rd-debug] torrentio streams=', streams.length);
-  return streams;
+  return item.isSerial
+    ? getSeriesStreams(item.idImdb, season, episode)
+    : getMovieStreams(item.idImdb);
 }
 
 async function animeStreams(shikimoriId: number, episode: number): Promise<TorrentioStream[]> {

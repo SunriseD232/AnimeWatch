@@ -52,7 +52,6 @@ async function rdFetch<T>(
     // @ts-expect-error -- dispatcher — опция undici, не входит в типы lib.dom fetch.
     dispatcher: vlessDispatcher(),
   });
-  console.log('[rd-debug] rdFetch', path, 'status=', res.status);
   if (res.status === 204) return {} as T;
   return (await res.json()) as T;
 }
@@ -91,20 +90,16 @@ export async function resolveMagnetDirectUrl(
       magnet: `magnet:?xt=urn:btih:${infoHash}`,
     });
     torrentId = added.id;
-    console.log('[rd-debug] added=', JSON.stringify(added));
     if (!torrentId) return null;
 
     let info = await rdFetch<RdTorrentInfo>(`/torrents/info/${torrentId}`, key);
-    console.log('[rd-debug] info1=', JSON.stringify(info));
     if (info.status === 'waiting_files_selection') {
       const files = info.files ?? [];
       const picked = pickFile(files, fileIdx);
-      console.log('[rd-debug] picked=', JSON.stringify(picked));
       if (!picked) return null;
-      const selectResult = await rdFetch(`/torrents/selectFiles/${torrentId}`, key, {
+      await rdFetch(`/torrents/selectFiles/${torrentId}`, key, {
         files: String(picked.id),
       });
-      console.log('[rd-debug] selectResult=', JSON.stringify(selectResult));
       // Даже у уже закэшированного (мгновенного) торрента статус переходит
       // в "downloaded" не сразу после selectFiles — короткая задержка на
       // стороне Real-Debrid, проверено вживую (первый info сразу после
@@ -113,7 +108,6 @@ export async function resolveMagnetDirectUrl(
       // с паузой вместо одной попытки.
       for (let attempt = 0; attempt < 5; attempt += 1) {
         info = await rdFetch<RdTorrentInfo>(`/torrents/info/${torrentId}`, key);
-        console.log('[rd-debug] poll', attempt, JSON.stringify(info));
         if (info.status !== 'waiting_files_selection' && info.status !== 'queued') break;
         await new Promise((r) => setTimeout(r, 700));
       }
@@ -124,12 +118,10 @@ export async function resolveMagnetDirectUrl(
     const unrestricted = await rdFetch<RdUnrestrict>('/unrestrict/link', key, {
       link: info.links[0],
     });
-    console.log('[rd-debug] unrestricted=', JSON.stringify(unrestricted));
     if (!unrestricted.download) return null;
 
     return { url: unrestricted.download };
-  } catch (err) {
-    console.log('[rd-debug] EXCEPTION', err);
+  } catch {
     return null;
   } finally {
     // Не держим торрент в аккаунте — best-effort, не блокирует основной путь.
