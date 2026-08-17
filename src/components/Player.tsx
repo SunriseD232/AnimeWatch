@@ -1004,7 +1004,7 @@ export default function Player({
                 onClick={() => switchPlayer(kind)}
                 title={
                   approxTracking
-                    ? 'Позиция запоминается приблизительно, не посекундно'
+                    ? `${label}. Позиция запоминается приблизительно, не посекундно`
                     : undefined
                 }
                 className={[
@@ -1024,7 +1024,7 @@ export default function Player({
                         'info',
                       );
                     }}
-                    aria-label="Позиция запоминается приблизительно, не посекундно"
+                    aria-hidden="true"
                     className="ml-1 cursor-help align-super text-[10px] text-gray-400"
                   >
                     ≈
