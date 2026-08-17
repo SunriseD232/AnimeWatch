@@ -991,17 +991,22 @@ export default function Player({
           <div className="inline-flex max-w-full overflow-x-auto rounded-full bg-bg-card p-0.5 ring-1 ring-white/5">
             {(
               [
-                hasVibix ? (['vibix', 'Vibix'] as const) : null,
-                hasVideoseed ? (['videoseed', 'Videoseed'] as const) : null,
-                hasAlloha ? (['alloha', 'Alloha'] as const) : null,
-                ['kodik', 'Kodik'] as const,
-                hasOwnPlayer ? (['own', 'Наш плеер'] as const) : null,
-              ].filter(Boolean) as ReadonlyArray<readonly [PlayerKind, string]>
-            ).map(([kind, label]) => (
+                hasVibix ? (['vibix', 'Vibix', false] as const) : null,
+                hasVideoseed ? (['videoseed', 'Videoseed', true] as const) : null,
+                hasAlloha ? (['alloha', 'Alloha', true] as const) : null,
+                ['kodik', 'Kodik', false] as const,
+                hasOwnPlayer ? (['own', 'Наш плеер', false] as const) : null,
+              ].filter(Boolean) as ReadonlyArray<readonly [PlayerKind, string, boolean]>
+            ).map(([kind, label, approxTracking]) => (
               <button
                 key={kind}
                 type="button"
                 onClick={() => switchPlayer(kind)}
+                title={
+                  approxTracking
+                    ? 'Позиция запоминается приблизительно, не посекундно'
+                    : undefined
+                }
                 className={[
                   'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
                   player === kind
@@ -1010,6 +1015,21 @@ export default function Player({
                 ].join(' ')}
               >
                 {label}
+                {approxTracking && (
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toast(
+                        'Этот плеер не запоминает точную позицию — только приблизительно',
+                        'info',
+                      );
+                    }}
+                    aria-label="Позиция запоминается приблизительно, не посекундно"
+                    className="ml-1 cursor-help align-super text-[10px] text-gray-400"
+                  >
+                    ≈
+                  </span>
+                )}
               </button>
             ))}
           </div>

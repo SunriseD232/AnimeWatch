@@ -656,6 +656,7 @@ export default function WatchPlayer({
               <button
                 type="button"
                 onClick={() => switchTo('yummy')}
+                title="Позиция запоминается приблизительно, не посекундно"
                 className={[
                   'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
                   source === 'yummy'
@@ -664,6 +665,19 @@ export default function WatchPlayer({
                 ].join(' ')}
               >
                 Yummy
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toast(
+                      'Этот плеер не запоминает точную позицию — только приблизительно',
+                      'info',
+                    );
+                  }}
+                  aria-label="Позиция запоминается приблизительно, не посекундно"
+                  className="ml-1 cursor-help align-super text-[10px] text-gray-400"
+                >
+                  ≈
+                </span>
               </button>
             )}
             {hasOwnPlayer && (
