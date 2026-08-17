@@ -52,6 +52,7 @@ async function rdFetch<T>(
     // @ts-expect-error -- dispatcher — опция undici, не входит в типы lib.dom fetch.
     dispatcher: vlessDispatcher(),
   });
+  console.log('[rd-debug] rdFetch', path, 'status=', res.status);
   if (res.status === 204) return {} as T;
   return (await res.json()) as T;
 }
@@ -100,9 +101,10 @@ export async function resolveMagnetDirectUrl(
       const picked = pickFile(files, fileIdx);
       console.log('[rd-debug] picked=', JSON.stringify(picked));
       if (!picked) return null;
-      await rdFetch(`/torrents/selectFiles/${torrentId}`, key, {
+      const selectResult = await rdFetch(`/torrents/selectFiles/${torrentId}`, key, {
         files: String(picked.id),
       });
+      console.log('[rd-debug] selectResult=', JSON.stringify(selectResult));
       // Даже у уже закэшированного (мгновенного) торрента статус переходит
       // в "downloaded" не сразу после selectFiles — короткая задержка на
       // стороне Real-Debrid, проверено вживую (первый info сразу после
