@@ -105,11 +105,13 @@ export async function resolveMagnetDirectUrl(
       // стороне Real-Debrid, проверено вживую (первый info сразу после
       // selectFiles ещё показывал "waiting_files_selection", повторный
       // запрос секунды спустя — уже "downloaded"). Опрашиваем несколько раз
-      // с паузой вместо одной попытки.
-      for (let attempt = 0; attempt < 5; attempt += 1) {
+      // с паузой вместо одной попытки — бюджет небольшой (пробуем несколько
+      // кандидатов подряд, см. realdebridResolve.ts, и не хотим копить
+      // задержку на каждом неготовом).
+      for (let attempt = 0; attempt < 3; attempt += 1) {
         info = await rdFetch<RdTorrentInfo>(`/torrents/info/${torrentId}`, key);
         if (info.status !== 'waiting_files_selection' && info.status !== 'queued') break;
-        await new Promise((r) => setTimeout(r, 700));
+        await new Promise((r) => setTimeout(r, 500));
       }
     }
 
