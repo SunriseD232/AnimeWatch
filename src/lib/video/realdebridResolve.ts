@@ -7,8 +7,9 @@ import type { ResolvedStream } from '@/lib/extract/types';
 /** Сколько кандидатов из Torrentio пробовать, пока не найдётся уже
  *  закэшированный на Real-Debrid (см. resolveMagnetDirectUrl — некэшированный
  *  торрент не ждём, сразу пробуем следующий). Каждая попытка — не больше
- *  RD_TIMEOUT_MS, так что верхняя граница ожидания ограничена. */
-const MAX_CANDIDATES = 3;
+ *  нескольких секунд (см. цикл опроса в realdebrid.ts), так что верхняя
+ *  граница ожидания ограничена даже при 6 кандидатах. */
+const MAX_CANDIDATES = 6;
 
 async function tryStreams(streams: TorrentioStream[]): Promise<ResolvedStream | null> {
   for (const stream of streams.slice(0, MAX_CANDIDATES)) {

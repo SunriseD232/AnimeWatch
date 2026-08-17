@@ -20,6 +20,8 @@ export interface TorrentioStream {
   fileIdx: number | null;
   title: string;
   seeders: number;
+  /** Размер в байтах, если распарсили из title — null, если нет. */
+  sizeBytes: number | null;
 }
 
 interface TorrentioRawStream {
@@ -34,6 +36,23 @@ function parseSeeders(title: string): number {
   const m = title.match(/👤\s*(\d+)/);
   return m ? Number(m[1]) : 0;
 }
+
+/** Размер зашит в title как «💾 777.02 MB» / «💾 58.3 GB». */
+function parseSizeBytes(title: string): number | null {
+  const m = title.match(/💾\s*([\d.]+)\s*(GB|MB)/i);
+  if (!m) return null;
+  const value = Number(m[1]);
+  const unit = m[2].toUpperCase();
+  return unit === 'GB' ? value * 1024 ** 3 : value * 1024 ** 2;
+}
+
+// 4K/UHD REMUX-раздачи (50-90GB) почти всегда идут первыми по числу сидов
+// (у релиз-групп свои сидбоксы), но именно из-за размера редко закэшированы
+// на дебрид-сервисе — проверено вживую: топ-3 по сидам для реального тайтла
+// были все >15GB и ни один не сработал, а рабочий (закэшированный) вариант
+// был на 4-й позиции. Сортируем «нормальные» размеры вперёд, а не режем
+// огромные совсем — если ничего меньше нет, всё равно попробуем их.
+const HUGE_FILE_BYTES = 15 * 1024 ** 3;
 
 async function fetchStreams(path: string): Promise<TorrentioStream[]> {
   try {
@@ -50,8 +69,14 @@ async function fetchStreams(path: string): Promise<TorrentioStream[]> {
         fileIdx: s.fileIdx ?? null,
         title: s.title ?? s.name ?? '',
         seeders: parseSeeders(s.title ?? ''),
+        sizeBytes: parseSizeBytes(s.title ?? ''),
       }))
-      .sort((a, b) => b.seeders - a.seeders);
+      .sort((a, b) => {
+        const aHuge = (a.sizeBytes ?? 0) > HUGE_FILE_BYTES;
+        const bHuge = (b.sizeBytes ?? 0) > HUGE_FILE_BYTES;
+        if (aHuge !== bHuge) return aHuge ? 1 : -1;
+        return b.seeders - a.seeders;
+      });
   } catch {
     return [];
   }
