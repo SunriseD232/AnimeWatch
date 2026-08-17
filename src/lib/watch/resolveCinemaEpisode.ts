@@ -64,9 +64,9 @@ export async function resolveCinemaEpisodeSources({
   });
 
   // «Наш плеер»: озвучки Kodik первыми (дешёвое извлечение), Videoseed следом
-  // (Puppeteer) — см. тот же комментарий в исходном page.tsx. AllDebrid —
+  // (Puppeteer) — см. тот же комментарий в исходном page.tsx. Real-Debrid —
   // последним: доступность конкретного торрента по IMDb id известна только
-  // в момент резолва (см. alldebridResolve.ts), не заранее — тут просто
+  // в момент резолва (см. realdebridResolve.ts), не заранее — тут просто
   // всегда добавляем вкладку, а не торрент недоступен, «Наш плеер» покажет
   // обычную ошибку источника, как для любого другого несработавшего экстракта.
   // embedUrl: '' — как у сентинела Videoseed ниже: этому источнику не нужен
@@ -78,7 +78,7 @@ export async function resolveCinemaEpisodeSources({
       : videoseedUrl
         ? [{ id: 0, title: 'Videoseed', embedUrl: '', source: 'videoseed' as const }]
         : []),
-    { id: -1, title: 'AllDebrid', embedUrl: '', source: 'alldebrid' as const },
+    { id: -1, title: 'Real-Debrid', embedUrl: '', source: 'realdebrid' as const },
   ];
 
   return {

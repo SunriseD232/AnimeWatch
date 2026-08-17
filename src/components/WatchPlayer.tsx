@@ -49,8 +49,8 @@ interface Props {
   kodikFallback: boolean;
   // Данные Yummy (резервный источник) и тайминги пропуска для AniLibria.
   yummyTranslations: YummyTranslation[];
-  /** AllDebrid — отдельно от yummyTranslations, см. resolveAnimeEpisode.ts. */
-  alldebridTranslations: OwnPlayerTranslation[];
+  /** Real-Debrid — отдельно от yummyTranslations, см. resolveAnimeEpisode.ts. */
+  realdebridTranslations: OwnPlayerTranslation[];
   /** Сохранённая озвучка (по названию — см. миграцию 0008) для OwnPlayer. */
   savedTranslationTitle: string | null;
   skipOpening: SkipSegment | null;
@@ -75,7 +75,7 @@ interface EpisodeSourcesResponse {
   kodikFallback: boolean;
   episodesTotal: number | null;
   yummyTranslations: YummyTranslation[];
-  alldebridTranslations: OwnPlayerTranslation[];
+  realdebridTranslations: OwnPlayerTranslation[];
   skipOpening: SkipSegment | null;
   skipEnding: SkipSegment | null;
   resumeFrom: number | null;
@@ -105,7 +105,7 @@ export default function WatchPlayer({
   kodikInitialTranslationId: initialKodikInitialTranslationId,
   kodikFallback: initialKodikFallback,
   yummyTranslations: initialYummyTranslations,
-  alldebridTranslations: initialAlldebridTranslations,
+  realdebridTranslations: initialRealDebridTranslations,
   savedTranslationTitle,
   skipOpening: initialSkipOpening,
   skipEnding: initialSkipEnding,
@@ -128,7 +128,7 @@ export default function WatchPlayer({
   );
   const [kodikFallback, setKodikFallback] = useState(initialKodikFallback);
   const [yummyTranslations, setYummyTranslations] = useState(initialYummyTranslations);
-  const [alldebridTranslations, setAlldebridTranslations] = useState(initialAlldebridTranslations);
+  const [realdebridTranslations, setRealDebridTranslations] = useState(initialRealDebridTranslations);
   const [skipOpening, setSkipOpening] = useState(initialSkipOpening);
   const [skipEnding, setSkipEnding] = useState(initialSkipEnding);
   const [resumeFrom, setResumeFrom] = useState(initialResumeFrom);
@@ -173,7 +173,7 @@ export default function WatchPlayer({
   // через iframe-плеер Yummy (вкладка «Yummy»).
   const ownPlayerTranslations = [
     ...yummyTranslations.filter((t) => t.source != null),
-    ...alldebridTranslations,
+    ...realdebridTranslations,
   ];
   const hasOwnPlayer = ownPlayerTranslations.length > 0;
 
@@ -450,7 +450,7 @@ export default function WatchPlayer({
         setKodikInitialTranslationId(data.kodikInitialTranslationId);
         setKodikFallback(data.kodikFallback);
         setYummyTranslations(data.yummyTranslations);
-        setAlldebridTranslations(data.alldebridTranslations);
+        setRealDebridTranslations(data.realdebridTranslations);
         setSkipOpening(data.skipOpening);
         setSkipEnding(data.skipEnding);
         setResumeFrom(data.resumeFrom);

@@ -36,7 +36,7 @@ const ALLOWED_SOURCES = new Set<ExtractSource>([
   'kodik',
   'cvh',
   'aksor',
-  'alldebrid',
+  'realdebrid',
 ]);
 
 interface RouteParams {

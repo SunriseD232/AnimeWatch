@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import { getVpsRelayEnabled } from '@/lib/settings';
+import { vlessDispatcher } from '@/lib/net/vlessProxy';
 
 /**
  * Range-прокси байтов апстрима + подписанные "сырые" ссылки для сегментов
@@ -239,10 +240,39 @@ async function needsVpsRelay(url: string): Promise<boolean> {
   }
 }
 
+/**
+ * Устойчивая передача байт с ЭТОЙ VPS к CDN премиум-линк-сервисов обрывается
+ * на ~16KB и дальше зависает намертво — проверено вживую одинаково на
+ * AllDebrid и на Real-Debrid, независимо от аккаунта/ключа/торрента, значит
+ * дело в сети самой VPS, а не в конкретном сервисе. Через локальный VLESS-
+ * туннель (см. lib/net/vlessProxy.ts) та же передача идёт без обрывов —
+ * тоже проверено вживую. В отличие от RELAY_HOSTS (переключается флагом из
+ * БД для serverless/Vercel), этот список — фиксированное обходное решение
+ * под конкретную сеть текущей VPS, включено всегда.
+ */
+const VLESS_HOSTS = [/(^|\.)download\.real-debrid\.com$/i];
+
+function needsVlessProxy(url: string): boolean {
+  try {
+    return VLESS_HOSTS.some((re) => re.test(new URL(url).hostname));
+  } catch {
+    return false;
+  }
+}
+
 async function fetchUpstream(
   url: string,
   upstreamHeaders: Record<string, string>,
 ): Promise<Response> {
+  if (needsVlessProxy(url)) {
+    return fetch(url, {
+      headers: upstreamHeaders,
+      redirect: 'follow',
+      // @ts-expect-error -- dispatcher — опция undici, не входит в типы lib.dom fetch.
+      dispatcher: vlessDispatcher(),
+    });
+  }
+
   if (!(await needsVpsRelay(url))) {
     return fetch(url, { headers: upstreamHeaders, redirect: 'follow' });
   }
