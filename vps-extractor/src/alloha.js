@@ -114,6 +114,75 @@ async function getAllohaEmbedUrls(shikimoriId, episode) {
   return urls.slice(0, MAX_CANDIDATES);
 }
 
+/** С таймаутом — на этой VPS через RU-прокси evaluate() внутри их плеера
+ *  иногда просто зависает (CDP callFunctionOn timeout), лучше отвалиться
+ *  быстро, чем повесить всё извлечение. */
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('evaluate timeout')), ms)),
+  ]);
+}
+
+/**
+ * Их плеер (CSS-класс "allplay") сам определяет "auto"-качество при
+ * подключении — через наш RU-прокси (общий мост, небольшая пропускная
+ * способность) это почти всегда занижено (проверено вживую: 480p вместо
+ * реально доступных 2160p/4K). Форсируем через их собственное UI меню
+ * настроек — сама структура найдена вручную через живое исследование DOM
+ * (см. историю расследования), нигде не задокументирована и может
+ * сломаться при обновлении их плеера — поэтому best-effort с fallback:
+ * при любой ошибке просто оставляем то качество, что плеер и так выбрал
+ * сам (не хуже прежнего поведения).
+ *
+ * Путь клика: шестерёнка настроек → первая строка меню (Качество) →
+ * первый вариант в открывшемся подменю (самое высокое качество — список
+ * идёт по убыванию: 2160p/4K, 1440p/2K, 1080p, 720p, 480p, 360p).
+ */
+async function forceHighestQuality(page, embedOrigin) {
+  try {
+    const frame = page.frames().find((f) => f.url().startsWith(embedOrigin));
+    if (!frame) return;
+
+    await withTimeout(
+      frame.evaluate(() => {
+        document.querySelector('.allplay__menu > button.allplay__control')?.click();
+      }),
+      5_000,
+    );
+    await new Promise((r) => setTimeout(r, 500));
+
+    await withTimeout(
+      frame.evaluate(() => {
+        const pages = document.querySelectorAll('.allplay__menu__container > div > div');
+        pages[0]?.children[0]?.click();
+      }),
+      5_000,
+    );
+    await new Promise((r) => setTimeout(r, 500));
+
+    const clicked = await withTimeout(
+      frame.evaluate(() => {
+        const pages = document.querySelectorAll('.allplay__menu__container > div > div');
+        const best = pages[1]?.children[1]?.children[0];
+        if (!best) return null;
+        const label = best.textContent.trim();
+        best.click();
+        return label;
+      }),
+      5_000,
+    );
+    if (clicked) {
+      console.error(`[alloha] Качество переключено на: ${clicked}`);
+    } else {
+      console.error('[alloha] Меню качества не нашлось — оставляем авто-выбор плеера');
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  } catch (err) {
+    console.error('[alloha] Не удалось переключить качество (не критично, используем авто):', err.message);
+  }
+}
+
 async function interceptVideoUrl(browser, rawEmbedUrl) {
   const embedUrl = toAbsoluteUrl(rawEmbedUrl);
   if (!embedUrl) {
@@ -170,8 +239,15 @@ async function interceptVideoUrl(browser, rawEmbedUrl) {
       return null;
     }
 
+    // Переключаем на максимальное качество ДО старта воспроизведения — их
+    // плеер запрашивает master.m3u8 уже под выбранное качество, так что
+    // после этого шага играть/ждать нужно только один раз (см. комментарий
+    // у forceHighestQuality — почему это best-effort, не гарантия).
+    await forceHighestQuality(page, new URL(embedUrl).origin);
+    videoUrls.length = 0; // сбрасываем то, что плеер успел запросить под старым (авто) качеством
+
     await page.mouse.click(640, 360).catch(() => {});
-    await new Promise((r) => setTimeout(r, 5_000));
+    await new Promise((r) => setTimeout(r, 6_000));
 
     if (videoUrls.length === 0) {
       console.error(

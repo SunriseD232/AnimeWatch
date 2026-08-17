@@ -1,7 +1,7 @@
 import { createVideoSource, getKodikOwnPlayerTranslations } from '@/lib/video/kodik';
 import { buildVideoseedEmbedUrl } from '@/lib/video/videoseed';
 import { getVideoseedOwnPlayerTranslations } from '@/lib/videoseed-catalog';
-import { getAllohaEmbedUrl } from '@/lib/video/alloha';
+import { getAllohaSources } from '@/lib/video/alloha';
 import type { OwnPlayerTranslation } from '@/lib/extract/types';
 import type { Translation } from '@/lib/video/types';
 
@@ -41,7 +41,7 @@ export async function resolveCinemaEpisodeSources({
   resumeFrom: number | null;
 }): Promise<CinemaEpisodeSources> {
   const source = createVideoSource();
-  const [embed, kodikOwnPlayerTranslations, videoseedOwnPlayerTranslations, allohaUrl] =
+  const [embed, kodikOwnPlayerTranslations, videoseedOwnPlayerTranslations, allohaSources] =
     await Promise.all([
       source.getEmbedUrl({
         kinopoiskId,
@@ -54,7 +54,7 @@ export async function resolveCinemaEpisodeSources({
       getVideoseedOwnPlayerTranslations(kinopoiskId, season, episode),
       // Только фильмы — прямой API Alloha резолвится по kinopoisk_id без
       // сезона/серии, для сериалов формат неизвестен (не проверяли вживую).
-      isSerial ? Promise.resolve(null) : getAllohaEmbedUrl(kinopoiskId),
+      isSerial ? Promise.resolve({ embedUrl: null, ownPlayerTranslations: [] }) : getAllohaSources(kinopoiskId),
     ]);
 
   const resolvedTranslationId = translationId ?? embed.translations[0]?.id ?? null;
@@ -85,6 +85,7 @@ export async function resolveCinemaEpisodeSources({
       : videoseedUrl
         ? [{ id: 0, title: 'Videoseed', embedUrl: '', source: 'videoseed' as const }]
         : []),
+    ...allohaSources.ownPlayerTranslations,
     { id: -1, title: 'Real-Debrid', embedUrl: '', source: 'realdebrid' as const },
   ];
 
@@ -95,7 +96,7 @@ export async function resolveCinemaEpisodeSources({
     kodikFallback: embed.fallback,
     videoseedUrl,
     videoseedStart,
-    allohaUrl,
+    allohaUrl: allohaSources.embedUrl,
     ownPlayerTranslations,
   };
 }

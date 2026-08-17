@@ -2,6 +2,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { getYummyEpisode } from '@/lib/video/yummy';
 import { getKodikOwnPlayerTranslations } from '@/lib/video/kodik';
 import { getVideoseedOwnPlayerTranslations } from '@/lib/videoseed-catalog';
+import { getAllohaSources } from '@/lib/video/alloha';
 import { resolveRealDebridStream } from '@/lib/video/realdebridResolve';
 import { extractViaVps } from './vpsExtractor';
 import type { ExtractSource, ResolvedStream } from './types';
@@ -90,6 +91,9 @@ export async function resolveStream({
     } else if (source === 'videoseed') {
       const videoseed = await getVideoseedOwnPlayerTranslations(shikimoriId, season, episode);
       embedUrl = videoseed.find((t) => t.id === translationId)?.embedUrl;
+    } else if (source === 'alloha' && contentType === 'cinema') {
+      const alloha = await getAllohaSources(shikimoriId);
+      embedUrl = alloha.ownPlayerTranslations.find((t) => t.id === translationId)?.embedUrl;
     }
   }
 
