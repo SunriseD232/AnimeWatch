@@ -1,4 +1,5 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { supabaseFetch } from './fetchWithVless';
 
 /**
  * Клиент Supabase с service_role — обходит RLS. ТОЛЬКО для серверных задач
@@ -11,6 +12,9 @@ export function createServiceClient() {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } },
+    {
+      auth: { autoRefreshToken: false, persistSession: false },
+      global: { fetch: supabaseFetch },
+    },
   );
 }

@@ -29,6 +29,12 @@ export async function updateSession(request: NextRequest) {
           );
         },
       },
+      // Не пробрасываем сюда supabaseFetch (VLESS-туннель) — этот клиент
+      // работает в Edge Runtime (см. корневой middleware.ts), где недоступны
+      // Node-специфичные API undici (dispatcher/ProxyAgent). Тот же сетевой
+      // затык к Supabase здесь всё ещё возможен (см. lib/supabase/server.ts),
+      // но фикс для Edge Runtime — отдельная задача (нужен другой механизм,
+      // не туннель через undici).
     },
   );
 

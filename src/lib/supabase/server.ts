@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { supabaseFetch } from './fetchWithVless';
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
@@ -28,6 +29,7 @@ export function createClient() {
           }
         },
       },
+      global: { fetch: supabaseFetch },
     },
   );
 }
