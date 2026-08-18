@@ -4,6 +4,22 @@ import { absoluteUrl } from '@/lib/site-url';
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
+// Прямое (нетуннелированное — см. комментарий у createServerClient ниже)
+// соединение с Supabase с этой VPS не просто медленное, а ПОЛНОСТЬЮ висит
+// без ответа (тот же затык, что чинили VLESS-туннелем для Node.js-кода, см.
+// fetchWithVless.ts) — проверено вживую многократно, ни разу не прошло само
+// по себе. Дефолтный таймаут fetch/undici — секунд 10, и все эти 10с
+// повисали на КАЖДОЙ авторизованной странице (middleware гоняет getUser() на
+// каждый запрос) — воспроизведено вживую: 10.7с на голову на любую защищённую
+// страницу. Раз соединение туда никогда не проходит само (не "медленно",
+// а именно зависает), можно смело резать таймаут коротко — успешный ответ
+// (когда путь всё же работает) укладывается в доли секунды с большим запасом.
+const MIDDLEWARE_AUTH_TIMEOUT_MS = 1_500;
+
+function edgeFetchWithTimeout(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(MIDDLEWARE_AUTH_TIMEOUT_MS) });
+}
+
 /**
  * Обновляет сессию Supabase на каждом запросе и защищает приватные маршруты.
  * Возвращает response с актуализированными cookies.
@@ -29,12 +45,12 @@ export async function updateSession(request: NextRequest) {
           );
         },
       },
-      // Не пробрасываем сюда supabaseFetch (VLESS-туннель) — этот клиент
-      // работает в Edge Runtime (см. корневой middleware.ts), где недоступны
-      // Node-специфичные API undici (dispatcher/ProxyAgent). Тот же сетевой
-      // затык к Supabase здесь всё ещё возможен (см. lib/supabase/server.ts),
-      // но фикс для Edge Runtime — отдельная задача (нужен другой механизм,
-      // не туннель через undici).
+      // Не пробрасываем сюда supabaseFetch/vlessDispatcher (VLESS-туннель) —
+      // этот клиент работает в Edge Runtime (см. корневой middleware.ts), где
+      // недоступны Node-специфичные API undici (dispatcher/ProxyAgent).
+      // Вместо туннеля — короткий таймаут (см. edgeFetchWithTimeout выше),
+      // чтобы обречённое соединение не держало каждый запрос по 10 секунд.
+      global: { fetch: edgeFetchWithTimeout },
     },
   );
 
