@@ -31,52 +31,43 @@ function getProxyConfig() {
 }
 
 /**
- * Общий Chromium + прокси-мост между запросами (тот же приём, что для
- * Videoseed — см. browser.js/videoseed.js): ALLOHA_PROXY_* — статичные env,
- * один и тот же RU-прокси на каждый запрос, поэтому и локальный анонимайзинг-
- * мост (resolveProxy), и сам браузер можно поднять один раз и переиспользовать,
- * вместо полного цикла запуск+закрытие моста и браузера на КАЖДОЕ извлечение.
+ * Прокси-мост (лёгкий локальный анонимайзинг-процесс, не Chromium) держим
+ * общим на весь процесс — ALLOHA_PROXY_* статичные env, один и тот же
+ * RU-прокси на каждый запрос, пересоздавать его на каждое извлечение смысла
+ * нет. А вот САМ БРАУЗЕР теперь — НЕ общий, лаунчим и закрываем на каждое
+ * извлечение (см. историю: раньше держали один персистентный Chromium на
+ * весь процесс, как у Videoseed, — но на этой VPS всего 1.9GB RAM, и после
+ * того как Alloha-путь стал использоваться ещё и для кино (не только аниме
+ * через Yummy, см. extractAlloha), два одновременно живущих полных Chromium
+ * (Videoseed + Alloha) плюс их подпроцессы (GPU/network/audio/renderer)
+ * держали свободную память в районе 170МБ — подтверждённая вживую причина
+ * сайт-виде нестабильности при обычной пользовательской нагрузке. Запуск
+ * браузера сам по себе дёшев (~0.4-0.9с, см. тот же приём в browser.js),
+ * так что жертвуем этим временем ради того, чтобы не держать лишние ~150-
+ * 200МБ занятыми, когда Alloha не используется прямо сейчас.
  */
-let sharedBrowserPromise = null;
 let sharedProxyBridge = null;
 
-async function getSharedAllohaBrowser() {
-  if (sharedBrowserPromise) {
-    const browser = await sharedBrowserPromise;
-    if (browser.isConnected()) return browser;
-    sharedBrowserPromise = null; // упал/закрылся — перезапустим ниже
-  }
-
+async function getAllohaProxyArg() {
   const proxyConfig = getProxyConfig();
-  if (proxyConfig && !sharedProxyBridge) {
+  if (!proxyConfig) {
+    console.error('[alloha] RU-прокси НЕ задан — работаем напрямую');
+    return undefined;
+  }
+  if (!sharedProxyBridge) {
     try {
       sharedProxyBridge = await resolveProxy(proxyConfig);
       console.error(`[alloha] Прокси-мост поднят (общий, на всё время процесса): ${sharedProxyBridge.launchArg}`);
     } catch (err) {
       console.error('[alloha] resolveProxy() упал, работаем без прокси:', err);
+      return undefined;
     }
-  } else if (proxyConfig) {
-    console.error('[alloha] RU-прокси задан (переиспользуем ранее поднятый мост)');
-  } else {
-    console.error('[alloha] RU-прокси НЕ задан — работаем напрямую');
   }
-
-  sharedBrowserPromise = launchBrowser(sharedProxyBridge?.launchArg);
-  return sharedBrowserPromise;
+  return sharedProxyBridge.launchArg;
 }
 
 /** Закрытие при штатном завершении процесса — см. server.js. */
 async function closeSharedAllohaBrowser() {
-  if (sharedBrowserPromise) {
-    const promise = sharedBrowserPromise;
-    sharedBrowserPromise = null;
-    try {
-      const browser = await promise;
-      if (browser.isConnected()) await browser.close();
-    } catch {
-      /* процесс всё равно завершается */
-    }
-  }
   if (sharedProxyBridge) {
     await sharedProxyBridge.close().catch(() => {});
     sharedProxyBridge = null;
@@ -290,23 +281,30 @@ async function extractAlloha({ shikimoriId, episode, embedUrl: forcedEmbedUrl })
     }
   }
 
-  const browser = await getSharedAllohaBrowser();
-  for (const embedUrl of embedUrls) {
-    const result = await interceptVideoUrl(browser, embedUrl);
-    if (result) {
-      const { videoUrl, embedOrigin } = result;
-      // CDN проверяет Origin/Referer именно эмбед-страницы (alloha.yani.tv),
-      // а не внешней обёртки (yani.tv) — иначе отдаёт 403 x-vd:origin_mismatch
-      // при последующем проксировании байт с Vercel. См. ARCHITECTURE.md §12.6.
-      return {
-        url: videoUrl,
-        headers: { Referer: `${embedOrigin}/`, Origin: embedOrigin },
-        isHls: videoUrl.includes('.m3u8'),
-      };
+  // Puppeteer-извлечения (Alloha/Videoseed) уже сериализованы на уровне
+  // server.js (см. serialized() там) — здесь просто одно извлечение, без
+  // дополнительной очереди.
+  const proxyArg = await getAllohaProxyArg();
+  const browser = await launchBrowser(proxyArg);
+  try {
+    for (const embedUrl of embedUrls) {
+      const result = await interceptVideoUrl(browser, embedUrl);
+      if (result) {
+        const { videoUrl, embedOrigin } = result;
+        // CDN проверяет Origin/Referer именно эмбед-страницы (alloha.yani.tv),
+        // а не внешней обёртки (yani.tv) — иначе отдаёт 403 x-vd:origin_mismatch
+        // при последующем проксировании байт с Vercel. См. ARCHITECTURE.md §12.6.
+        return {
+          url: videoUrl,
+          headers: { Referer: `${embedOrigin}/`, Origin: embedOrigin },
+          isHls: videoUrl.includes('.m3u8'),
+        };
+      }
     }
+    return null;
+  } finally {
+    await browser.close().catch(() => {});
   }
-
-  return null;
 }
 
 module.exports = { extractAlloha, closeSharedAllohaBrowser };
