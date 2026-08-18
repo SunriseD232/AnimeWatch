@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 
 type Mode = 'login' | 'signup';
@@ -13,7 +13,6 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 
 export default function AuthForm({ mode }: { mode: Mode }) {
-  const router = useRouter();
   const params = useSearchParams();
   const redirect = params.get('redirect') || '/';
   const isLogin = mode === 'login';
@@ -47,16 +46,16 @@ export default function AuthForm({ mode }: { mode: Mode }) {
         return;
       }
 
-      // router.push само по себе уже свежо рендерит ВСЁ на целевом маршруте
-      // (в т.ч. Navbar — увидит новую сессионную куку) — раньше следом ещё
-      // стоял router.refresh(), который дублировал это и гонялся с push:
-      // два запроса на обновление роутера почти одновременно ловили
-      // клиентский роутер Next.js в то же состояние гонки, что уже
-      // чинили в других местах (см. CinemaCard/ModeSwitch) — после логина
-      // сайт оставался на форме входа, хотя сессия уже была установлена
-      // (воспроизведено вживую: POST /api/login и GET / оба 200, но
-      // страница/шапка не обновлялись без ручной перезагрузки).
-      router.push(redirect);
+      // router.push (даже без router.refresh, см. историю коммита) всё ещё
+      // не гарантирует переход: клиентский RSC-кэш целевого маршрута может
+      // быть закэширован ДО того, как выставилась новая сессионная кука —
+      // воспроизведено вживую повторно: POST /api/login 200, кука
+      // sb-...-auth-token реально в document.cookie, а страница остаётся на
+      // форме входа со спиннером НАВСЕГДА (setLoading(false) тут не стоит).
+      // Жёсткая навигация обходит клиентский роутер целиком — чуть дороже
+      // (полная перезагрузка), зато гарантированно свежий рендер с новой
+      // сессией, и спиннер не может зависнуть бесконечно (страница уходит).
+      window.location.href = redirect;
     } catch {
       setError('Сетевая ошибка');
       setLoading(false);
