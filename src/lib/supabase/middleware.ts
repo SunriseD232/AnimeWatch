@@ -14,7 +14,7 @@ type CookieToSet = { name: string; value: string; options?: CookieOptions };
 // страницу. Раз соединение туда никогда не проходит само (не "медленно",
 // а именно зависает), можно смело резать таймаут коротко — успешный ответ
 // (когда путь всё же работает) укладывается в доли секунды с большим запасом.
-const MIDDLEWARE_AUTH_TIMEOUT_MS = 1_500;
+const MIDDLEWARE_AUTH_TIMEOUT_MS = 800;
 
 function edgeFetchWithTimeout(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   return fetch(url, { ...init, signal: AbortSignal.timeout(MIDDLEWARE_AUTH_TIMEOUT_MS) });
