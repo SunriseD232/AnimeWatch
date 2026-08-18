@@ -38,10 +38,28 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  // ВАЖНО: не вставлять код между createServerClient и getUser().
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // ВАЖНО: не вставлять код между createServerClient и getUser() (кроме
+  // самого try/catch ниже — им пришлось обернуть, см. комментарий).
+  let user: { id: string } | null = null;
+  let verifyFailed = false;
+  try {
+    const result = await supabase.auth.getUser();
+    user = result.data.user;
+  } catch (err) {
+    // Тот же сетевой затык этой VPS к Supabase, что чиним VLESS-туннелем
+    // для Node.js-кода (см. lib/supabase/fetchWithVless.ts) — здесь
+    // недоступен, Edge Runtime не поддерживает undici dispatcher (см.
+    // комментарий у global.fetch выше). Проверено вживую: пользователь с
+    // валидной, не просроченной сессионной кукой попадал в бесконечный
+    // редирект на /login именно из-за того, что этот вызов падал и код
+    // трактовал сбой сети как "не залогинен". Не наказываем принудительным
+    // логаутом за нашу временную неспособность проверить куку — пропускаем
+    // запрос как есть; настоящую недействительную сессию (не сетевой сбой,
+    // а реальный отказ Supabase) всё равно отклонят обычные серверные вызовы
+    // на самой странице (они уже туннелированы, см. server.ts/service.ts).
+    console.error('[middleware] getUser() упал (сетевой сбой?), пропускаем без строгой проверки:', err);
+    verifyFailed = true;
+  }
 
   const { pathname } = request.nextUrl;
 
@@ -55,7 +73,7 @@ export async function updateSession(request: NextRequest) {
   const isApiRoute = pathname.startsWith('/api/');
   const isPublicPage = PUBLIC_PAGES.has(pathname);
 
-  if (!user && !isPublicPage && !isApiRoute) {
+  if (!user && !verifyFailed && !isPublicPage && !isApiRoute) {
     const url = absoluteUrl('/login', request.url);
     url.searchParams.set('redirect', pathname);
     return NextResponse.redirect(url);
