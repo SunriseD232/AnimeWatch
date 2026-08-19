@@ -255,10 +255,23 @@ export default function OwnPlayer({
   const dashQualitiesRef = useRef<string | null>(null);
   const playingRef = useRef(false);
   const seekTargetRef = useRef<number | null>(resumeFrom);
-  // Пытались ли уже запустить автовоспроизведение на ЭТОМ подключении — см.
-  // attemptPlay ниже. Сбрасывается вместе с остальными per-connection ref'ами
-  // в эффекте резолва источника.
-  const autoplayTriedRef = useRef(false);
+  // Пользователь сам поставил на паузу — гасим автозапуск (см. attemptPlay
+  // ниже), пока он сам не нажмёт play. Раньше вместо этого был флаг
+  // "уже пробовали автозапуск один раз" — при возобновлении с сохранённой
+  // позиции (seek в небуферизованный кусок HLS) canplay/playing могут
+  // отстреляться ДО того, как перемотка реально завершится и данные
+  // появятся; единственная попытка "сгорала" впустую (play() не мог
+  // стартовать — нечего играть), а повторной так и не было: пользователь
+  // видел готовый кадр, но плеер молча стоял на паузе, пока не тыкнуть play
+  // руками — иногда по два раза, если первый клик попадал на ещё мерцающую
+  // (buffering ⇄ ready) кнопку. Сбрасывается вместе с остальными
+  // per-connection ref'ами в эффекте резолва источника.
+  const userPausedRef = useRef(false);
+  // Взводится, когда attemptPlay сам приглушил звук в обход политики
+  // автовоспроизведения (см. ниже) — по факту старта воспроизведения
+  // возвращаем звук обратно, но только если заглушили ЭТО МЫ, а не если
+  // пользователь сам нажал «выкл. звук».
+  const autoplayMutedRef = useRef(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onTimeUpdateRef = useRef(onTimeUpdate);
   onTimeUpdateRef.current = onTimeUpdate;
@@ -450,7 +463,8 @@ export default function OwnPlayer({
     setLoadState('probing');
     setBuffering(true);
     setIsEnded(false);
-    autoplayTriedRef.current = false;
+    userPausedRef.current = false;
+    autoplayMutedRef.current = false;
 
     (async () => {
       let contentType: string | null = null;
@@ -705,27 +719,33 @@ export default function OwnPlayer({
     // не ткнуть play руками. Отказ на звуке почти всегда чинится повтором
     // БЕЗ звука — это браузеры разрешают практически всегда — с явным
     // индикатором «выкл. звук» в панели, который и так уже есть.
+    //
+    // Вызывается на КАЖДОМ подходящем событии (canplay/playing/seeked), а
+    // не один раз — при возобновлении с сохранённой позиции seek идёт в
+    // небуферизованный кусок HLS-потока, и пока hls.js его не догрузит,
+    // canplay/waiting чередуются несколько раз ПОДРЯД (воспроизведено
+    // вживую: readyState несколько секунд прыгает 0→1→0→1 и дальше, прежде
+    // чем реально дойти до 4). Единственная попытка play() могла угодить
+    // ровно в такой промежуточный момент, ничего не запустить — и на этом
+    // всё, повтора не было. Защита от бесконечного зацикливания — не флаг
+    // "уже пробовали", а playingRef/userPausedRef: как только видео реально
+    // заиграло или пользователь сам поставил на паузу, дальнейшие вызовы
+    // выходят сразу же.
     const attemptPlay = () => {
-      if (autoplayTriedRef.current || seekPending) return;
-      autoplayTriedRef.current = true;
+      if (playingRef.current || userPausedRef.current || seekPending) return;
       video.play().catch(() => {
+        if (video.muted) return; // уже приглушили и это тоже не взлетело — ждём следующего события
         video.muted = true;
         setMuted(true);
-        video.play()
-          .then(() => {
-            // Мьют был нужен только чтобы обойти политику браузера на
-            // старте — как только воспроизведение реально пошло, браузеры
-            // не блокируют возврат звука у УЖЕ играющего видео (в отличие
-            // от запуска сразу со звуком), поэтому сразу возвращаем
-            // сохранённую громкость, а не оставляем висеть на «выкл. звук»
-            // в ожидании ручного клика.
-            video.muted = false;
-            setMuted(false);
-          })
-          .catch(() => {
-            // Не запустилось даже без звука — оставляем на паузе, кнопка
-            // «Смотреть» по центру уже показывает, что нужно нажать.
-          });
+        autoplayMutedRef.current = true;
+        video.play().catch(() => {
+          // Не взлетело даже без звука — не страшно: следующее подходящее
+          // событие (canplay/playing/seeked) снова позовёт attemptPlay,
+          // видео уже приглушено, так что тогда сработает. Раньше на этом
+          // единственная попытка заканчивалась насовсем — оставляя плеер
+          // молча стоять на паузе с готовым кадром, пока не ткнуть play
+          // руками.
+        });
       });
     };
     const onLoadedMetadata = () => {
@@ -737,6 +757,16 @@ export default function OwnPlayer({
       playingRef.current = true;
       setPlaying(true);
       setIsEnded(false);
+      if (autoplayMutedRef.current) {
+        // Мьют был нужен только чтобы обойти политику браузера на старте —
+        // как только воспроизведение реально пошло, браузеры не блокируют
+        // возврат звука у УЖЕ играющего видео (в отличие от запуска сразу
+        // со звуком), поэтому сразу возвращаем сохранённую громкость, а не
+        // оставляем висеть на «выкл. звук» в ожидании ручного клика.
+        autoplayMutedRef.current = false;
+        video.muted = false;
+        setMuted(false);
+      }
     };
     const onPause = () => {
       playingRef.current = false;
@@ -997,8 +1027,16 @@ export default function OwnPlayer({
   const togglePlay = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
-    if (v.paused) v.play().catch(() => {});
-    else v.pause();
+    if (v.paused) {
+      // Явный клик пользователя — снимаем «сам поставил на паузу», иначе
+      // после ручной паузы attemptPlay (см. эффект событий видео) навсегда
+      // перестал бы реагировать на canplay/playing/seeked этого подключения.
+      userPausedRef.current = false;
+      v.play().catch(() => {});
+    } else {
+      userPausedRef.current = true;
+      v.pause();
+    }
   }, []);
 
   const seekBy = useCallback((delta: number) => {
