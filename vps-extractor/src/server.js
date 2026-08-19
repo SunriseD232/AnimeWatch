@@ -200,13 +200,12 @@ app.listen(PORT, () => {
   console.error(`[server] Слушаю на порту ${PORT}`);
 });
 
-// PM2 restart/stop шлёт SIGTERM — закрываем общие Chromium-браузеры (см.
-// browser.js/alloha.js), иначе они рискуют остаться осиротевшими процессами
-// после каждого рестарта.
+// PM2 restart/stop шлёт SIGTERM — закрываем общий Chromium-браузер (теперь
+// один на Alloha+Videoseed, см. browser.js) и его прокси-мост, иначе они
+// рискуют остаться осиротевшими процессами после каждого рестарта.
 async function shutdown() {
   const { closeSharedBrowser } = require('./browser');
-  const { closeSharedAllohaBrowser } = require('./alloha');
-  await Promise.all([closeSharedBrowser(), closeSharedAllohaBrowser()]);
+  await closeSharedBrowser();
   process.exit(0);
 }
 process.on('SIGTERM', shutdown);
