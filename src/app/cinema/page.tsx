@@ -8,7 +8,7 @@ import Pagination from '@/components/Pagination';
 import ScrollCarousel from '@/components/ScrollCarousel';
 import { CardGridSkeleton } from '@/components/Skeletons';
 import { getNewCinema, getPopularCinemaRanked } from '@/lib/videoseed-catalog';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { WatchProgress } from '@/lib/types';
 
 export const metadata = { title: 'Фильмы и сериалы — MediaWatch' };
@@ -30,7 +30,7 @@ async function ContinueWatching() {
   const supabase = createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getCachedUser();
 
   if (!user) {
     return <LoginBanner />;

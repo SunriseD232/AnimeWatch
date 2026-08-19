@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import Player from '@/components/Player';
 import { getCinemaById } from '@/lib/videoseed-catalog';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getCachedUser } from '@/lib/supabase/server';
 import { getVibixEmbed } from '@/lib/video/vibix';
 import { resolveCinemaEpisodeSources } from '@/lib/watch/resolveCinemaEpisode';
 import type { WatchProgress } from '@/lib/types';
@@ -26,8 +26,13 @@ export default async function CinemaWatchPage({
     notFound();
   }
 
-  // Метаданные тайтла (название/постер/сезоны).
-  const item = await getCinemaById(kinopoiskId);
+  // Метаданные тайтла (название/постер/сезоны) и текущий пользователь —
+  // независимы друг от друга, раньше шли последовательно: если Kodik (item)
+  // ИЛИ getUser() (см. getCachedUser — общий с Navbar на этот же рендер, см.
+  // server.ts) подтормаживали, время складывалось, а не перекрывалось.
+  const [item, {
+    data: { user },
+  }] = await Promise.all([getCinemaById(kinopoiskId), getCachedUser()]);
   if (!item) notFound();
 
   const title = item.title;
@@ -35,9 +40,6 @@ export default async function CinemaWatchPage({
 
   // Прогресс пользователя по этому тайтлу.
   const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
   let progress: WatchProgress | null = null;
   if (user) {

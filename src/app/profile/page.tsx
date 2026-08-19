@@ -3,7 +3,7 @@ import ProfileTabs from '@/components/ProfileTabs';
 import VibixTrialStatus from '@/components/VibixTrialStatus';
 import RelayToggle from '@/components/RelayToggle';
 import { isAdminEmail } from '@/lib/admin';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getCachedUser } from '@/lib/supabase/server';
 import { getTodaysSignupCode } from '@/lib/signupCode';
 import { getVpsRelayEnabled } from '@/lib/settings';
 import type { UserListItem, WatchedEpisode } from '@/lib/types';
@@ -14,7 +14,7 @@ export default async function ProfilePage() {
   const supabase = createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getCachedUser();
 
   // Подстраховка (основная защита — в middleware).
   if (!user) redirect('/login?redirect=/profile');

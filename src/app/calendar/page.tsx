@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getCachedUser } from '@/lib/supabase/server';
 import { getAnime, imageUrl } from '@/lib/shikimori';
 import { mapWithConcurrency } from '@/lib/concurrency';
 import type { UserListItem } from '@/lib/types';
@@ -40,7 +40,7 @@ export default async function CalendarPage() {
   const supabase = createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getCachedUser();
 
   if (!user) redirect('/login?redirect=/calendar');
 

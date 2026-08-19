@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { cache } from 'react';
 import { supabaseFetch } from './fetchWithVless';
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
@@ -33,3 +34,20 @@ export function createClient() {
     },
   );
 }
+
+/**
+ * getUser() бьёт по Supabase auth за сетевым раунд-трипом (через
+ * supabaseFetch — туннелируется через VLESS, но всё равно до 8с при
+ * таймауте, см. фикс сетевого затыка этой VPS). Navbar (в layout) и КАЖДАЯ
+ * page.tsx серии/тайтла независимо зовут supabase.auth.getUser() — на один
+ * заход пользователя набегает 2-3 ОТДЕЛЬНЫХ раунд-трипа за одним и тем же
+ * (проверено вживую: цепочка из нескольких getUser()-таймаутов подряд на
+ * watch-страницах суммарно даёт "Загружаем плеер..." на 15-20+с).
+ * React.cache() дедуплицирует вызовы В РАМКАХ ОДНОГО SSR-рендера (тот же
+ * механизм, что Next.js использует для автоматического fetch-дедупа) — так
+ * что Navbar и page.tsx получают ОДИН реальный сетевой вызов на двоих, а не
+ * по одному каждый.
+ */
+export const getCachedUser = cache(async () => {
+  return createClient().auth.getUser();
+});

@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import SignupCodeCard from '@/components/SignupCodeCard';
 import { isAdminEmail } from '@/lib/admin';
-import { createClient } from '@/lib/supabase/server';
+import { getCachedUser } from '@/lib/supabase/server';
 import { getTodaysSignupCode } from '@/lib/signupCode';
 
 export const metadata = { title: 'Код регистрации — MediaWatch' };
@@ -13,10 +13,9 @@ export const metadata = { title: 'Код регистрации — MediaWatch' 
  * доступно во вкладке «Код» в профиле — см. SignupCodeCard.
  */
 export default async function CodePage() {
-  const supabase = createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getCachedUser();
 
   if (!isAdminEmail(user?.email)) {
     notFound();

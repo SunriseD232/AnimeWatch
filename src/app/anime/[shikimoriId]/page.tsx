@@ -12,7 +12,7 @@ import {
   stripBbCode,
   trailerEmbedUrl,
 } from '@/lib/shikimori';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
 
@@ -39,6 +39,9 @@ export default async function AnimePage({
   const id = Number(params.shikimoriId);
   if (!Number.isFinite(id)) notFound();
 
+  // getAnime и getUser независимы — запускаем параллельно (см. тот же приём
+  // и его обоснование в app/watch/[shikimoriId]/[episode]/page.tsx).
+  const userPromise = getCachedUser();
   let anime;
   try {
     anime = await getAnime(id);
@@ -60,7 +63,7 @@ export default async function AnimePage({
   const supabase = createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await userPromise;
 
   let progress: WatchProgress | null = null;
   let listItem: UserListItem | null = null;

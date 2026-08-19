@@ -3,7 +3,7 @@ import { Suspense } from 'react';
 import WatchPlayer from '@/components/WatchPlayer';
 import { RelatedAnimeSections, RelatedAnimeSectionsSkeleton } from '@/components/RelatedAnimeSections';
 import { episodeCount, getAnime, imageUrl } from '@/lib/shikimori';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getCachedUser } from '@/lib/supabase/server';
 import { resolveAnimeEpisodeSources } from '@/lib/watch/resolveAnimeEpisode';
 import type { WatchProgress } from '@/lib/types';
 
@@ -24,7 +24,11 @@ export default async function WatchPage({
     notFound();
   }
 
-  // Метаданные тайтла (название/постер/число серий).
+  // Метаданные тайтла (название/постер/число серий) и текущий пользователь —
+  // независимы друг от друга, запускаем параллельно (userPromise стартует
+  // сразу же, getCachedUser — общий с Navbar на этот же рендер, см.
+  // server.ts) вместо того, чтобы платить за оба раунд-трипа последовательно.
+  const userPromise = getCachedUser();
   let anime;
   try {
     anime = await getAnime(shikimoriId);
@@ -38,7 +42,7 @@ export default async function WatchPage({
   const supabase = createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await userPromise;
 
   let progress: WatchProgress | null = null;
   if (user) {

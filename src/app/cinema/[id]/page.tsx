@@ -6,7 +6,7 @@ import CinemaEpisodes from '@/components/CinemaEpisodes';
 import ListButton from '@/components/ListButton';
 import TrailerButton from '@/components/TrailerButton';
 import { getCinemaById, getCinemaCatalog, type CinemaShort } from '@/lib/videoseed-catalog';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
 import { buildVideoseedEmbedUrl } from '@/lib/video/videoseed';
@@ -94,7 +94,7 @@ export default async function CinemaPage({
 
   const [item, {
     data: { user },
-  }] = await Promise.all([getCinemaById(id), supabase.auth.getUser()]);
+  }] = await Promise.all([getCinemaById(id), getCachedUser()]);
   if (!item) notFound();
 
   const title = item.title;

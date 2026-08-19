@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getCachedUser } from '@/lib/supabase/server';
 import { getOnlineUserCount, isAdminEmail } from '@/lib/admin';
 import CalendarLink from './CalendarLink';
 import NotificationBell from './NotificationBell';
@@ -13,7 +13,7 @@ export default async function Navbar() {
   const supabase = createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getCachedUser();
 
   const isAdmin = isAdminEmail(user?.email);
   // Только счётчик тут — дешёвый count, без admin.listUsers (см.
