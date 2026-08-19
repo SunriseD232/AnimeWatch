@@ -12,6 +12,10 @@
  */
 
 const KODIK_BASE = 'https://kodik-api.com';
+// См. VS_FETCH_TIMEOUT_MS в videoseed-catalog.ts — без таймаута зависший
+// апстрим вешает страницу целиком (тут его не было вообще, в отличие от
+// lib/video/kodik.ts к тому же хосту).
+const KODIK_CATALOG_TIMEOUT_MS = 8_000;
 
 /** Типы Kodik, которые показываем в разделе кино (без аниме). */
 const CINEMA_TYPE_LIST = [
@@ -111,6 +115,7 @@ async function kodikFetch(
   const search = new URLSearchParams({ token: t, ...params });
   const res = await fetch(`${KODIK_BASE}${path}?${search.toString()}`, {
     next: { revalidate },
+    signal: AbortSignal.timeout(KODIK_CATALOG_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`Kodik API error ${res.status} на ${path}`);
   const data = (await res.json()) as KodikListResponse;

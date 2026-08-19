@@ -7,7 +7,16 @@
  * Без TMDB_API_KEY модуль просто возвращает null везде — категории и
  * страницы, которые запрашивают рейтинг/трейлер, откатываются к поведению
  * без него, ничего не ломается.
+ *
+ * api.themoviedb.org с этой VPS заблокирован на уровне DNS — проверено
+ * вживую: и обычный DNS (8.8.8.8), и DNS-over-HTTPS (Cloudflare) отдают
+ * отсюда 127.0.0.1/::1 для этого хоста (со стороннего хоста — настоящие IP
+ * CloudFront), то есть блокировка именно на сетевом пути этой VPS, не у
+ * самого TMDB. Тот же класс проблемы, что решили VLESS-туннелем для
+ * Supabase/Real-Debrid — из-за неё рейтинги и трейлеры TMDB были тихо
+ * сломаны (fetch падал в catch → null, без видимой ошибки) всё это время.
  */
+import { vlessDispatcher } from '@/lib/net/vlessProxy';
 
 const TMDB_API = 'https://api.themoviedb.org/3';
 // См. VS_FETCH_TIMEOUT_MS в videoseed-catalog.ts — без таймаута зависший
@@ -36,7 +45,12 @@ async function findTmdbEntry(imdbId: string): Promise<TmdbEntry | null> {
   try {
     const res = await fetch(
       `${TMDB_API}/find/${imdbId}?external_source=imdb_id&api_key=${key}`,
-      { next: { revalidate: 86400 }, signal: AbortSignal.timeout(TMDB_FETCH_TIMEOUT_MS) },
+      {
+        next: { revalidate: 86400 },
+        signal: AbortSignal.timeout(TMDB_FETCH_TIMEOUT_MS),
+        // @ts-expect-error -- dispatcher — опция undici, не входит в типы lib.dom fetch.
+        dispatcher: vlessDispatcher(),
+      },
     );
     if (!res.ok) return null;
     const data = (await res.json()) as TmdbFindResult;
@@ -84,6 +98,8 @@ async function fetchTrailerKey(url: string): Promise<string | null> {
     const res = await fetch(url, {
       next: { revalidate: 86400 },
       signal: AbortSignal.timeout(TMDB_FETCH_TIMEOUT_MS),
+      // @ts-expect-error -- dispatcher — опция undici, не входит в типы lib.dom fetch.
+      dispatcher: vlessDispatcher(),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as { results?: TmdbVideo[] };
