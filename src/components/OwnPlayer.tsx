@@ -225,8 +225,20 @@ export default function OwnPlayer({
     translations.find((t) => t.id === translationId) ?? translations[0] ?? null;
   // Держим название текущей озвучки в ref — при смене серии translationId
   // (video_id) станет невалидным, а по названию найдём тот же перевод заново.
+  //
+  // ВАЖНО: обновляется ТОЛЬКО там, где выбор реально меняется — эффект
+  // смены серии ниже и changeTranslation() — а НЕ синхронно на каждом
+  // рендере от activeTranslation, как было раньше. На рендере, где episode/
+  // translations уже новые (новая серия), а translationId (state) ещё
+  // старый (эффект ниже применит новый ТОЛЬКО ПОСЛЕ этого рендера/коммита),
+  // activeTranslation.find() по старому id не находил ничего в новом списке
+  // и падал на fallback translations[0] — и синхронное присвоение тут же
+  // НАВСЕГДА затирало запомненный title пользователя этим fallback-title,
+  // раньше, чем корректирующий эффект успевал сработать. Воспроизведено
+  // вживую: после переключения серии реально запрашивалась совсем другая
+  // озвучка, чем та, что показывал селектор до переключения (и чем та, что
+  // был прогрет заранее, см. эффект прогрева в Player.tsx/WatchPlayer.tsx).
   const activeTranslationTitleRef = useRef<string | null>(activeTranslation?.title ?? null);
-  activeTranslationTitleRef.current = activeTranslation?.title ?? activeTranslationTitleRef.current;
   // Сообщаем родителю текущую озвучку (см. Props.onTranslationChange) — нужно
   // именно эффектом (не инлайн-вызовом в теле рендера), чтобы не звать
   // setState родителя во время нашего собственного рендера.
@@ -396,7 +408,12 @@ export default function OwnPlayer({
   useEffect(() => {
     const wantTitle = activeTranslationTitleRef.current ?? initialTranslationTitle;
     const match = wantTitle ? translations.find((t) => t.title === wantTitle) : undefined;
-    setTranslationId(match?.id ?? translations[0]?.id ?? null);
+    const resolved = match ?? translations[0] ?? null;
+    // Обновляем ref ЗДЕСЬ, а не синхронно в теле рендера (см. коммент у
+    // объявления ref выше) — на этот момент translations уже гарантированно
+    // соответствует новой серии.
+    if (resolved) activeTranslationTitleRef.current = resolved.title;
+    setTranslationId(resolved?.id ?? null);
   }, [episode, translations, initialTranslationTitle]);
 
   // --- Громкость: восстановление/сохранение ---------------------------------
@@ -1147,9 +1164,14 @@ export default function OwnPlayer({
   const changeTranslation = useCallback(
     (id: number) => {
       seekTargetRef.current = currentTime > 1 ? currentTime : resumeFrom;
+      // Запоминаем title сразу здесь — при явном выборе пользователя, а не
+      // жду синхронного пересчёта activeTranslation на следующем рендере
+      // (см. коммент у объявления activeTranslationTitleRef выше).
+      const picked = translations.find((t) => t.id === id);
+      if (picked) activeTranslationTitleRef.current = picked.title;
       setTranslationId(id);
     },
-    [currentTime, resumeFrom],
+    [currentTime, resumeFrom, translations],
   );
 
   // Смена качества — hls.js переключает уровень на лету, без перезагрузки
