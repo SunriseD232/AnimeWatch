@@ -725,7 +725,34 @@ export default function WatchPlayer({
       )}
 
       {/* Медиа */}
-      {resolving ? (
+      {source === 'own' && hasOwnPlayer ? (
+        // Реальный OwnPlayer живёт в PipPlayerHost (см. app/layout.tsx) в
+        // постоянном контейнере с position:fixed — он на каждый кадр
+        // подгоняется под прямоугольник ЭТОГО div'а (см. show()/rAF-цикл в
+        // PipPlayerHost), поэтому размеры тут должны совпадать с обычным
+        // видео-контейнером.
+        //
+        // ВАЖНО: эта ветка проверяется ПЕРВОЙ, раньше resolving — resolving
+        // взводится синхронно эффектом подбора источника (см. выше), который
+        // перезапускается на КАЖДУЮ смену activeEpisode (переключение серии),
+        // а не только на первую загрузку. Если resolving идёт раньше в
+        // условии, на каждое переключение серии этот div на миг подменяется
+        // скелетоном «Подбираем источник…» — OwnPlayer, который живёт ТОЛЬКО
+        // пока смонтирован этот dock (см. эффект pipHost.show/unclaimDock
+        // ниже), из-за этого полностью размонтируется и монтируется заново с
+        // нуля, теряя все внутренние refs — в частности, запомненную
+        // пользователем озвучку (воспроизведено вживую: после переключения
+        // серии реально запрашивалась совсем другая озвучка, чем та, что
+        // была выбрана и даже прогрета заранее, см. эффект прогрева выше).
+        // Пока «Наш плеер» уже активная вкладка и есть хоть один перевод —
+        // держим её смонтированной; сам resolving на выбор ИЗ ДРУГИХ вкладок
+        // (Kodik/Yummy/HLS) это не влияет, там его результат всё равно нужен
+        // только при первом заходе или при возврате на другую вкладку.
+        <div
+          ref={ownPlayerDockRef}
+          className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10"
+        />
+      ) : resolving ? (
         <div className="skeleton flex aspect-video w-full items-center justify-center">
           <span className="text-sm text-gray-400">Подбираем источник…</span>
         </div>
@@ -746,16 +773,6 @@ export default function WatchPlayer({
           skipEnding={skipEnding}
           onEnded={onEnded}
           onTimeUpdate={bumpPosition}
-        />
-      ) : source === 'own' && hasOwnPlayer ? (
-        // Реальный OwnPlayer живёт в PipPlayerHost (см. app/layout.tsx) в
-        // постоянном контейнере с position:fixed — он на каждый кадр
-        // подгоняется под прямоугольник ЭТОГО div'а (см. show()/rAF-цикл в
-        // PipPlayerHost), поэтому размеры тут должны совпадать с обычным
-        // видео-контейнером.
-        <div
-          ref={ownPlayerDockRef}
-          className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10"
         />
       ) : source === 'yummy' && hasYummy ? (
         <YummyPlayer
