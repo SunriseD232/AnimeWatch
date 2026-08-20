@@ -207,6 +207,11 @@ export default function OwnPlayer({
   onPipChangeRef.current = onPipChange;
   const onTranslationChangeRef = useRef(onTranslationChange);
   onTranslationChangeRef.current = onTranslationChange;
+  // eslint-disable-next-line no-console
+  useEffect(() => {
+    console.error('[DEBUG mount]');
+    return () => console.error('[DEBUG unmount]');
+  }, []);
   // Выбор озвучки: сперва пробуем сохранённую по id (только кино — там он
   // стабилен, см. Props.savedTranslationId), затем по названию (аниме —
   // video_id Yummy меняется от серии к серии, см. миграцию 0008), иначе
