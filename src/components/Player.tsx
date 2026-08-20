@@ -264,6 +264,16 @@ export default function Player({
   // Прогрели ли уже следующую серию «Наш плеер» — сброс на каждую новую
   // активную серию (см. switchEpisode и эффект прогрева ниже).
   const prewarmedRef = useRef(false);
+  // Озвучка, которую реально смотрит пользователь В «Наш плеер» (сообщает
+  // сам OwnPlayer через onTranslationChange, см. ниже) — эффект прогрева
+  // использует title, чтобы прогреть СЛЕДУЮЩУЮ серию под ТУ ЖЕ озвучку, а
+  // не первую попавшуюся (иначе прогрев почти никогда не совпадает с тем,
+  // что реально запросит OwnPlayer при переключении — воспроизведено
+  // вживую: прогрев срабатывал только если пользователь ни разу не менял
+  // озвучку от дефолтной).
+  const activeOwnPlayerTranslationTitleRef = useRef<string | null>(
+    savedTranslationTitle ?? null,
+  );
 
   // Синхронизируем активные сезон/серию при смене маршрута.
   useEffect(() => {
@@ -842,7 +852,17 @@ export default function Player({
       )
         .then((r) => (r.ok ? (r.json() as Promise<EpisodeSourcesResponse>) : null))
         .then((data) => {
-          const t = data?.ownPlayerTranslations[0];
+          if (!data) return;
+          // Сперва пробуем ту же озвучку, что реально активна у пользователя
+          // (по title — id Kodik/Videoseed стабилен, но title надёжнее и
+          // единообразнее с аниме-веткой, см. onTranslationChange выше);
+          // нет совпадения (первая серия ещё не сообщила title, либо в
+          // следующей серии такой озвучки просто нет) — как раньше, первая
+          // доступная.
+          const wantTitle = activeOwnPlayerTranslationTitleRef.current;
+          const t =
+            (wantTitle && data.ownPlayerTranslations.find((tr) => tr.title === wantTitle)) ||
+            data.ownPlayerTranslations[0];
           if (!t?.source) return;
           return fetch(
             `/api/proxy/cinema/${shikimoriId}/${step.season}/${step.episode}/${t.source}?t=${t.id}`,
@@ -891,6 +911,9 @@ export default function Player({
           // серии — см. эффект прогрева выше).
           currentTimeRef.current = t;
           if (d) durationRef.current = d;
+        },
+        onTranslationChange: (title) => {
+          activeOwnPlayerTranslationTitleRef.current = title;
         },
       },
       ownPlayerDockRef.current,

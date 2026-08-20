@@ -76,6 +76,12 @@ interface Props {
    *  убрать этот плеер из документа при уходе со страницы (нельзя, пока PiP
    *  активен — иначе браузер сам закроет плавающее окно). */
   onPipChange?: (active: boolean) => void;
+  /** Сообщает title текущей активной озвучки (id нестабилен между сериями у
+   *  аниме, title — да, см. миграцию 0008 и остальной файл) — родитель
+   *  (Player.tsx/WatchPlayer.tsx) использует его, чтобы прогревать «Наш
+   *  плеер» СЛЕДУЮЩЕЙ серии под ТУ ЖЕ озвучку, которую реально смотрит
+   *  пользователь, а не всегда первую в списке (см. эффект прогрева там). */
+  onTranslationChange?: (title: string | null) => void;
 }
 
 const VOLUME_KEY = 'aw:ownPlayerVolume';
@@ -195,9 +201,12 @@ export default function OwnPlayer({
   onEnded,
   onTimeUpdate,
   onPipChange,
+  onTranslationChange,
 }: Props) {
   const onPipChangeRef = useRef(onPipChange);
   onPipChangeRef.current = onPipChange;
+  const onTranslationChangeRef = useRef(onTranslationChange);
+  onTranslationChangeRef.current = onTranslationChange;
   // Выбор озвучки: сперва пробуем сохранённую по id (только кино — там он
   // стабилен, см. Props.savedTranslationId), затем по названию (аниме —
   // video_id Yummy меняется от серии к серии, см. миграцию 0008), иначе
@@ -218,6 +227,12 @@ export default function OwnPlayer({
   // (video_id) станет невалидным, а по названию найдём тот же перевод заново.
   const activeTranslationTitleRef = useRef<string | null>(activeTranslation?.title ?? null);
   activeTranslationTitleRef.current = activeTranslation?.title ?? activeTranslationTitleRef.current;
+  // Сообщаем родителю текущую озвучку (см. Props.onTranslationChange) — нужно
+  // именно эффектом (не инлайн-вызовом в теле рендера), чтобы не звать
+  // setState родителя во время нашего собственного рендера.
+  useEffect(() => {
+    onTranslationChangeRef.current?.(activeTranslation?.title ?? null);
+  }, [activeTranslation?.title]);
   // Каждая озвучка может идти через свой источник извлечения (Alloha/Sibnet/
   // ...) — используем его, а extractSource остаётся дефолтом только когда
   // список переводов пуст (раздел «Фильмы и сериалы», см. Player.tsx).

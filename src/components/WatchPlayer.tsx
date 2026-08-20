@@ -148,6 +148,16 @@ export default function WatchPlayer({
   // Прогрели ли уже следующую серию «Наш плеер» — сброс на каждую новую
   // активную серию (см. эффект прогрева ниже).
   const prewarmedRef = useRef(false);
+  // Озвучка, которую реально смотрит пользователь В «Наш плеер» (сообщает
+  // сам OwnPlayer через onTranslationChange, см. ниже) — эффект прогрева
+  // использует title, чтобы прогреть СЛЕДУЮЩУЮ серию под ТУ ЖЕ озвучку, а
+  // не первую попавшуюся (иначе прогрев почти никогда не совпадает с тем,
+  // что реально запросит OwnPlayer при переключении — воспроизведено
+  // вживую: прогрев срабатывал только если пользователь ни разу не менял
+  // озвучку от дефолтной).
+  const activeOwnPlayerTranslationTitleRef = useRef<string | null>(
+    savedTranslationTitle ?? null,
+  );
   // Контейнер, в который PipPlayerHost порталит реальный OwnPlayer (см.
   // эффект show/hide ниже и components/pip/PipPlayerHost.tsx).
   const ownPlayerDockRef = useRef<HTMLDivElement | null>(null);
@@ -514,7 +524,15 @@ export default function WatchPlayer({
       fetch(`/api/watch/anime/${shikimoriId}/${nextEp}${qs ? `?${qs}` : ''}`)
         .then((r) => (r.ok ? (r.json() as Promise<EpisodeSourcesResponse>) : null))
         .then((data) => {
-          const t = data?.yummyTranslations.find((tr) => tr.source != null);
+          if (!data) return;
+          // Сперва пробуем ту же озвучку, что реально активна у пользователя
+          // (по title — video_id Yummy нестабилен между сериями, см.
+          // миграцию 0008/onTranslationChange выше); нет совпадения (первая
+          // серия ещё не сообщила title, либо в следующей серии такой
+          // озвучки просто нет) — как раньше, первая с извлечением у нас.
+          const wantTitle = activeOwnPlayerTranslationTitleRef.current;
+          const extractable = data.yummyTranslations.filter((tr) => tr.source != null);
+          const t = (wantTitle && extractable.find((tr) => tr.title === wantTitle)) || extractable[0];
           if (!t?.source) return;
           return fetch(
             `/api/proxy/anime/${shikimoriId}/1/${nextEp}/${t.source}?t=${t.id}`,
@@ -563,6 +581,9 @@ export default function WatchPlayer({
         onTimeUpdate: (t, d) => {
           bumpPosition(t);
           if (d) durationRef.current = d;
+        },
+        onTranslationChange: (title) => {
+          activeOwnPlayerTranslationTitleRef.current = title;
         },
       },
       ownPlayerDockRef.current,
