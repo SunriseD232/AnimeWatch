@@ -266,13 +266,19 @@ export default function Player({
   const prewarmedRef = useRef(false);
   // Озвучка, которую реально смотрит пользователь В «Наш плеер» (сообщает
   // сам OwnPlayer через onTranslationChange, см. ниже) — эффект прогрева
-  // использует title, чтобы прогреть СЛЕДУЮЩУЮ серию под ТУ ЖЕ озвучку, а
-  // не первую попавшуюся (иначе прогрев почти никогда не совпадает с тем,
-  // что реально запросит OwnPlayer при переключении — воспроизведено
-  // вживую: прогрев срабатывал только если пользователь ни разу не менял
-  // озвучку от дефолтной).
-  const activeOwnPlayerTranslationTitleRef = useRef<string | null>(
-    savedTranslationTitle ?? null,
+  // использует id, чтобы прогреть СЛЕДУЮЩУЮ серию под ТУ ЖЕ озвучку, а не
+  // первую попавшуюся (иначе прогрев почти никогда не совпадает с тем, что
+  // реально запросит OwnPlayer при переключении — воспроизведено вживую:
+  // прогрев срабатывал только если пользователь ни разу не менял озвучку от
+  // дефолтной). Id, не title — у кино он стабилен между сериями (см.
+  // Props.savedTranslationId) и однозначен: у одного тайтла бывает несколько
+  // озвучек с одинаковой подписью от разных студий (например, два разных
+  // перевода «Сыендук · Videoseed» под разными id — воспроизведено вживую),
+  // сверка по title в такой ситуации могла попасть не в ту.
+  const activeOwnPlayerTranslationRef = useRef<{ id: number; title: string } | null>(
+    savedTranslationId != null && savedTranslationTitle
+      ? { id: savedTranslationId, title: savedTranslationTitle }
+      : null,
   );
 
   // Синхронизируем активные сезон/серию при смене маршрута.
@@ -854,14 +860,13 @@ export default function Player({
         .then((data) => {
           if (!data) return;
           // Сперва пробуем ту же озвучку, что реально активна у пользователя
-          // (по title — id Kodik/Videoseed стабилен, но title надёжнее и
-          // единообразнее с аниме-веткой, см. onTranslationChange выше);
-          // нет совпадения (первая серия ещё не сообщила title, либо в
-          // следующей серии такой озвучки просто нет) — как раньше, первая
-          // доступная.
-          const wantTitle = activeOwnPlayerTranslationTitleRef.current;
+          // — по id (стабилен между сериями у кино, см. коммент у объявления
+          // ref выше и однозначен, в отличие от title при дублях подписи);
+          // нет совпадения (первая серия ещё не сообщила, либо в следующей
+          // серии такой озвучки просто нет) — как раньше, первая доступная.
+          const want = activeOwnPlayerTranslationRef.current;
           const t =
-            (wantTitle && data.ownPlayerTranslations.find((tr) => tr.title === wantTitle)) ||
+            (want && data.ownPlayerTranslations.find((tr) => tr.id === want.id)) ||
             data.ownPlayerTranslations[0];
           if (!t?.source) return;
           return fetch(
@@ -912,8 +917,8 @@ export default function Player({
           currentTimeRef.current = t;
           if (d) durationRef.current = d;
         },
-        onTranslationChange: (title) => {
-          activeOwnPlayerTranslationTitleRef.current = title;
+        onTranslationChange: (translation) => {
+          activeOwnPlayerTranslationRef.current = translation;
         },
       },
       ownPlayerDockRef.current,

@@ -76,12 +76,18 @@ interface Props {
    *  убрать этот плеер из документа при уходе со страницы (нельзя, пока PiP
    *  активен — иначе браузер сам закроет плавающее окно). */
   onPipChange?: (active: boolean) => void;
-  /** Сообщает title текущей активной озвучки (id нестабилен между сериями у
-   *  аниме, title — да, см. миграцию 0008 и остальной файл) — родитель
-   *  (Player.tsx/WatchPlayer.tsx) использует его, чтобы прогревать «Наш
-   *  плеер» СЛЕДУЮЩЕЙ серии под ТУ ЖЕ озвучку, которую реально смотрит
-   *  пользователь, а не всегда первую в списке (см. эффект прогрева там). */
-  onTranslationChange?: (title: string | null) => void;
+  /** Сообщает id+title текущей активной озвучки — родитель (Player.tsx/
+   *  WatchPlayer.tsx) использует их, чтобы прогревать «Наш плеер» СЛЕДУЮЩЕЙ
+   *  серии под ТУ ЖЕ озвучку, которую реально смотрит пользователь, а не
+   *  всегда первую в списке (см. эффект прогрева там). Кино (Videoseed/
+   *  Kodik) сверяется по id — он там стабилен между сериями (см.
+   *  Props.savedTranslationId) и однозначен, в отличие от title: у одного
+   *  тайтла бывает несколько озвучек с одинаковой подписью от разных студий-
+   *  дублей одного и того же названия (например, два разных перевода
+   *  «Сыендук · Videoseed» с разными id — воспроизведено вживую). Аниме
+   *  (Yummy) вынуждено сверяется по title — id там нестабилен между сериями,
+   *  см. миграцию 0008. */
+  onTranslationChange?: (translation: { id: number; title: string } | null) => void;
 }
 
 const VOLUME_KEY = 'aw:ownPlayerVolume';
@@ -243,8 +249,15 @@ export default function OwnPlayer({
   // именно эффектом (не инлайн-вызовом в теле рендера), чтобы не звать
   // setState родителя во время нашего собственного рендера.
   useEffect(() => {
-    onTranslationChangeRef.current?.(activeTranslation?.title ?? null);
-  }, [activeTranslation?.title]);
+    onTranslationChangeRef.current?.(
+      activeTranslation ? { id: activeTranslation.id, title: activeTranslation.title } : null,
+    );
+    // activeTranslation — новый объект почти на каждый рендер (derived, не
+    // state) — зависимость по id (примитив) вместо самого объекта, чтобы не
+    // звать колбэк на каждый чих; title всегда путешествует вместе с тем же
+    // id в одной записи translations, отдельно его тут отслеживать незачем.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTranslation?.id]);
   // Каждая озвучка может идти через свой источник извлечения (Alloha/Sibnet/
   // ...) — используем его, а extractSource остаётся дефолтом только когда
   // список переводов пуст (раздел «Фильмы и сериалы», см. Player.tsx).
@@ -509,6 +522,19 @@ export default function OwnPlayer({
     setIsEnded(false);
     userPausedRef.current = false;
     autoplayMutedRef.current = false;
+    // playingRef/playing тоже сбрасываем здесь — иначе при переключении
+    // серии/озвучки, начатом ПОКА предыдущее видео ещё играло, они остаются
+    // залипшими в true: <video> размонтируется целиком, пока loadState —
+    // 'probing' (ветка ниже вообще не рендерит <video>), а браузер не всегда
+    // успевает выстрелить событием 'pause' у элемента, который просто убрали
+    // из DOM — onPause (см. эффект событий видео ниже) в этом случае не
+    // срабатывает. Залипший playingRef.current=true молча гасит
+    // attemptPlay() на СЛЕДУЮЩЕМ видео с самого начала (проверено вживую:
+    // после «След.» новая серия догружалась полностью, но так и оставалась
+    // на паузе — и даже кнопка «Смотреть» не показывалась, потому что и
+    // playing-state с тем же успехом оставался «true»).
+    playingRef.current = false;
+    setPlaying(false);
 
     (async () => {
       let contentType: string | null = null;

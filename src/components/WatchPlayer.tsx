@@ -582,8 +582,10 @@ export default function WatchPlayer({
           bumpPosition(t);
           if (d) durationRef.current = d;
         },
-        onTranslationChange: (title) => {
-          activeOwnPlayerTranslationTitleRef.current = title;
+        onTranslationChange: (translation) => {
+          // Аниме сверяется по title, не id — video_id Yummy нестабилен
+          // между сериями (см. миграцию 0008 и коммент у объявления ref).
+          activeOwnPlayerTranslationTitleRef.current = translation?.title ?? null;
         },
       },
       ownPlayerDockRef.current,
