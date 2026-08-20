@@ -1067,11 +1067,41 @@ export default function OwnPlayer({
     }
   }, []);
 
+  // Копим дельту нескольких быстрых кликов по -10/+10 и применяем ОДНИМ
+  // присвоением currentTime, а не по одному на каждый клик. При частых
+  // повторных кликах каждое новое присвоение currentTime на HLS-потоке рвёт
+  // ещё не догруженный фрагмент прошлой перемотки (hls.js abort'ит запрос и
+  // начинает новый под новую цель) — если клики идут чаще, чем успевает
+  // прийти хоть один фрагмент, буферизация зависает надолго и выглядит как
+  // «воспроизведение остановилось» (воспроизведено вживую). Небольшая
+  // задержка (250мс) для одиночного клика почти незаметна, а для быстрой
+  // серии кликов даёт ровно один реальный сик вместо N конкурирующих.
+  const seekAccumRef = useRef(0);
+  const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seekBy = useCallback((delta: number) => {
-    const v = videoRef.current;
-    if (!v) return;
-    v.currentTime = Math.max(0, Math.min(v.currentTime + delta, v.duration || Infinity));
+    seekAccumRef.current += delta;
+    if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
+    seekTimerRef.current = setTimeout(() => {
+      seekTimerRef.current = null;
+      const d = seekAccumRef.current;
+      seekAccumRef.current = 0;
+      const v = videoRef.current;
+      if (!v || d === 0) return;
+      v.currentTime = Math.max(0, Math.min(v.currentTime + d, v.duration || Infinity));
+    }, 250);
   }, []);
+
+  // Не даём отложенному сику (см. seekBy выше) сработать на уже другой серии/
+  // озвучке/сброшенном видео после переключения.
+  useEffect(() => {
+    return () => {
+      if (seekTimerRef.current) {
+        clearTimeout(seekTimerRef.current);
+        seekTimerRef.current = null;
+      }
+      seekAccumRef.current = 0;
+    };
+  }, [src, reloadKey]);
 
   const seekTo = useCallback((t: number) => {
     const v = videoRef.current;
@@ -1286,7 +1316,14 @@ export default function OwnPlayer({
           setSettingsOpen(false);
           setSettingsView('root');
         }}
-        className="group relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10 outline-none focus:ring-accent/40"
+        className={[
+          'group relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10 outline-none focus:ring-accent/40',
+          // Курсор прячем вместе с панелью управления — тот же признак
+          // (controlsVisible || !playing), что решает видимость самой панели
+          // ниже, чтобы не рассинхронизировать. На паузе/буферизации курсор
+          // всегда виден — там и так есть чем управлять поверх видео.
+          !controlsVisible && playing ? 'cursor-none' : '',
+        ].join(' ')}
       >
         <video
           ref={videoRef}
@@ -1330,11 +1367,18 @@ export default function OwnPlayer({
           <button
             type="button"
             onClick={togglePlay}
+            onDoubleClick={toggleFullscreen}
             aria-label="Смотреть"
             // bottom-16, не inset-0: полное покрытие до самого низа перекрывало
             // кликабельную область панели управления (в частности, кнопку
             // «Настройки») — первый клик там иногда попадал на эту кнопку
             // (пауза/повторный play) вместо реального контрола под ней.
+            //
+            // onDoubleClick — эта кнопка перекрывает <video> (у него тоже
+            // есть onDoubleClick={toggleFullscreen}, см. ниже) всё время, пока
+            // видео на паузе/ещё не стартовало — без своего обработчика
+            // двойной клик по области просмотра в этом состоянии никуда не
+            // доходил и в полноэкранный режим не переключал.
             className="absolute inset-x-0 top-0 bottom-16 flex items-center justify-center"
           >
             <span className="flex h-16 w-16 items-center justify-center rounded-full bg-black/60 ring-1 ring-white/20 backdrop-blur transition hover:bg-black/80">
@@ -1377,6 +1421,11 @@ export default function OwnPlayer({
         <div
           className={[
             'absolute inset-x-0 bottom-0 z-10 flex flex-col gap-1 bg-gradient-to-t from-black/90 via-black/50 to-transparent px-3 pb-2 pt-8 transition-opacity duration-300',
+            // select-none — быстрые повторные клики по перемотке (двойной
+            // клик и чаще) иначе триггерят нативное выделение текста браузером
+            // (воспроизведено вживую: страница вокруг ползунка подсвечивается,
+            // как при выделении абзаца).
+            'select-none',
             controlsVisible || !playing ? 'opacity-100' : 'pointer-events-none opacity-0',
           ].join(' ')}
         >
