@@ -20,6 +20,12 @@ function edgeFetchWithTimeout(url: RequestInfo | URL, init?: RequestInit): Promi
   return fetch(url, { ...init, signal: AbortSignal.timeout(MIDDLEWARE_AUTH_TIMEOUT_MS) });
 }
 
+// Без явного имени @supabase/ssr сам выводит его из хоста
+// NEXT_PUBLIC_SUPABASE_URL — при миграции на self-hosted Supabase (другой
+// хост) это тихо сломало бы уже существующие сессии, см. тот же пин и
+// комментарий в client.ts.
+const AUTH_COOKIE_NAME = 'sb-ubqmltwcfbquenvcxbyl-auth-token';
+
 /**
  * Обновляет сессию Supabase на каждом запросе и защищает приватные маршруты.
  * Возвращает response с актуализированными cookies.
@@ -51,6 +57,7 @@ export async function updateSession(request: NextRequest) {
       // Вместо туннеля — короткий таймаут (см. edgeFetchWithTimeout выше),
       // чтобы обречённое соединение не держало каждый запрос по 10 секунд.
       global: { fetch: edgeFetchWithTimeout },
+      cookieOptions: { name: AUTH_COOKIE_NAME },
     },
   );
 

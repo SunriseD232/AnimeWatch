@@ -5,6 +5,12 @@ import { supabaseFetch } from './fetchWithVless';
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
+// Без явного имени @supabase/ssr сам выводит его из хоста
+// NEXT_PUBLIC_SUPABASE_URL — при миграции на self-hosted Supabase (другой
+// хост) это тихо сломало бы уже существующие сессии, см. тот же пин и
+// комментарий в client.ts.
+const AUTH_COOKIE_NAME = 'sb-ubqmltwcfbquenvcxbyl-auth-token';
+
 /**
  * Клиент Supabase для Server Components / Route Handlers.
  * Сессия хранится в cookies через @supabase/ssr, что обеспечивает SSR.
@@ -30,6 +36,7 @@ export function createClient() {
           }
         },
       },
+      cookieOptions: { name: AUTH_COOKIE_NAME },
       global: { fetch: supabaseFetch },
     },
   );
