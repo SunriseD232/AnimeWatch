@@ -25,15 +25,16 @@ extension Notification.Name {
 /// домен наружу не уходит): 1) забираем entryUrl (его строит JS, см.
 /// DownloadPicker.tsx — тот же путь, что hls.js использует в OwnPlayer.tsx);
 /// 2) если это master-плейлист — выбираем вариант ближе к 720p, но не выше;
-/// 3) скачиваем все сегменты (и AES-128 ключ, если есть) параллельно через
-/// фоновую URLSession; 4) складываем рядом локальный плейлист с локальными
-/// именами файлов — AVPlayer проигрывает такой file:// плейлист как обычный
-/// HLS без сети (см. DownloadPlayerView.swift).
+/// 3) скачиваем все сегменты (и AES-128 ключ, если есть) через обычные (не
+/// фоновые) запросы, сами пишем байты на диск — см. runSegmentDownload,
+/// почему не фоновая URLSession; 4) складываем рядом локальный плейлист с
+/// локальными именами файлов — AVPlayer проигрывает такой file:// плейлист
+/// как обычный HLS без сети (см. DownloadPlayerView.swift).
 ///
 /// Очередь — ОДНА серия активно скачивается за раз (isProcessingQueue) —
-/// проще для отладки и не создаёт сотни параллельных background-задач сразу
-/// на несколько серий; внутри одной серии сегменты качаются параллельно
-/// (httpMaximumConnectionsPerHost = 6).
+/// проще для отладки и не создаёт сотни параллельных задач сразу на
+/// несколько серий; внутри одной серии сегменты качаются с ограничением
+/// maxConcurrentSegmentDownloads одновременно в полёте.
 final class OfflineDownloadManager: NSObject {
     static let shared = OfflineDownloadManager()
 
@@ -70,11 +71,14 @@ final class OfflineDownloadManager: NSObject {
     private var itemFailureDetail: [String: String] = [:]
     /// itemId -> ещё не запущенные сегменты (см. fillSegmentSlotsLocked) —
     /// раньше весь план на серию (от единиц до многих сотен сегментов)
-    /// запускался как фоновые задачи разом, одним .resume() на каждый в
-    /// цикле. На практике это упиралось во внутренний лимит nsurlsessiond на
-    /// одновременно создаваемые задачи фоновой сессии — часть валилась с
-    /// NSURLErrorCannotCreateFile (-3000), проверено вживую 2026-08-21 (даже
-    /// на одной серии с Videoseed). Вместо этого держим не больше
+    /// запускался разом, одним стартом задачи на каждый файл в цикле, через
+    /// фоновую URLSession — упиралось во внутренний лимит nsurlsessiond на
+    /// одновременно создаваемые задачи, часть валилась с
+    /// NSURLErrorCannotCreateFile (-3000). Сегменты теперь качаются не через
+    /// фоновую сессию (см. runSegmentDownload), так что сама причина -3000
+    /// больше не применяется — но ограничение на число одновременных
+    /// запросов всё равно разумно оставить, не заваливать наш собственный
+    /// /api/proxy/raw сотнями параллельных запросов сразу. Держим не больше
     /// maxConcurrentSegmentDownloads одновременно в полёте, остальное — в
     /// очереди здесь.
     private var pendingPlanQueue: [String: [DownloadPlanEntry]] = [:]
@@ -86,10 +90,10 @@ final class OfflineDownloadManager: NSObject {
     /// "itemId|planIndex" -> число попыток — сбрасывается сам по себе между
     /// запусками приложения (не персистится, не критично для v1).
     private var retryCounts: [String: Int] = [:]
-    /// identifier сессии -> completion handler из AppDelegate
-    /// (handleEventsForBackgroundURLSession) — вызывается, когда
-    /// urlSessionDidFinishEvents сообщает, что все фоновые события доставлены.
-    private var pendingBackgroundCompletionHandlers: [String: () -> Void] = [:]
+    /// itemId -> активные Task для скачивания сегментов этой серии — нужны
+    /// только чтобы уметь их отменить (pause/cancel/delete), см.
+    /// cancelTasks(forItemId:).
+    private var activeSegmentTasks: [String: [Task<Void, Never>]] = [:]
 
     lazy var downloadsRootURL: URL = {
         let support = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -106,27 +110,21 @@ final class OfflineDownloadManager: NSObject {
         downloadsRootURL.appendingPathComponent("pendingProgress.json")
     }
 
-    private static let backgroundSessionIdentifier = "ru.mediawatch.offlinedownload.bg"
-
-    private lazy var backgroundSession: URLSession = {
-        let config = URLSessionConfiguration.background(withIdentifier: Self.backgroundSessionIdentifier)
-        config.isDiscretionary = false
-        config.sessionSendsLaunchEvents = true
+    /// Обычная (не фоновая) сессия для сегментов — см. runSegmentDownload.
+    /// allowsCellularAccess применяется только при создании сессии (как и
+    /// раньше с фоновой) — смена настройки берётся в расчёт со следующего
+    /// запуска приложения, см. setAllowCellular ниже.
+    private lazy var segmentSession: URLSession = {
+        let config = URLSessionConfiguration.default
         config.httpMaximumConnectionsPerHost = 6
-        // Применяется только при (пере)создании сессии — обычно следующий
-        // запуск приложения, см. setAllowCellular ниже.
         config.allowsCellularAccess = defaults.bool(forKey: allowCellularKey)
-        return URLSession(configuration: config, delegate: self, delegateQueue: nil)
+        return URLSession(configuration: config)
     }()
 
     private override init() {
         super.init()
         loadIndexFromDisk()
         loadPendingProgressFromDisk()
-        // Форсируем создание/переподключение фоновой сессии сразу — иначе
-        // её delegate не узнает о задачах, доскачавшихся пока приложение
-        // было закрыто обычным способом (не через handleEventsForBackground...).
-        _ = backgroundSession
     }
 
     // MARK: - Авторизация (фаза A)
@@ -338,12 +336,7 @@ final class OfflineDownloadManager: NSObject {
     }
 
     private func cancelTasks(forItemId itemId: String) {
-        let prefix = "\(itemId)|"
-        backgroundSession.getAllTasks { tasks in
-            for task in tasks where (task.taskDescription ?? "").hasPrefix(prefix) {
-                task.cancel()
-            }
-        }
+        activeSegmentTasks.removeValue(forKey: itemId)?.forEach { $0.cancel() }
     }
 
     // MARK: - Локальный прогресс воспроизведения + очередь на синхронизацию с сервером
@@ -486,7 +479,7 @@ final class OfflineDownloadManager: NSObject {
     }
 
     /// Разбирает медиа-плейлист, пишет локальный playlist.m3u8 и планирует
-    /// фоновые задачи на недостающие файлы (уже скачанные — по факту наличия
+    /// закачку недостающих файлов (уже скачанные — по факту наличия
     /// локального файла — пропускаются, это и есть «резюме» после паузы/
     /// ошибки без отдельного хранилища плана на диске).
     private func beginDownloadingSegments(itemId: String, playlistText: String, baseUrl: URL) throws {
@@ -573,37 +566,68 @@ final class OfflineDownloadManager: NSObject {
         try? mutableUrl.setResourceValues(values)
     }
 
-    /// Без Accept-Encoding: identity фоновые (URLSessionConfiguration.background)
-    /// downloadTask иногда сами просят у сервера gzip и потом не могут
-    /// корректно разжать поток на лету — известный баг URLSession с сегментами
-    /// не-текстового content-type, проявляется как
-    /// NSURLErrorDownloadDecodingFailedMidStream/ToComplete (-3006/-3007).
-    /// Нашим .ts/.bin сегментам сжатие всё равно не нужно (уже сжатое видео) —
-    /// проще запретить кодирование целиком, чем полагаться на то, что сервер
-    /// сам не сожмёт ответ.
+    /// Без Accept-Encoding: identity сессия иногда сама просит у сервера gzip
+    /// и потом не может корректно разжать поток на лету — известный баг
+    /// URLSession с сегментами не-текстового content-type. Нашим .ts/.bin
+    /// сегментам сжатие всё равно не нужно (уже сжатое видео) — проще
+    /// запретить кодирование целиком, чем полагаться на то, что сервер сам не
+    /// сожмёт ответ.
     private func segmentDownloadRequest(for url: URL) -> URLRequest {
         var request = URLRequest(url: url)
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         return request
     }
 
+    /// Вызывать только с stateQueue (мутирует activeSegmentTasks).
     private func scheduleSegmentTask(itemId: String, entry: DownloadPlanEntry) {
         guard let url = URL(string: entry.remoteUrl) else {
             stateQueue.async { self.settleSegmentLocked(itemId: itemId, success: false) }
             return
         }
-        let task = backgroundSession.downloadTask(with: segmentDownloadRequest(for: url))
-        task.taskDescription = "\(itemId)|\(entry.index)|\(entry.localName)"
-        task.resume()
+        let task = Task { [weak self] in
+            await self?.runSegmentDownload(itemId: itemId, entry: entry, url: url)
+        }
+        activeSegmentTasks[itemId, default: []].append(task)
+    }
+
+    /// Скачивает один файл (сегмент/ключ) обычным запросом (см. segmentSession)
+    /// и сам пишет байты на диск — раньше это шло через
+    /// URLSessionConfiguration.background + downloadTask, но её собственное
+    /// внутреннее управление временными файлами (у системного nsurlsessiond,
+    /// вне нашего контроля) стабильно валилось с NSURLErrorCannotCreateFile
+    /// (-3000) — проверено вживую 2026-08-21: не лечилось ни ограничением
+    /// конкурентности (maxConcurrentSegmentDownloads), ни перезагрузкой
+    /// телефона, то есть не разовое сбойное состояние, а системная проблема
+    /// именно с фоновыми загрузками в этом сценарии. Обычная сессия эту
+    /// прослойку ОС не задействует вообще. Компромисс: скачивание сегментов
+    /// больше не продолжится, если приложение полностью выгрузят из памяти —
+    /// на время закачки серии приложение должно оставаться открытым.
+    private func runSegmentDownload(itemId: String, entry: DownloadPlanEntry, url: URL) async {
+        do {
+            let (data, response) = try await segmentSession.data(for: segmentDownloadRequest(for: url))
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 200
+            guard (200...299).contains(statusCode) else {
+                handleSegmentSettled(itemId: itemId, planIndex: entry.index, localName: entry.localName, remoteUrl: entry.remoteUrl, success: false, detail: "HTTP \(statusCode)")
+                return
+            }
+            let destination = itemDirURL(itemId).appendingPathComponent(entry.localName)
+            do {
+                try? fileManager.removeItem(at: destination)
+                try data.write(to: destination, options: .atomic)
+                handleSegmentSettled(itemId: itemId, planIndex: entry.index, localName: entry.localName, remoteUrl: entry.remoteUrl, success: true)
+            } catch {
+                handleSegmentSettled(itemId: itemId, planIndex: entry.index, localName: entry.localName, remoteUrl: entry.remoteUrl, success: false, detail: "write failed: \(error.localizedDescription)")
+            }
+        } catch {
+            if error is CancellationError { return }
+            let nsError = error as NSError
+            if nsError.code == NSURLErrorCancelled { return } // наша же отмена (pause/cancel/delete)
+            let detail = "\(nsError.domain) \(nsError.code): \(nsError.localizedDescription)"
+            handleSegmentSettled(itemId: itemId, planIndex: entry.index, localName: entry.localName, remoteUrl: entry.remoteUrl, success: false, detail: detail)
+        }
     }
 
     private func retryKey(_ itemId: String, _ planIndex: Int) -> String { "\(itemId)|\(planIndex)" }
-
-    private func parseTaskDescription(_ desc: String) -> (itemId: String, planIndex: Int, localName: String)? {
-        let parts = desc.components(separatedBy: "|")
-        guard parts.count == 3, let planIndex = Int(parts[1]) else { return nil }
-        return (parts[0], planIndex, parts[2])
-    }
 
     /// Один файл (сегмент/ключ) долетел до финала — успех или окончательный
     /// провал (после исчерпанных ретраев). Когда все файлы серии долетели —
@@ -625,6 +649,7 @@ final class OfflineDownloadManager: NSObject {
         guard remaining <= 0 else { return }
         pendingPlanQueue.removeValue(forKey: itemId)
         inFlightSegmentCounts.removeValue(forKey: itemId)
+        activeSegmentTasks.removeValue(forKey: itemId)
         let failed = itemHadFailure.removeValue(forKey: itemId) ?? false
         if failed {
             let reason = itemFailureDetail.removeValue(forKey: itemId)
@@ -645,7 +670,7 @@ final class OfflineDownloadManager: NSObject {
         }
     }
 
-    /// Обрабатывает результат одной фоновой задачи — до 3 попыток на файл,
+    /// Обрабатывает результат одной попытки скачивания файла — до 3 попыток,
     /// затем итем считается failed (уже скачанные файлы остаются на диске —
     /// resumeDownload переиспользует их благодаря проверке fileExists выше).
     private func handleSegmentSettled(itemId: String, planIndex: Int, localName: String, remoteUrl: String, success: Bool, detail: String? = nil) {
@@ -671,73 +696,15 @@ final class OfflineDownloadManager: NSObject {
             let attempts = (self.retryCounts[key] ?? 0) + 1
             self.retryCounts[key] = attempts
             if attempts <= 3, let url = URL(string: remoteUrl) {
-                let task = self.backgroundSession.downloadTask(with: self.segmentDownloadRequest(for: url))
-                task.taskDescription = "\(itemId)|\(planIndex)|\(localName)"
-                task.resume()
+                let entry = DownloadPlanEntry(index: planIndex, remoteUrl: remoteUrl, localName: localName)
+                let task = Task { [weak self] in
+                    await self?.runSegmentDownload(itemId: itemId, entry: entry, url: url)
+                }
+                self.activeSegmentTasks[itemId, default: []].append(task)
                 return // ещё одна попытка в полёте — не settle
             }
             self.retryCounts.removeValue(forKey: key)
             self.settleSegmentLocked(itemId: itemId, success: false, detail: detail)
         }
-    }
-}
-
-// MARK: - URLSessionDownloadDelegate (фоновые загрузки сегментов)
-
-extension OfflineDownloadManager: URLSessionDownloadDelegate {
-    func urlSession(
-        _ session: URLSession,
-        downloadTask: URLSessionDownloadTask,
-        didFinishDownloadingTo location: URL
-    ) {
-        guard let desc = downloadTask.taskDescription, let parsed = parseTaskDescription(desc) else { return }
-        let remoteUrl = downloadTask.originalRequest?.url?.absoluteString ?? parsed.localName
-
-        let statusCode = (downloadTask.response as? HTTPURLResponse)?.statusCode ?? 200
-        guard (200...299).contains(statusCode) else {
-            handleSegmentSettled(itemId: parsed.itemId, planIndex: parsed.planIndex, localName: parsed.localName, remoteUrl: remoteUrl, success: false, detail: "HTTP \(statusCode)")
-            return
-        }
-
-        // location — временный файл, живёт ровно до выхода из этого метода,
-        // поэтому move должен случиться синхронно прямо тут.
-        let destination = itemDirURL(parsed.itemId).appendingPathComponent(parsed.localName)
-        var moveSucceeded = true
-        var moveErrorDetail: String?
-        do {
-            try? fileManager.removeItem(at: destination)
-            try fileManager.moveItem(at: location, to: destination)
-        } catch {
-            moveSucceeded = false
-            moveErrorDetail = "move failed: \(error.localizedDescription)"
-        }
-        handleSegmentSettled(itemId: parsed.itemId, planIndex: parsed.planIndex, localName: parsed.localName, remoteUrl: remoteUrl, success: moveSucceeded, detail: moveErrorDetail)
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let error else { return } // успех уже обработан в didFinishDownloadingTo
-        let nsError = error as NSError
-        if nsError.code == NSURLErrorCancelled { return } // наша же отмена (pause/cancel/delete)
-        guard let desc = task.taskDescription, let parsed = parseTaskDescription(desc) else { return }
-        let remoteUrl = task.originalRequest?.url?.absoluteString ?? parsed.localName
-        let detail = "\(nsError.domain) \(nsError.code): \(nsError.localizedDescription)"
-        handleSegmentSettled(itemId: parsed.itemId, planIndex: parsed.planIndex, localName: parsed.localName, remoteUrl: remoteUrl, success: false, detail: detail)
-    }
-
-    func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        let identifier = session.configuration.identifier ?? Self.backgroundSessionIdentifier
-        DispatchQueue.main.async { [weak self] in
-            guard let handler = self?.pendingBackgroundCompletionHandlers.removeValue(forKey: identifier) else { return }
-            handler()
-        }
-    }
-}
-
-// MARK: - Фоновый релонч (см. AppDelegate.handleEventsForBackgroundURLSession)
-
-extension OfflineDownloadManager {
-    func storeBackgroundCompletionHandler(_ handler: @escaping () -> Void, forSession identifier: String) {
-        _ = backgroundSession // гарантируем переподключение делегата к системным задачам
-        pendingBackgroundCompletionHandlers[identifier] = handler
     }
 }

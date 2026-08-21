@@ -7,29 +7,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Форсируем инициализацию офлайн-загрузчика (и его фоновой
-        // URLSession) на каждом холодном старте, не дожидаясь первого
-        // обращения из WebView/вкладки «Загрузки» — иначе delegate фоновой
-        // сессии мог бы не подключиться вовремя к задачам, доскачавшимся,
-        // пока приложение было закрыто обычным способом (см.
-        // OfflineDownloadManager.init).
-        _ = OfflineDownloadManager.shared
         return true
-    }
-
-    // Система будит/перезапускает приложение в фоне, когда фоновые задачи
-    // загрузки (OfflineDownloadManager) завершились, пока его не было в
-    // памяти — обязательный парный вызов к
-    // URLSessionConfiguration.background(withIdentifier:) с
-    // sessionSendsLaunchEvents = true. completionHandler нужно вызвать
-    // ПОСЛЕ того как делегат фоновой сессии получит все накопленные
-    // события — см. urlSessionDidFinishEvents в OfflineDownloadManager.
-    func application(
-        _ application: UIApplication,
-        handleEventsForBackgroundURLSession identifier: String,
-        completionHandler: @escaping () -> Void
-    ) {
-        OfflineDownloadManager.shared.storeBackgroundCompletionHandler(completionHandler, forSession: identifier)
     }
 
     func applicationWillResignActive(_ application: UIApplication) {
