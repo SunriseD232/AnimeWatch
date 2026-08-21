@@ -34,6 +34,15 @@ function episodeKey(season: number, episode: number): string {
   return `${season}:${episode}`;
 }
 
+/** OfflineDownloadPlugin.startDownload (см. OfflineDownloadPlugin.swift)
+ *  отклоняет вызов с сообщением "not_authed", если нативная сторона ещё не
+ *  знает, что пользователь вошёл (см. NativeAuthBridge.tsx) — отличаем эту
+ *  причину от «просто нет такой озвучки», чтобы показать понятную ошибку,
+ *  а не молча ничего не делать. */
+function isNotAuthedError(err: unknown): boolean {
+  return err instanceof Error && err.message === 'not_authed';
+}
+
 async function mapWithConcurrency<T, R>(
   items: T[],
   limit: number,
@@ -180,7 +189,7 @@ export default function DownloadPicker({
     setConfirming(true);
     const origin = window.location.origin;
     let queued = 0;
-    let skipped = 0;
+    let notAuthed = false;
 
     try {
       if (contentType === 'cinema') {
@@ -188,6 +197,7 @@ export default function DownloadPicker({
         // Yummy-аниме) — резолвить каждую серию отдельно не нужно, см.
         // комментарий про id/title-матчинг в WatchPlayer.tsx/Player.tsx.
         for (const { season, episode } of pairs) {
+          if (notAuthed) break; // не авторизован — все следующие попытки тоже провалятся, не долбим плагин зря
           const entryUrl = `${origin}/api/proxy/cinema/${contentId}/${season}/${episode}/${chosenTranslation.source}?t=${chosenTranslation.id}`;
           const id = `cinema:${contentId}:${season}:${episode}:${chosenTranslation.id}`;
           const episodeLabel = isMovie
@@ -195,21 +205,25 @@ export default function DownloadPicker({
             : seasons.length > 1
               ? `Сезон ${season}, серия ${episode}`
               : `Серия ${episode}`;
-          // eslint-disable-next-line no-await-in-loop
-          await OfflineDownload.startDownload({
-            id,
-            entryUrl,
-            contentType: 'cinema',
-            contentId,
-            season,
-            episode,
-            translationId: chosenTranslation.id,
-            translationTitle: chosenTranslation.title,
-            title,
-            posterUrl,
-            episodeLabel,
-          });
-          queued += 1;
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            await OfflineDownload.startDownload({
+              id,
+              entryUrl,
+              contentType: 'cinema',
+              contentId,
+              season,
+              episode,
+              translationId: chosenTranslation.id,
+              translationTitle: chosenTranslation.title,
+              title,
+              posterUrl,
+              episodeLabel,
+            });
+            queued += 1;
+          } catch (err) {
+            if (isNotAuthedError(err)) notAuthed = true;
+          }
         }
       } else {
         // Аниме: Yummy video_id (translationId) НЕ стабилен между сериями —
@@ -218,6 +232,7 @@ export default function DownloadPicker({
         // WatchPlayer.tsx), а не переиспользуем id с первой серии.
         const wantTitle = chosenTranslation.title;
         await mapWithConcurrency(pairs, 4, async ({ season, episode }) => {
+          if (notAuthed) return;
           try {
             const res = await fetch(`/api/watch/anime/${contentId}/${episode}?skipAuth=1`);
             const data = await res.json();
@@ -226,10 +241,7 @@ export default function DownloadPicker({
               ...(data.realdebridTranslations ?? []),
             ];
             const match = list.filter(isDownloadable).find((t) => t.title === wantTitle);
-            if (!match) {
-              skipped += 1;
-              return;
-            }
+            if (!match) return;
             const entryUrl = `${origin}/api/proxy/anime/${contentId}/1/${episode}/${match.source}?t=${match.id}`;
             const id = `anime:${contentId}:1:${episode}:${match.id}`;
             await OfflineDownload.startDownload({
@@ -246,16 +258,24 @@ export default function DownloadPicker({
               episodeLabel: `Серия ${episode}`,
             });
             queued += 1;
-          } catch {
-            skipped += 1;
+          } catch (err) {
+            if (isNotAuthedError(err)) notAuthed = true;
           }
         });
       }
 
+      if (notAuthed && queued === 0) {
+        toast('Войдите в аккаунт, чтобы скачивать', 'error');
+        return;
+      }
+
+      // Всё, что не встало в очередь (skipped + прерванное notAuthed) —
+      // просто «пропущено», отдельно объяснять причину каждой не нужно.
+      const notQueued = pairs.length - queued;
       if (queued > 0) {
         toast(
-          skipped > 0
-            ? `Загрузка начата: ${queued} серий, пропущено ${skipped} (нет этой озвучки)`
+          notQueued > 0
+            ? `Загрузка начата: ${queued} серий, пропущено ${notQueued}`
             : isMovie
               ? 'Загрузка фильма начата — смотрите вкладку «Загрузки»'
               : `Загрузка начата: ${queued} серий — смотрите вкладку «Загрузки»`,
@@ -265,6 +285,11 @@ export default function DownloadPicker({
       } else {
         toast('Не удалось поставить в очередь — нет этой озвучки для выбранных серий', 'error');
       }
+    } catch {
+      // Неожиданная ошибка (не сама startDownload/fetch внутри циклов —
+      // те уже отловлены выше) — не даём пользователю смотреть на
+      // «зависшую» кнопку без единого объяснения.
+      toast('Не удалось поставить загрузку в очередь', 'error');
     } finally {
       setConfirming(false);
     }
