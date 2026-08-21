@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { WatchProgressInput } from '@/lib/types';
 
 /**
@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   const supabase = createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getCachedUser();
 
   if (!user) {
     // Аноним — просто ничего не сохраняем.

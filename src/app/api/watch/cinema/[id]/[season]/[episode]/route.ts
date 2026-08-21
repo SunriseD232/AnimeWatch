@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getCachedUser } from '@/lib/supabase/server';
 import { resolveCinemaEpisodeSources } from '@/lib/watch/resolveCinemaEpisode';
 import type { WatchProgress } from '@/lib/types';
 
@@ -51,7 +51,7 @@ export async function GET(
     const supabase = createClient();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await getCachedUser();
 
     // Восстановление позиции — только если сохранённый прогресс на ИМЕННО
     // этой серии/сезоне и не у самого конца (та же логика, что в page.tsx).

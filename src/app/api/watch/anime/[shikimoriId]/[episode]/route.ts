@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getCachedUser } from '@/lib/supabase/server';
 import { resolveAnimeEpisodeSources } from '@/lib/watch/resolveAnimeEpisode';
 import type { WatchProgress } from '@/lib/types';
 
@@ -36,7 +36,7 @@ export async function GET(
     const supabase = createClient();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await getCachedUser();
 
     if (user) {
       const { data } = await supabase
