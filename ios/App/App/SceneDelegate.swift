@@ -12,12 +12,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         // Корень — таб-бар: вкладка 1 сайт (как раньше), вкладка 2 нативная
         // «Загрузки» (см. план офлайн-загрузок) — работает без сети и без
-        // WebView. SceneDelegateProxy.shared ниже раньше получал сцену с
-        // голым CAPBridgeViewController в качестве rootViewController; его
-        // исходники не наши (часть capacitor-swift-pm) — не проверено
-        // компиляцией (среда без Xcode), при первом реальном билде стоит
-        // перепроверить, что deep link/URL-открытие продолжает работать.
-        let siteVC = CAPBridgeViewController()
+        // WebView. MainViewController (не голый CAPBridgeViewController) —
+        // см. MainViewController.swift: только через него локальные
+        // Swift-плагины (OfflineDownloadPlugin, ExternalDisplayPlugin)
+        // вообще регистрируются в мосте, иначе любой их вызов падает с
+        // "not implemented on ios".
+        let siteVC = MainViewController()
         siteVC.tabBarItem = UITabBarItem(
             title: "MediaWatch",
             image: UIImage(systemName: "play.rectangle"),

@@ -26,6 +26,7 @@
 		AE200000000000000000000A /* HLSPlaylist.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE2000000000000000000009 /* HLSPlaylist.swift */; };
 		AE200000000000000000000C /* OfflineDownloadTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE200000000000000000000B /* OfflineDownloadTypes.swift */; };
 		AE200000000000000000000E /* DownloadPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE200000000000000000000D /* DownloadPlayerView.swift */; };
+		AE2000000000000000000010 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE200000000000000000000F /* MainViewController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -50,6 +51,7 @@
 		AE2000000000000000000009 /* HLSPlaylist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HLSPlaylist.swift; sourceTree = "<group>"; };
 		AE200000000000000000000B /* OfflineDownloadTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineDownloadTypes.swift; sourceTree = "<group>"; };
 		AE200000000000000000000D /* DownloadPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadPlayerView.swift; sourceTree = "<group>"; };
+		AE200000000000000000000F /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -95,6 +97,7 @@
 				AE2000000000000000000009 /* HLSPlaylist.swift */,
 				AE200000000000000000000B /* OfflineDownloadTypes.swift */,
 				AE200000000000000000000D /* DownloadPlayerView.swift */,
+				AE200000000000000000000F /* MainViewController.swift */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -200,6 +203,7 @@
 				AE200000000000000000000A /* HLSPlaylist.swift in Sources */,
 				AE200000000000000000000C /* OfflineDownloadTypes.swift in Sources */,
 				AE200000000000000000000E /* DownloadPlayerView.swift in Sources */,
+				AE2000000000000000000010 /* MainViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
