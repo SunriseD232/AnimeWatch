@@ -23,11 +23,25 @@ workflows:
         # eSign (сервис резайнинга) уже на телефоне/сайте пользователя, так
         # что официальный ad-hoc-провижининг (App ID, UDID, provisioning
         # profile) для этого пайплайна не нужен.
+        #
+        # clean + свой -derivedDataPath (внутри рабочей копии, не дефолтный
+        # ~/Library/Developer/Xcode/DerivedData) — сборочная машина Codemagic
+        # переиспользуется между запусками (git reset --hard в "Fetch app
+        # sources", а не свежий clone), и без явной очистки инкрементальный
+        # DerivedData от ПРЕДЫДУЩЕЙ сборки может пережить чекаут новых
+        # файлов — archive формально проходит успешно (37с на всё — для
+        # первой чистой сборки Capacitor SPM-проекта неправдоподобно быстро),
+        # но новые Swift-файлы (например, нативный плагин) рискуют не
+        # попасть в финальную линковку. Проверено вживую 2026-08-21: именно
+        # так .ipa из формально "успешной" сборки не содержал новый
+        # Capacitor-плагин, хотя коммит был свежий.
         script: |
-          xcodebuild archive \
+          rm -rf build
+          xcodebuild clean archive \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
             -archivePath build/ios/App.xcarchive \
+            -derivedDataPath build/DerivedData \
             -destination "generic/platform=iOS" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
