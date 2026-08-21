@@ -68,6 +68,21 @@ final class OfflineDownloadManager: NSObject {
     /// подписанный CDN-токен? таймаут?) невозможно отличить один сценарий от
     /// другого без ещё одного полного цикла сборка+eSign+тест на удачу.
     private var itemFailureDetail: [String: String] = [:]
+    /// itemId -> ещё не запущенные сегменты (см. fillSegmentSlotsLocked) —
+    /// раньше весь план на серию (от единиц до многих сотен сегментов)
+    /// запускался как фоновые задачи разом, одним .resume() на каждый в
+    /// цикле. На практике это упиралось во внутренний лимит nsurlsessiond на
+    /// одновременно создаваемые задачи фоновой сессии — часть валилась с
+    /// NSURLErrorCannotCreateFile (-3000), проверено вживую 2026-08-21 (даже
+    /// на одной серии с Videoseed). Вместо этого держим не больше
+    /// maxConcurrentSegmentDownloads одновременно в полёте, остальное — в
+    /// очереди здесь.
+    private var pendingPlanQueue: [String: [DownloadPlanEntry]] = [:]
+    /// itemId -> сколько сегментов сейчас реально в полёте (задача создана,
+    /// ещё не долетела до финала — включая ретраи, которые переиспользуют
+    /// тот же слот, не занимая новый).
+    private var inFlightSegmentCounts: [String: Int] = [:]
+    private let maxConcurrentSegmentDownloads = 4
     /// "itemId|planIndex" -> число попыток — сбрасывается сам по себе между
     /// запусками приложения (не персистится, не критично для v1).
     private var retryCounts: [String: Int] = [:]
@@ -307,6 +322,9 @@ final class OfflineDownloadManager: NSObject {
             self.cancelTasks(forItemId: id)
             self.pendingSegmentCounts.removeValue(forKey: id)
             self.itemHadFailure.removeValue(forKey: id)
+            self.itemFailureDetail.removeValue(forKey: id)
+            self.pendingPlanQueue.removeValue(forKey: id)
+            self.inFlightSegmentCounts.removeValue(forKey: id)
             if let index = self.items.firstIndex(where: { $0.id == id }) {
                 self.items.remove(at: index)
                 self.saveIndexToDiskLocked()
@@ -517,10 +535,25 @@ final class OfflineDownloadManager: NSObject {
             }
             self.pendingSegmentCounts[itemId] = remaining.count
             self.itemHadFailure[itemId] = false
-            for entry in remaining {
-                self.scheduleSegmentTask(itemId: itemId, entry: entry)
-            }
+            self.pendingPlanQueue[itemId] = remaining
+            self.inFlightSegmentCounts[itemId] = 0
+            self.fillSegmentSlotsLocked(itemId: itemId)
         }
+    }
+
+    /// Вызывать только с stateQueue. Запускает следующие задачи из очереди,
+    /// пока в полёте меньше maxConcurrentSegmentDownloads — см. комментарий у
+    /// pendingPlanQueue.
+    private func fillSegmentSlotsLocked(itemId: String) {
+        var inFlight = inFlightSegmentCounts[itemId] ?? 0
+        while inFlight < maxConcurrentSegmentDownloads {
+            guard var queue = pendingPlanQueue[itemId], !queue.isEmpty else { break }
+            let entry = queue.removeFirst()
+            pendingPlanQueue[itemId] = queue
+            inFlight += 1
+            scheduleSegmentTask(itemId: itemId, entry: entry)
+        }
+        inFlightSegmentCounts[itemId] = inFlight
     }
 
     /// Уже выполняется внутри stateQueue.async{} — просто локальный алиас,
@@ -587,7 +620,11 @@ final class OfflineDownloadManager: NSObject {
             itemHadFailure[itemId] = true
             if let detail { itemFailureDetail[itemId] = detail }
         }
+        inFlightSegmentCounts[itemId] = max(0, (inFlightSegmentCounts[itemId] ?? 1) - 1)
+        fillSegmentSlotsLocked(itemId: itemId)
         guard remaining <= 0 else { return }
+        pendingPlanQueue.removeValue(forKey: itemId)
+        inFlightSegmentCounts.removeValue(forKey: itemId)
         let failed = itemHadFailure.removeValue(forKey: itemId) ?? false
         if failed {
             let reason = itemFailureDetail.removeValue(forKey: itemId)
