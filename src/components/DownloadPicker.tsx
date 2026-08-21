@@ -100,10 +100,13 @@ export default function DownloadPicker({
     setTranslations([]);
     setLoadingTranslations(true);
 
+    // skipAuth=1 — этой модалке не нужен resumeFrom (только список переводов),
+    // а getUser() на КАЖДОЕ открытие/подтверждение — лишняя нагрузка на
+    // Supabase Auth без пользы (см. комментарий в самих роутах).
     const fetchUrl =
       contentType === 'anime'
-        ? `/api/watch/anime/${contentId}/1`
-        : `/api/watch/cinema/${contentId}/1/1`;
+        ? `/api/watch/anime/${contentId}/1?skipAuth=1`
+        : `/api/watch/cinema/${contentId}/1/1?skipAuth=1`;
 
     fetch(fetchUrl)
       .then((res) => res.json())
@@ -216,7 +219,7 @@ export default function DownloadPicker({
         const wantTitle = chosenTranslation.title;
         await mapWithConcurrency(pairs, 4, async ({ season, episode }) => {
           try {
-            const res = await fetch(`/api/watch/anime/${contentId}/${episode}`);
+            const res = await fetch(`/api/watch/anime/${contentId}/${episode}?skipAuth=1`);
             const data = await res.json();
             const list: OwnPlayerTranslation[] = [
               ...(data.yummyTranslations ?? []),

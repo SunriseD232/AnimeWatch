@@ -4,12 +4,15 @@ import { resolveAnimeEpisodeSources } from '@/lib/watch/resolveAnimeEpisode';
 import type { WatchProgress } from '@/lib/types';
 
 /**
- * GET /api/watch/anime/[shikimoriId]/[episode]?translationId=123
+ * GET /api/watch/anime/[shikimoriId]/[episode]?translationId=123&skipAuth=1
  *
  * Лёгкий эндпоинт для бесшовного переключения серии на клиенте (см.
  * WatchPlayer.tsx switchEpisode) — см. тот же приём и комментарий в
- * api/watch/cinema/.../route.ts. AniLibria сюда не входит — резолвится
- * отдельно на клиенте.
+ * api/watch/cinema/.../route.ts, включая ?skipAuth=1 (DownloadPicker.tsx —
+ * резолвит перевод по названию НА КАЖДУЮ отмеченную серию параллельно,
+ * getUser() там не нужен вообще, а лишняя нагрузка на Supabase Auth именно
+ * из-за этого один раз усугубила прод-инцидент 2026-08-21). AniLibria сюда
+ * не входит — резолвится отдельно на клиенте.
  */
 export async function GET(
   request: NextRequest,
@@ -26,27 +29,30 @@ export async function GET(
     translationRaw != null && Number.isFinite(Number(translationRaw))
       ? Number(translationRaw)
       : null;
-
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const skipAuth = request.nextUrl.searchParams.get('skipAuth') === '1';
 
   let resumeFrom: number | null = null;
-  if (user) {
-    const { data } = await supabase
-      .from('watch_progress')
-      .select('*')
-      .eq('content_type', 'anime')
-      .eq('shikimori_id', shikimoriId)
-      .maybeSingle();
-    const progress = data as WatchProgress | null;
-    if (progress && progress.episode === episode) {
-      const pos = progress.position_seconds;
-      const dur = progress.duration_seconds;
-      const nearEnd = dur ? pos / dur > 0.9 : false;
-      if (pos >= 5 && !nearEnd) {
-        resumeFrom = Math.floor(pos);
+  if (!skipAuth) {
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (user) {
+      const { data } = await supabase
+        .from('watch_progress')
+        .select('*')
+        .eq('content_type', 'anime')
+        .eq('shikimori_id', shikimoriId)
+        .maybeSingle();
+      const progress = data as WatchProgress | null;
+      if (progress && progress.episode === episode) {
+        const pos = progress.position_seconds;
+        const dur = progress.duration_seconds;
+        const nearEnd = dur ? pos / dur > 0.9 : false;
+        if (pos >= 5 && !nearEnd) {
+          resumeFrom = Math.floor(pos);
+        }
       }
     }
   }
