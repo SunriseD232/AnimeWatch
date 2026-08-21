@@ -60,6 +60,14 @@ final class OfflineDownloadManager: NSObject {
     private var pendingSegmentCounts: [String: Int] = [:]
     /// itemId -> хотя бы один сегмент окончательно не скачался.
     private var itemHadFailure: [String: Bool] = [:]
+    /// itemId -> причина последнего окончательного (после исчерпанных
+    /// ретраев) отказа сегмента — HTTP-статус апстрима или код URLError.
+    /// Раньше этот случай схлопывался в непрозрачную константу
+    /// "segment_download_failed" — при живом расследовании 2026-08-21
+    /// выяснилось, что без конкретной причины (403 антибот? истёкший
+    /// подписанный CDN-токен? таймаут?) невозможно отличить один сценарий от
+    /// другого без ещё одного полного цикла сборка+eSign+тест на удачу.
+    private var itemFailureDetail: [String: String] = [:]
     /// "itemId|planIndex" -> число попыток — сбрасывается сам по себе между
     /// запусками приложения (не персистится, не критично для v1).
     private var retryCounts: [String: Int] = [:]
@@ -553,7 +561,7 @@ final class OfflineDownloadManager: NSObject {
     /// Один файл (сегмент/ключ) долетел до финала — успех или окончательный
     /// провал (после исчерпанных ретраев). Когда все файлы серии долетели —
     /// завершает сам итем (успех/провал). Вызывать только с stateQueue.
-    private func settleSegmentLocked(itemId: String, success: Bool) {
+    private func settleSegmentLocked(itemId: String, success: Bool, detail: String? = nil) {
         guard var remaining = pendingSegmentCounts[itemId] else { return }
         remaining -= 1
         if remaining > 0 {
@@ -561,19 +569,24 @@ final class OfflineDownloadManager: NSObject {
         } else {
             pendingSegmentCounts.removeValue(forKey: itemId)
         }
-        if !success { itemHadFailure[itemId] = true }
+        if !success {
+            itemHadFailure[itemId] = true
+            if let detail { itemFailureDetail[itemId] = detail }
+        }
         guard remaining <= 0 else { return }
         let failed = itemHadFailure.removeValue(forKey: itemId) ?? false
         if failed {
+            let reason = itemFailureDetail.removeValue(forKey: itemId)
+            let message = reason.map { "segment_download_failed: \($0)" } ?? "segment_download_failed"
             updateItemLocked(itemId) { item in
                 item.status = .failed
-                item.errorMessage = "segment_download_failed"
+                item.errorMessage = message
             }
             notifyItemsChanged()
             NotificationCenter.default.post(
                 name: .offlineDownloadFailed,
                 object: nil,
-                userInfo: ["id": itemId, "error": "segment_download_failed"]
+                userInfo: ["id": itemId, "error": message]
             )
             advanceQueueLocked()
         } else {
@@ -584,7 +597,7 @@ final class OfflineDownloadManager: NSObject {
     /// Обрабатывает результат одной фоновой задачи — до 3 попыток на файл,
     /// затем итем считается failed (уже скачанные файлы остаются на диске —
     /// resumeDownload переиспользует их благодаря проверке fileExists выше).
-    private func handleSegmentSettled(itemId: String, planIndex: Int, localName: String, remoteUrl: String, success: Bool) {
+    private func handleSegmentSettled(itemId: String, planIndex: Int, localName: String, remoteUrl: String, success: Bool, detail: String? = nil) {
         stateQueue.async {
             if success {
                 self.retryCounts.removeValue(forKey: self.retryKey(itemId, planIndex))
@@ -613,7 +626,7 @@ final class OfflineDownloadManager: NSObject {
                 return // ещё одна попытка в полёте — не settle
             }
             self.retryCounts.removeValue(forKey: key)
-            self.settleSegmentLocked(itemId: itemId, success: false)
+            self.settleSegmentLocked(itemId: itemId, success: false, detail: detail)
         }
     }
 }
@@ -631,7 +644,7 @@ extension OfflineDownloadManager: URLSessionDownloadDelegate {
 
         let statusCode = (downloadTask.response as? HTTPURLResponse)?.statusCode ?? 200
         guard (200...299).contains(statusCode) else {
-            handleSegmentSettled(itemId: parsed.itemId, planIndex: parsed.planIndex, localName: parsed.localName, remoteUrl: remoteUrl, success: false)
+            handleSegmentSettled(itemId: parsed.itemId, planIndex: parsed.planIndex, localName: parsed.localName, remoteUrl: remoteUrl, success: false, detail: "HTTP \(statusCode)")
             return
         }
 
@@ -639,21 +652,25 @@ extension OfflineDownloadManager: URLSessionDownloadDelegate {
         // поэтому move должен случиться синхронно прямо тут.
         let destination = itemDirURL(parsed.itemId).appendingPathComponent(parsed.localName)
         var moveSucceeded = true
+        var moveErrorDetail: String?
         do {
             try? fileManager.removeItem(at: destination)
             try fileManager.moveItem(at: location, to: destination)
         } catch {
             moveSucceeded = false
+            moveErrorDetail = "move failed: \(error.localizedDescription)"
         }
-        handleSegmentSettled(itemId: parsed.itemId, planIndex: parsed.planIndex, localName: parsed.localName, remoteUrl: remoteUrl, success: moveSucceeded)
+        handleSegmentSettled(itemId: parsed.itemId, planIndex: parsed.planIndex, localName: parsed.localName, remoteUrl: remoteUrl, success: moveSucceeded, detail: moveErrorDetail)
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let error else { return } // успех уже обработан в didFinishDownloadingTo
-        if (error as NSError).code == NSURLErrorCancelled { return } // наша же отмена (pause/cancel/delete)
+        let nsError = error as NSError
+        if nsError.code == NSURLErrorCancelled { return } // наша же отмена (pause/cancel/delete)
         guard let desc = task.taskDescription, let parsed = parseTaskDescription(desc) else { return }
         let remoteUrl = task.originalRequest?.url?.absoluteString ?? parsed.localName
-        handleSegmentSettled(itemId: parsed.itemId, planIndex: parsed.planIndex, localName: parsed.localName, remoteUrl: remoteUrl, success: false)
+        let detail = "\(nsError.domain) \(nsError.code): \(nsError.localizedDescription)"
+        handleSegmentSettled(itemId: parsed.itemId, planIndex: parsed.planIndex, localName: parsed.localName, remoteUrl: remoteUrl, success: false, detail: detail)
     }
 
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
