@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { Suspense } from 'react';
 import CinemaCard from '@/components/CinemaCard';
 import CinemaEpisodes from '@/components/CinemaEpisodes';
+import DownloadButton from '@/components/DownloadButton';
 import ListButton from '@/components/ListButton';
 import TrailerButton from '@/components/TrailerButton';
 import { getCinemaById, getCinemaCatalog, type CinemaShort } from '@/lib/videoseed-catalog';
@@ -254,6 +255,18 @@ export default async function CinemaPage({
               initialMuted={listItem?.muted ?? false}
               isAuthed={!!user}
             />
+            {hasAnyPlayer && (
+              <DownloadButton
+                isAuthed={!!user}
+                contentType="cinema"
+                contentId={id}
+                title={title}
+                posterUrl={item.poster}
+                isSerial={item.isSerial}
+                totalEpisodes={total}
+                seasons={item.seasons}
+              />
+            )}
             {/* Для сериалов трейлер — внутри CinemaEpisodes, по сезонам */}
             {!item.isSerial && item.idImdb && (
               <TrailerButton fetchUrl={`/api/trailer?imdbId=${item.idImdb}`} />

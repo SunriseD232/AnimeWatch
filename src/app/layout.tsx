@@ -6,7 +6,10 @@ import Navbar from '@/components/Navbar';
 import { ToastProvider } from '@/components/ToastProvider';
 import PwaRegister from '@/components/PwaRegister';
 import PresenceHeartbeat from '@/components/PresenceHeartbeat';
+import NativeAuthBridge from '@/components/NativeAuthBridge';
+import OfflineSyncTrigger from '@/components/OfflineSyncTrigger';
 import { PipPlayerHost } from '@/components/pip/PipPlayerHost';
+import { getCachedUser } from '@/lib/supabase/server';
 
 // Inter — ближайшее веб-приближение SF Pro (см. tailwind.config.ts).
 // next/font сам самохостит файлы шрифта — никаких внешних запросов в рантайме.
@@ -46,16 +49,22 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const {
+    data: { user },
+  } = await getCachedUser();
+
   return (
     <html lang="ru" className={`dark ${inter.variable}`}>
       <body className="min-h-screen font-sans pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
         <PwaRegister />
         <PresenceHeartbeat />
+        <NativeAuthBridge isAuthed={!!user} userId={user?.id ?? null} />
+        <OfflineSyncTrigger />
         <ToastProvider>
           <PipPlayerHost>
             <Suspense fallback={<div className="h-[57px] border-b border-white/5" />}>

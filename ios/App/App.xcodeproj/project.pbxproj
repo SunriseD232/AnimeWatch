@@ -19,6 +19,13 @@
 		AE1000000000000000000002 /* ExternalDisplayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1000000000000000000001 /* ExternalDisplayManager.swift */; };
 		AE1000000000000000000004 /* ExternalDisplayPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1000000000000000000003 /* ExternalDisplayPlugin.swift */; };
 		AE1000000000000000000006 /* ExternalDisplaySceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1000000000000000000005 /* ExternalDisplaySceneDelegate.swift */; };
+		AE2000000000000000000002 /* OfflineDownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE2000000000000000000001 /* OfflineDownloadManager.swift */; };
+		AE2000000000000000000004 /* OfflineDownloadPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE2000000000000000000003 /* OfflineDownloadPlugin.swift */; };
+		AE2000000000000000000006 /* DownloadsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE2000000000000000000005 /* DownloadsViewModel.swift */; };
+		AE2000000000000000000008 /* DownloadsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE2000000000000000000007 /* DownloadsView.swift */; };
+		AE200000000000000000000A /* HLSPlaylist.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE2000000000000000000009 /* HLSPlaylist.swift */; };
+		AE200000000000000000000C /* OfflineDownloadTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE200000000000000000000B /* OfflineDownloadTypes.swift */; };
+		AE200000000000000000000E /* DownloadPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE200000000000000000000D /* DownloadPlayerView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,6 +43,13 @@
 		AE1000000000000000000001 /* ExternalDisplayManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalDisplayManager.swift; sourceTree = "<group>"; };
 		AE1000000000000000000003 /* ExternalDisplayPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalDisplayPlugin.swift; sourceTree = "<group>"; };
 		AE1000000000000000000005 /* ExternalDisplaySceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalDisplaySceneDelegate.swift; sourceTree = "<group>"; };
+		AE2000000000000000000001 /* OfflineDownloadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineDownloadManager.swift; sourceTree = "<group>"; };
+		AE2000000000000000000003 /* OfflineDownloadPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineDownloadPlugin.swift; sourceTree = "<group>"; };
+		AE2000000000000000000005 /* DownloadsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadsViewModel.swift; sourceTree = "<group>"; };
+		AE2000000000000000000007 /* DownloadsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadsView.swift; sourceTree = "<group>"; };
+		AE2000000000000000000009 /* HLSPlaylist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HLSPlaylist.swift; sourceTree = "<group>"; };
+		AE200000000000000000000B /* OfflineDownloadTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineDownloadTypes.swift; sourceTree = "<group>"; };
+		AE200000000000000000000D /* DownloadPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadPlayerView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -74,6 +88,13 @@
 				AE1000000000000000000005 /* ExternalDisplaySceneDelegate.swift */,
 				AE1000000000000000000001 /* ExternalDisplayManager.swift */,
 				AE1000000000000000000003 /* ExternalDisplayPlugin.swift */,
+				AE2000000000000000000001 /* OfflineDownloadManager.swift */,
+				AE2000000000000000000003 /* OfflineDownloadPlugin.swift */,
+				AE2000000000000000000005 /* DownloadsViewModel.swift */,
+				AE2000000000000000000007 /* DownloadsView.swift */,
+				AE2000000000000000000009 /* HLSPlaylist.swift */,
+				AE200000000000000000000B /* OfflineDownloadTypes.swift */,
+				AE200000000000000000000D /* DownloadPlayerView.swift */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -172,6 +193,13 @@
 				AE1000000000000000000002 /* ExternalDisplayManager.swift in Sources */,
 				AE1000000000000000000004 /* ExternalDisplayPlugin.swift in Sources */,
 				AE1000000000000000000006 /* ExternalDisplaySceneDelegate.swift in Sources */,
+				AE2000000000000000000002 /* OfflineDownloadManager.swift in Sources */,
+				AE2000000000000000000004 /* OfflineDownloadPlugin.swift in Sources */,
+				AE2000000000000000000006 /* DownloadsViewModel.swift in Sources */,
+				AE2000000000000000000008 /* DownloadsView.swift in Sources */,
+				AE200000000000000000000A /* HLSPlaylist.swift in Sources */,
+				AE200000000000000000000C /* OfflineDownloadTypes.swift in Sources */,
+				AE200000000000000000000E /* DownloadPlayerView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

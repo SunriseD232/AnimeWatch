@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Suspense } from 'react';
+import DownloadButton from '@/components/DownloadButton';
 import EpisodeGrid from '@/components/EpisodeGrid';
 import ListButton from '@/components/ListButton';
 import { RelatedAnimeSections, RelatedAnimeSectionsSkeleton } from '@/components/RelatedAnimeSections';
@@ -197,6 +198,17 @@ export default async function AnimePage({
               initialMuted={listItem?.muted ?? false}
               isAuthed={!!user}
             />
+            {!isAnons && (
+              <DownloadButton
+                isAuthed={!!user}
+                contentType="anime"
+                contentId={id}
+                title={title}
+                posterUrl={poster}
+                isSerial={total > 1}
+                totalEpisodes={total}
+              />
+            )}
             {trailerUrl && <TrailerButton embedUrl={trailerUrl} />}
           </div>
         </div>
