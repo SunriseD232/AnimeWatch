@@ -46,9 +46,21 @@ final class DownloadsViewModel: ObservableObject {
 
     func reload() {
         items = OfflineDownloadManager.shared.listDownloads().sorted { $0.createdAt > $1.createdAt }
-        let info = OfflineDownloadManager.shared.getStorageInfo()
-        usedBytes = info.usedBytes
-        freeBytes = info.freeBytes
+        // getStorageInfo() обходит директорией ВСЕХ загрузок через
+        // FileManager.enumerator — с ростом числа скачанных сегментов (тут
+        // дебаунс всё равно может звать это по нескольку раз в секунду) это
+        // синхронное сканирование на главном потоке начинает не укладываться
+        // в интервал дебаунса, и следующие вызовы наслаиваются друг на
+        // друга — воспроизведено вживую 2026-08-21: приложение зависало
+        // ближе к концу закачки серии из 257 сегментов. Считаем на фоне,
+        // на главный поток возвращаемся только чтобы присвоить @Published.
+        Task.detached(priority: .utility) { [weak self] in
+            let info = OfflineDownloadManager.shared.getStorageInfo()
+            await MainActor.run {
+                self?.usedBytes = info.usedBytes
+                self?.freeBytes = info.freeBytes
+            }
+        }
     }
 
     func pause(_ item: DownloadItem) {

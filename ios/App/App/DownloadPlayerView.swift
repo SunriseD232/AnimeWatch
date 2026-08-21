@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import UIKit
 
 /// Нативный плеер офлайн-скачанного контента — обычный
 /// AVPlayerViewController поверх локального file:// HLS-плейлиста
@@ -22,6 +23,23 @@ struct DownloadPlayerView: UIViewControllerRepresentable {
             player.seek(to: CMTime(seconds: item.lastPositionSeconds, preferredTimescale: 600))
         }
         controller.player = player
+
+        // Раньше при поломке плеера пользователь видел только стандартную
+        // иконку AVKit "не удалось воспроизвести" без единой зацепки, что
+        // именно не так (файла нет? не расшифровался? битый плейлист?) —
+        // тот же класс проблемы, что был с "not implemented on ios" и
+        // segment_download_failed раньше: без реальной причины любая правка
+        // вслепую. Показываем реальную ошибку AVFoundation алертом.
+        context.coordinator.statusObservation = player.currentItem?.observe(\.status, options: [.new]) { [weak controller] playerItem, _ in
+            guard playerItem.status == .failed else { return }
+            let message = Self.describePlaybackError(playerItem.error)
+            DispatchQueue.main.async {
+                guard let controller, controller.presentedViewController == nil else { return }
+                let alert = UIAlertController(title: "Не удалось воспроизвести", message: message, preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: "OK", style: .default))
+                controller.present(alert, animated: true)
+            }
+        }
 
         let itemId = item.id
         let interval = CMTime(seconds: 5, preferredTimescale: 1)
@@ -51,8 +69,19 @@ struct DownloadPlayerView: UIViewControllerRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
+    private static func describePlaybackError(_ error: Error?) -> String {
+        guard let error else { return "unknown" }
+        let nsError = error as NSError
+        var parts = ["\(nsError.domain) \(nsError.code): \(nsError.localizedDescription)"]
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+            parts.append("underlying: \(underlying.domain) \(underlying.code): \(underlying.localizedDescription)")
+        }
+        return parts.joined(separator: "\n")
+    }
+
     final class Coordinator {
         var player: AVPlayer?
         var timeObserverToken: Any?
+        var statusObservation: NSKeyValueObservation?
     }
 }
