@@ -190,6 +190,10 @@ export default function DownloadPicker({
     const origin = window.location.origin;
     let queued = 0;
     let notAuthed = false;
+    // Последняя реальная причина отказа startDownload (не not_authed) —
+    // без этого пользователь видел один и тот же общий текст независимо от
+    // настоящей причины, и по описанию было невозможно понять, что сломано.
+    let lastError: string | null = null;
 
     try {
       if (contentType === 'cinema') {
@@ -223,6 +227,7 @@ export default function DownloadPicker({
             queued += 1;
           } catch (err) {
             if (isNotAuthedError(err)) notAuthed = true;
+            else lastError = err instanceof Error ? err.message : String(err);
           }
         }
       } else {
@@ -260,6 +265,7 @@ export default function DownloadPicker({
             queued += 1;
           } catch (err) {
             if (isNotAuthedError(err)) notAuthed = true;
+            else lastError = err instanceof Error ? err.message : String(err);
           }
         });
       }
@@ -283,7 +289,12 @@ export default function DownloadPicker({
         );
         onClose();
       } else {
-        toast('Не удалось поставить в очередь — нет этой озвучки для выбранных серий', 'error');
+        toast(
+          lastError
+            ? `Не удалось поставить в очередь: ${lastError}`
+            : 'Не удалось поставить в очередь — нет этой озвучки для выбранных серий',
+          'error',
+        );
       }
     } catch {
       // Неожиданная ошибка (не сама startDownload/fetch внутри циклов —
