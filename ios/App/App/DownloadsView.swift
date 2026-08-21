@@ -107,7 +107,6 @@ struct DownloadsView: View {
             Label(item.errorMessage ?? "Ошибка загрузки", systemImage: "exclamationmark.triangle.fill")
                 .font(.caption)
                 .foregroundColor(.red)
-                .lineLimit(1)
         case .paused:
             Label("На паузе", systemImage: "pause.circle")
                 .font(.caption)

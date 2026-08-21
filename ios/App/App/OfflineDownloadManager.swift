@@ -540,12 +540,26 @@ final class OfflineDownloadManager: NSObject {
         try? mutableUrl.setResourceValues(values)
     }
 
+    /// Без Accept-Encoding: identity фоновые (URLSessionConfiguration.background)
+    /// downloadTask иногда сами просят у сервера gzip и потом не могут
+    /// корректно разжать поток на лету — известный баг URLSession с сегментами
+    /// не-текстового content-type, проявляется как
+    /// NSURLErrorDownloadDecodingFailedMidStream/ToComplete (-3006/-3007).
+    /// Нашим .ts/.bin сегментам сжатие всё равно не нужно (уже сжатое видео) —
+    /// проще запретить кодирование целиком, чем полагаться на то, что сервер
+    /// сам не сожмёт ответ.
+    private func segmentDownloadRequest(for url: URL) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+        return request
+    }
+
     private func scheduleSegmentTask(itemId: String, entry: DownloadPlanEntry) {
         guard let url = URL(string: entry.remoteUrl) else {
             stateQueue.async { self.settleSegmentLocked(itemId: itemId, success: false) }
             return
         }
-        let task = backgroundSession.downloadTask(with: url)
+        let task = backgroundSession.downloadTask(with: segmentDownloadRequest(for: url))
         task.taskDescription = "\(itemId)|\(entry.index)|\(entry.localName)"
         task.resume()
     }
@@ -620,7 +634,7 @@ final class OfflineDownloadManager: NSObject {
             let attempts = (self.retryCounts[key] ?? 0) + 1
             self.retryCounts[key] = attempts
             if attempts <= 3, let url = URL(string: remoteUrl) {
-                let task = self.backgroundSession.downloadTask(with: url)
+                let task = self.backgroundSession.downloadTask(with: self.segmentDownloadRequest(for: url))
                 task.taskDescription = "\(itemId)|\(planIndex)|\(localName)"
                 task.resume()
                 return // ещё одна попытка в полёте — не settle
