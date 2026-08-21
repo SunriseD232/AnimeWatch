@@ -585,7 +585,8 @@ final class OfflineDownloadManager: NSObject {
             return
         }
         let task = Task { [weak self] in
-            await self?.runSegmentDownload(itemId: itemId, entry: entry, url: url)
+            guard let self else { return }
+            await self.runSegmentDownload(itemId: itemId, entry: entry, url: url)
         }
         activeSegmentTasks[itemId, default: []].append(task)
     }
@@ -698,7 +699,8 @@ final class OfflineDownloadManager: NSObject {
             if attempts <= 3, let url = URL(string: remoteUrl) {
                 let entry = DownloadPlanEntry(index: planIndex, remoteUrl: remoteUrl, localName: localName)
                 let task = Task { [weak self] in
-                    await self?.runSegmentDownload(itemId: itemId, entry: entry, url: url)
+                    guard let self else { return }
+                    await self.runSegmentDownload(itemId: itemId, entry: entry, url: url)
                 }
                 self.activeSegmentTasks[itemId, default: []].append(task)
                 return // ещё одна попытка в полёте — не settle
