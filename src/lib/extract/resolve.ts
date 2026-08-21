@@ -37,8 +37,52 @@ interface Args {
   signal?: AbortSignal;
 }
 
-/** Резолвит прямую ссылку на видео с кэшированием в Supabase (общий для всех). */
-export async function resolveStream({
+/**
+ * Экстрактор на VPS сериализует Puppeteer-извлечения в одну очередь (см.
+ * vps-extractor/src/server.js) — несколько НЕЗАВИСИМЫХ конкурентных вызовов
+ * resolveStream на один и тот же {shikimoriId, episode, source, translationId}
+ * (несколько параллельных запросов клиента, повторные тапы при видимом
+ * зависании и т.п.) до того, как первый успел закэшироваться, раньше каждый
+ * шёл в очередь отдельным полноценным Chromium-запуском — проверено вживую
+ * 2026-08-21: очередь на VPS забилась десятками повторов одного и того же
+ * эпизода подряд, из-за чего всё (включая несвязанные запросы) вставало в
+ * очередь на минуты. Отдаём один и тот же in-flight promise всем конкурентным
+ * вызовам с одинаковым ключом — как удачным (нашли в кэше), так и идущим в
+ * реальное извлечение.
+ *
+ * Сигнал отмены НЕ прокидывается сюда специально: если он подписан у
+ * оригинального (первого) вызова через extractViaVps, оборвать извлечение
+ * должен только он сам, пока не появилось конкурентов на тот же ключ — общую
+ * работу, которую уже ждут другие вызовы, отменять нельзя.
+ */
+const inFlightResolutions = new Map<string, Promise<ResolvedStream | null>>();
+
+function resolutionKey(args: Args): string {
+  const translationSlot = args.translationId ?? 0;
+  return [
+    args.contentType,
+    args.shikimoriId,
+    args.season,
+    args.episode,
+    args.source,
+    translationSlot,
+    args.forceFresh ? 'fresh' : 'cached',
+  ].join(':');
+}
+
+export async function resolveStream(args: Args): Promise<ResolvedStream | null> {
+  const key = resolutionKey(args);
+  const existing = inFlightResolutions.get(key);
+  if (existing) return existing;
+
+  const promise = resolveStreamUncoalesced(args).finally(() => {
+    inFlightResolutions.delete(key);
+  });
+  inFlightResolutions.set(key, promise);
+  return promise;
+}
+
+async function resolveStreamUncoalesced({
   contentType,
   shikimoriId,
   season,
