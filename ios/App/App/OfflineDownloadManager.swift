@@ -528,9 +528,22 @@ final class OfflineDownloadManager: NSObject {
         if let keyURIString = playlist.keyURI, let keyUrl = URL(string: keyURIString, relativeTo: baseUrl) {
             plan.append(DownloadPlanEntry(index: -1, remoteUrl: keyUrl.absoluteString, localName: "key.bin"))
         }
+        // #EXT-X-MAP — init-сегмент, обязателен для fMP4/CMAF-потоков (см.
+        // комментарий у MediaPlaylist.mapURI): без него отдельные .m4s-
+        // сегменты не несут информацию для инициализации кодека. Индекс -2,
+        // чтобы не пересекаться с key.bin (-1) и реальными сегментами (0+).
+        if let mapURIString = playlist.mapURI, let mapUrl = URL(string: mapURIString, relativeTo: baseUrl) {
+            plan.append(DownloadPlanEntry(index: -2, remoteUrl: mapUrl.absoluteString, localName: HLSPlaylist.initSegmentLocalName))
+        }
+        // Расширение сегментов должно соответствовать реальному контейнеру:
+        // .ts (MPEG-TS) для классического HLS, .m4s (fMP4) для CMAF — сама
+        // ссылка на сегмент приходит уже опаковой (наш /api/proxy/raw,
+        // проверенным способом маскирующий исходный apstream-URL), поэтому
+        // расширение нельзя взять из неё — определяем по наличию #EXT-X-MAP.
+        let segmentExtension = playlist.mapURI != nil ? "m4s" : "ts"
         for (index, segment) in playlist.segments.enumerated() {
             guard let segUrl = URL(string: segment.uri, relativeTo: baseUrl) else { continue }
-            let name = String(format: "seg%05d.ts", index)
+            let name = String(format: "seg%05d.\(segmentExtension)", index)
             segmentFileNames.append(name)
             plan.append(DownloadPlanEntry(index: index, remoteUrl: segUrl.absoluteString, localName: name))
         }

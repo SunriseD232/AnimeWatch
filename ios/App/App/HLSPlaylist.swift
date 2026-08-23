@@ -25,6 +25,17 @@ enum HLSPlaylist {
         let headerLines: [String]
         /// URI ключа AES-128 из #EXT-X-KEY, если поток зашифрован.
         let keyURI: String?
+        /// URI init-сегмента из #EXT-X-MAP — присутствует только у
+        /// fMP4/CMAF-потоков (fragmented MP4), не у классического
+        /// MPEG-TS HLS. Раньше игнорировался целиком — локальные сегменты
+        /// всегда именовались .ts независимо от реального контейнера, и
+        /// сам init-сегмент (moov/инициализация кодека, без него ни один
+        /// fMP4-сегмент по отдельности не декодируется) вообще не
+        /// скачивался — проверено вживую 2026-08-23: AVPlayer падал с
+        /// CoreMediaErrorDomain -12865 ("операция не может быть завершена")
+        /// на локальном плейлисте именно такого потока (Yummy/vkvideo.cloud,
+        /// сегменты вида seg-N-f1-v1-a1.m4s у апстрима).
+        let mapURI: String?
         let segments: [Segment]
         /// Строки после последнего сегмента (обычно #EXT-X-ENDLIST).
         let footerLines: [String]
@@ -80,6 +91,7 @@ enum HLSPlaylist {
     static func parseMediaPlaylist(_ text: String) -> MediaPlaylist {
         var headerLines: [String] = []
         var keyURI: String?
+        var mapURI: String?
         var segments: [Segment] = []
         var footerLines: [String] = []
         var pendingExtinf: String?
@@ -92,6 +104,13 @@ enum HLSPlaylist {
             if line.hasPrefix("#EXT-X-KEY") {
                 if let uri = extractQuotedURI(from: line) {
                     keyURI = uri
+                }
+                if !seenFirstSegment { headerLines.append(line) }
+                continue
+            }
+            if line.hasPrefix("#EXT-X-MAP") {
+                if let uri = extractQuotedURI(from: line) {
+                    mapURI = uri
                 }
                 if !seenFirstSegment { headerLines.append(line) }
                 continue
@@ -120,7 +139,7 @@ enum HLSPlaylist {
             }
         }
 
-        return MediaPlaylist(headerLines: headerLines, keyURI: keyURI, segments: segments, footerLines: footerLines)
+        return MediaPlaylist(headerLines: headerLines, keyURI: keyURI, mapURI: mapURI, segments: segments, footerLines: footerLines)
     }
 
     private static func extractQuotedURI(from line: String) -> String? {
@@ -139,7 +158,9 @@ enum HLSPlaylist {
         var lines: [String] = []
         for header in playlist.headerLines {
             if header.hasPrefix("#EXT-X-KEY") {
-                lines.append(rewriteKeyLine(header, localURI: "key.bin"))
+                lines.append(rewriteURILine(header, localURI: "key.bin"))
+            } else if header.hasPrefix("#EXT-X-MAP") {
+                lines.append(rewriteURILine(header, localURI: initSegmentLocalName))
             } else {
                 lines.append(header)
             }
@@ -157,7 +178,12 @@ enum HLSPlaylist {
         return lines.joined(separator: "\n")
     }
 
-    private static func rewriteKeyLine(_ line: String, localURI: String) -> String {
+    /// Локальное имя init-сегмента (#EXT-X-MAP) — общее между
+    /// buildLocalPlaylist (переписывает ссылку в плейлисте) и
+    /// OfflineDownloadManager (качает и сохраняет под этим же именем).
+    static let initSegmentLocalName = "init.mp4"
+
+    private static func rewriteURILine(_ line: String, localURI: String) -> String {
         guard let range = line.range(of: "URI=\"") else { return line }
         let rest = line[range.upperBound...]
         guard let endQuote = rest.firstIndex(of: "\"") else { return line }
