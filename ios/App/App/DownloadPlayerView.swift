@@ -32,7 +32,7 @@ struct DownloadPlayerView: UIViewControllerRepresentable {
         // вслепую. Показываем реальную ошибку AVFoundation алертом.
         context.coordinator.statusObservation = player.currentItem?.observe(\.status, options: [.new]) { [weak controller] playerItem, _ in
             guard playerItem.status == .failed else { return }
-            let message = Self.describePlaybackError(playerItem.error)
+            let message = Self.describePlaybackError(playerItem.error, errorLog: playerItem.errorLog())
             DispatchQueue.main.async {
                 guard let controller, controller.presentedViewController == nil else { return }
                 let alert = UIAlertController(title: "Не удалось воспроизвести", message: message, preferredStyle: .alert)
@@ -69,14 +69,38 @@ struct DownloadPlayerView: UIViewControllerRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    private static func describePlaybackError(_ error: Error?) -> String {
-        guard let error else { return "unknown" }
-        let nsError = error as NSError
-        var parts = ["\(nsError.domain) \(nsError.code): \(nsError.localizedDescription)"]
-        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
-            parts.append("underlying: \(underlying.domain) \(underlying.code): \(underlying.localizedDescription)")
+    /// Раньше показывал только верхний уровень ошибки (domain/code) — не
+    /// хватило, чтобы понять причину -12865 (см. живой репорт 2026-08-23,
+    /// ошибка повторилась даже после фикса под CMAF/#EXT-X-MAP). Теперь
+    /// разворачивает всю цепочку NSUnderlyingErrorKey + reason/debug-строки,
+    /// и отдельно — AVPlayerItemErrorLog: он специфичен для HLS-ассетов и
+    /// обычно содержит куда более полезные детали (HTTP-статус и конкретный
+    /// URI сегмента/плейлиста, на котором всё сломалось), чем сам NSError.
+    private static func describePlaybackError(_ error: Error?, errorLog: AVPlayerItemErrorLog?) -> String {
+        var parts: [String] = []
+        var current: NSError? = error.map { $0 as NSError }
+        var depth = 0
+        while let err = current, depth < 6 {
+            var line = "\(err.domain) \(err.code): \(err.localizedDescription)"
+            if let reason = err.userInfo[NSLocalizedFailureReasonErrorKey] as? String {
+                line += "\nreason: \(reason)"
+            }
+            if let debug = err.userInfo["NSDebugDescription"] as? String {
+                line += "\ndebug: \(debug)"
+            }
+            parts.append(line)
+            current = err.userInfo[NSUnderlyingErrorKey] as? NSError
+            depth += 1
         }
-        return parts.joined(separator: "\n")
+        if let events = errorLog?.events, !events.isEmpty {
+            for event in events.suffix(3) {
+                var line = "log: \(event.errorDomain) \(event.errorStatusCode)"
+                if let comment = event.errorComment { line += " — \(comment)" }
+                if let uri = event.uri { line += "\nuri: \(uri)" }
+                parts.append(line)
+            }
+        }
+        return parts.isEmpty ? "unknown" : parts.joined(separator: "\n---\n")
     }
 
     final class Coordinator {
