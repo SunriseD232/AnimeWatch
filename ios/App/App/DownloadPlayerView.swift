@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import AVFoundation
 import UIKit
 
 /// Нативный плеер офлайн-скачанного контента — обычный
@@ -16,6 +17,16 @@ struct DownloadPlayerView: UIViewControllerRepresentable {
     let item: DownloadItem
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
+        // Без этого категория AVAudioSession остаётся дефолтной
+        // (.soloAmbient) — она подчиняется аппаратному переключателю
+        // «Бесшумно» сбоку телефона и глушится им независимо от громкости
+        // внутри самого плеера. .playback — тот же выбор, что уже сделан для
+        // ExternalDisplayManager (очки Xreal), просто не был применён к
+        // этому плееру — проверено вживую 2026-08-23: видео открылось, но
+        // звука не было ни при каких переключениях в самом приложении.
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+        try? AVAudioSession.sharedInstance().setActive(true)
+
         let controller = AVPlayerViewController()
         let dirName = item.id.replacingOccurrences(of: ":", with: "_")
         let playlistURL: URL
