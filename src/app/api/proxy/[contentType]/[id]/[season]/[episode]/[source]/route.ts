@@ -100,6 +100,17 @@ async function handleGet(
   // ?t= — id выбранной озвучки (Yummy video_id), см. OwnPlayer/WatchPlayer.
   const tRaw = request.nextUrl.searchParams.get('t');
   const translationId = tRaw != null && Number.isFinite(Number(tRaw)) ? Number(tRaw) : undefined;
+  // ?fresh=1 — принудительно обойти кэш resolved_streams. Нужен офлайн-
+  // загрузке (см. OfflineDownloadManager.swift): сегменты уже переписаны на
+  // подписанные /api/proxy/raw ссылки с ЗАМОРОЖЕННЫМ на момент резолва
+  // апстрим-URL — если сам апстрим (например, истёкший токен VK Video CDN)
+  // протухает раньше нашего 15-минутного кэша, повторный запрос entryUrl с
+  // тем же resolveStream() без forceFresh просто отдаст тот же протухший
+  // кэш, и все ретраи сегментов бессмысленно бьются в одну и ту же мёртвую
+  // ссылку — проверено вживую 2026-08-23 (1484 502 подряд на 4 сегмента).
+  // Обычный веб-плеер сюда не попадает — это ручной opt-in для случая,
+  // когда сегмент уже исчерпал собственные ретраи.
+  const forceFresh = request.nextUrl.searchParams.get('fresh') === '1';
 
   // request.signal — отражает реальное отключение клиента (Node.js runtime,
   // см. export const runtime='nodejs' выше). Пробрасываем до extractViaVps
@@ -115,7 +126,7 @@ async function handleGet(
     translationId,
     signal: request.signal,
   };
-  const resolved = await resolveStream(resolveArgs);
+  const resolved = await resolveStream({ ...resolveArgs, forceFresh });
   if (!resolved) {
     return NextResponse.json({ error: 'not_found' }, { status: 404 });
   }

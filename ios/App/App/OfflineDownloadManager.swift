@@ -95,6 +95,12 @@ final class OfflineDownloadManager: NSObject {
     /// только чтобы уметь их отменить (pause/cancel/delete), см.
     /// cancelTasks(forItemId:).
     private var activeSegmentTasks: [String: [Task<Void, Never>]] = [:]
+    /// itemId'ы, для которых уже пробовали полный переповтор эпизода со
+    /// свежим резолвом апстрима (см. settleSegmentLocked) — не больше
+    /// одного раза за попытку скачивания, чтобы не зациклиться, если
+    /// апстрим действительно недоступен, а не просто протух конкретный
+    /// подписанный URL.
+    private var episodeRetriedWithFresh: Set<String> = []
 
     lazy var downloadsRootURL: URL = {
         let support = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -326,6 +332,7 @@ final class OfflineDownloadManager: NSObject {
         guard items[index].status == .paused || items[index].status == .failed else { return }
         items[index].status = .queued
         items[index].errorMessage = nil
+        episodeRetriedWithFresh.remove(id)
         saveIndexToDiskLocked()
         notifyItemsChanged()
         processQueueLocked()
@@ -347,6 +354,7 @@ final class OfflineDownloadManager: NSObject {
             self.itemFailureDetail.removeValue(forKey: id)
             self.pendingPlanQueue.removeValue(forKey: id)
             self.inFlightSegmentCounts.removeValue(forKey: id)
+            self.episodeRetriedWithFresh.remove(id)
             if let index = self.items.firstIndex(where: { $0.id == id }) {
                 self.items.remove(at: index)
                 self.saveIndexToDiskLocked()
@@ -678,6 +686,24 @@ final class OfflineDownloadManager: NSObject {
         let failed = itemHadFailure.removeValue(forKey: itemId) ?? false
         if failed {
             let reason = itemFailureDetail.removeValue(forKey: itemId)
+            // Сегменты исчерпали собственные ретраи на ОДНОМ и том же
+            // подписанном URL — если протух конкретно он (апстрим-CDN
+            // отозвал токен раньше нашего 15-минутного кэша resolveStream,
+            // а не сам источник лёг), свежий заход на entryUrl с ?fresh=1
+            // (см. route.ts) обойдёт кэш и даст новый подписанный URL для
+            // оставшихся файлов — уже скачанные пропустятся (fileExists).
+            // Не больше одного раза за попытку — если апстрим правда
+            // недоступен, второй заход тоже упадёт, и это уже финал.
+            if !episodeRetriedWithFresh.contains(itemId),
+               let entryUrl = items.first(where: { $0.id == itemId })?.entryUrl {
+                episodeRetriedWithFresh.insert(itemId)
+                let freshEntryUrl = appendingFreshFlag(entryUrl)
+                Task { [weak self] in
+                    await self?.runEpisodeDownload(itemId: itemId, entryUrlString: freshEntryUrl)
+                }
+                return
+            }
+            episodeRetriedWithFresh.remove(itemId)
             let message = reason.map { "segment_download_failed: \($0)" } ?? "segment_download_failed"
             updateItemLocked(itemId) { item in
                 item.status = .failed
@@ -691,8 +717,17 @@ final class OfflineDownloadManager: NSObject {
             )
             advanceQueueLocked()
         } else {
+            episodeRetriedWithFresh.remove(itemId)
             finishItemSuccessLockedFromAsync(itemId)
         }
+    }
+
+    private func appendingFreshFlag(_ urlString: String) -> String {
+        guard var components = URLComponents(string: urlString) else { return urlString }
+        var queryItems = components.queryItems ?? []
+        queryItems.append(URLQueryItem(name: "fresh", value: "1"))
+        components.queryItems = queryItems
+        return components.url?.absoluteString ?? urlString
     }
 
     /// Обрабатывает результат одной попытки скачивания файла — до 3 попыток,
