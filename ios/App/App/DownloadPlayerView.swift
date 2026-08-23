@@ -3,10 +3,13 @@ import AVKit
 import UIKit
 
 /// Нативный плеер офлайн-скачанного контента — обычный
-/// AVPlayerViewController поверх локального file:// HLS-плейлиста
-/// (playlist.m3u8, см. OfflineDownloadManager.beginDownloadingSegments) —
-/// работает без сети, т.к. все сегменты уже на диске. Периодический time
-/// observer (5с — тот же интервал, что useProgressSaver на веб-стороне и
+/// AVPlayerViewController поверх HLS-плейлиста (playlist.m3u8, см.
+/// OfflineDownloadManager.beginDownloadingSegments), отдаваемого локальным
+/// HTTP-сервером (см. OfflineHTTPServer) — AVPlayer принципиально не умеет
+/// играть m3u8 напрямую с файловой системы (file://), только по HTTP(S),
+/// даже если это loopback. Работает без внешней сети, т.к. все сегменты уже
+/// на диске — просто раздаются через 127.0.0.1. Периодический time observer
+/// (5с — тот же интервал, что useProgressSaver на веб-стороне и
 /// ExternalDisplayManager) сохраняет позицию локально; отправка на сервер
 /// при восстановлении сети — фаза C.
 struct DownloadPlayerView: UIViewControllerRepresentable {
@@ -15,9 +18,18 @@ struct DownloadPlayerView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         let dirName = item.id.replacingOccurrences(of: ":", with: "_")
-        let playlistURL = OfflineDownloadManager.shared.downloadsRootURL
-            .appendingPathComponent(dirName, isDirectory: true)
-            .appendingPathComponent("playlist.m3u8")
+        let playlistURL: URL
+        if let port = OfflineHTTPServer.shared.ensureRunning(),
+           let httpUrl = URL(string: "http://127.0.0.1:\(port)/\(dirName)/playlist.m3u8") {
+            playlistURL = httpUrl
+        } else {
+            // Сервер не поднялся (крайне маловероятно на loopback) — file://
+            // всё равно не заработает для HLS, но пусть будет предсказуемая
+            // ошибка через тот же алерт ниже, а не краш на конструировании URL.
+            playlistURL = OfflineDownloadManager.shared.downloadsRootURL
+                .appendingPathComponent(dirName, isDirectory: true)
+                .appendingPathComponent("playlist.m3u8")
+        }
         let player = AVPlayer(url: playlistURL)
         if item.lastPositionSeconds > 1 {
             player.seek(to: CMTime(seconds: item.lastPositionSeconds, preferredTimescale: 600))

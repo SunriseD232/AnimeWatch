@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
+		AE3000000000000000000002 /* ReadiumGCDWebServer in Frameworks */ = {isa = PBXBuildFile; productRef = AE3000000000000000000001 /* ReadiumGCDWebServer */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
@@ -27,6 +28,7 @@
 		AE200000000000000000000C /* OfflineDownloadTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE200000000000000000000B /* OfflineDownloadTypes.swift */; };
 		AE200000000000000000000E /* DownloadPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE200000000000000000000D /* DownloadPlayerView.swift */; };
 		AE2000000000000000000010 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE200000000000000000000F /* MainViewController.swift */; };
+		AE2000000000000000000012 /* OfflineHTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE2000000000000000000011 /* OfflineHTTPServer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -52,6 +54,7 @@
 		AE200000000000000000000B /* OfflineDownloadTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineDownloadTypes.swift; sourceTree = "<group>"; };
 		AE200000000000000000000D /* DownloadPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadPlayerView.swift; sourceTree = "<group>"; };
 		AE200000000000000000000F /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
+		AE2000000000000000000011 /* OfflineHTTPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineHTTPServer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -60,6 +63,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */,
+				AE3000000000000000000002 /* ReadiumGCDWebServer in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -98,6 +102,7 @@
 				AE200000000000000000000B /* OfflineDownloadTypes.swift */,
 				AE200000000000000000000D /* DownloadPlayerView.swift */,
 				AE200000000000000000000F /* MainViewController.swift */,
+				AE2000000000000000000011 /* OfflineHTTPServer.swift */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -128,6 +133,7 @@
 			name = App;
 			packageProductDependencies = (
 				4D22ABE82AF431CB00220026 /* CapApp-SPM */,
+				AE3000000000000000000001 /* ReadiumGCDWebServer */,
 			);
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
@@ -160,6 +166,7 @@
 			mainGroup = 504EC2FB1FED79650016851F;
 			packageReferences = (
 				D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */,
+				AE3000000000000000000003 /* XCRemoteSwiftPackageReference "GCDWebServer" */,
 			);
 			productRefGroup = 504EC3051FED79650016851F /* Products */;
 			projectDirPath = "";
@@ -204,6 +211,7 @@
 				AE200000000000000000000C /* OfflineDownloadTypes.swift in Sources */,
 				AE200000000000000000000E /* DownloadPlayerView.swift in Sources */,
 				AE2000000000000000000010 /* MainViewController.swift in Sources */,
+				AE2000000000000000000012 /* OfflineHTTPServer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -412,11 +420,27 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		AE3000000000000000000003 /* XCRemoteSwiftPackageReference "GCDWebServer" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/readium/GCDWebServer.git";
+			requirement = {
+				kind = exactVersion;
+				version = 4.0.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		4D22ABE82AF431CB00220026 /* CapApp-SPM */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */;
 			productName = "CapApp-SPM";
+		};
+		AE3000000000000000000001 /* ReadiumGCDWebServer */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AE3000000000000000000003 /* XCRemoteSwiftPackageReference "GCDWebServer" */;
+			productName = ReadiumGCDWebServer;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
