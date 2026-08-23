@@ -4,16 +4,15 @@ import { absoluteUrl } from '@/lib/site-url';
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
-// Прямое (нетуннелированное — см. комментарий у createServerClient ниже)
-// соединение с Supabase с этой VPS не просто медленное, а ПОЛНОСТЬЮ висит
-// без ответа (тот же затык, что чинили VLESS-туннелем для Node.js-кода, см.
-// fetchWithVless.ts) — проверено вживую многократно, ни разу не прошло само
-// по себе. Дефолтный таймаут fetch/undici — секунд 10, и все эти 10с
-// повисали на КАЖДОЙ авторизованной странице (middleware гоняет getUser() на
-// каждый запрос) — воспроизведено вживую: 10.7с на голову на любую защищённую
-// страницу. Раз соединение туда никогда не проходит само (не "медленно",
-// а именно зависает), можно смело резать таймаут коротко — успешный ответ
-// (когда путь всё же работает) укладывается в доли секунды с большим запасом.
+// До миграции на self-hosted Supabase (2026-08-21) прямое соединение с
+// облачным Supabase с этой VPS не просто было медленным, а ПОЛНОСТЬЮ висело
+// без ответа — воспроизведено вживую: 10.7с на голову на любую защищённую
+// страницу (middleware гоняет getUser() на каждый запрос). Теперь Supabase
+// self-hosted на этой же VPS (supabase.media-watch.ru) — обычное соединение
+// должно укладываться в доли секунды. Короткий таймаут с fail-open (не
+// разлогинивать при сбое, см. try/catch ниже) оставлен как защита на случай
+// реальной сетевой деградации, а не потому что путь заведомо не проходит —
+// не путать со старой формулировкой этого комментария.
 const MIDDLEWARE_AUTH_TIMEOUT_MS = 800;
 
 function edgeFetchWithTimeout(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -51,11 +50,11 @@ export async function updateSession(request: NextRequest) {
           );
         },
       },
-      // Не пробрасываем сюда supabaseFetch/vlessDispatcher (VLESS-туннель) —
-      // этот клиент работает в Edge Runtime (см. корневой middleware.ts), где
-      // недоступны Node-специфичные API undici (dispatcher/ProxyAgent).
-      // Вместо туннеля — короткий таймаут (см. edgeFetchWithTimeout выше),
-      // чтобы обречённое соединение не держало каждый запрос по 10 секунд.
+      // Не пробрасываем сюда supabaseFetch (см. fetchWithVless.ts) — этот
+      // клиент работает в Edge Runtime (см. корневой middleware.ts), где
+      // недоступны Node-специфичные API undici (AbortSignal.any есть, но
+      // проще держать Edge-путь совсем независимым). Свой короткий таймаут
+      // вместо этого — см. edgeFetchWithTimeout выше.
       global: { fetch: edgeFetchWithTimeout },
       cookieOptions: { name: AUTH_COOKIE_NAME },
     },
