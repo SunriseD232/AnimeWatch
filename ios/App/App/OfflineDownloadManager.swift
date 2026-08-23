@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 extension Notification.Name {
     static let offlineDownloadAuthStateChanged = Notification.Name("offlineDownloadAuthStateChanged")
@@ -125,6 +126,29 @@ final class OfflineDownloadManager: NSObject {
         super.init()
         loadIndexFromDisk()
         loadPendingProgressFromDisk()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+    }
+
+    /// Без фоновой URLSession (см. runSegmentDownload — та была снята из-за
+    /// системного бага, стабильно валившего сегменты с
+    /// NSURLErrorCannotCreateFile) сегменты качаются только пока приложение
+    /// активно. Уход в фон (блокировка экрана, переключение на другое
+    /// приложение) быстро приостанавливает процесс — уже запущенные сетевые
+    /// задачи повисают без завершения ни успехом, ни ошибкой, и ретраи/
+    /// очередь никогда не срабатывают — проверено вживую 2026-08-23:
+    /// пользователь видел «зависшую» загрузку, интерфейс при этом отзывался
+    /// нормально (сам баг был не в UI). Вместо тихого зависания явно ставим
+    /// текущую загрузку на паузу — уже скачанные сегменты остаются на диске
+    /// (resumeDownload переиспользует их), пользователь просто жмёт
+    /// «Продолжить», когда снова откроет приложение.
+    @objc private func handleDidEnterBackground() {
+        guard let itemId = stateQueue.sync(execute: { currentlyDownloadingItemId }) else { return }
+        pauseDownload(id: itemId)
     }
 
     // MARK: - Авторизация (фаза A)
