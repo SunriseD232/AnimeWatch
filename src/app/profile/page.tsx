@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import ChangePasswordCard from '@/components/ChangePasswordCard';
+import ChangePasswordButton from '@/components/ChangePasswordButton';
 import ProfileTabs from '@/components/ProfileTabs';
 import VibixTrialStatus from '@/components/VibixTrialStatus';
 import RelayToggle from '@/components/RelayToggle';
@@ -44,17 +44,18 @@ export default async function ProfilePage() {
           <h1 className="text-xl font-bold">Профиль</h1>
           <p className="text-sm text-gray-400">{user.email}</p>
         </div>
-        <form action="/auth/signout" method="post">
-          <button
-            type="submit"
-            className="rounded-lg border border-white/10 bg-bg-card px-4 py-2 text-sm font-medium text-gray-200 transition hover:bg-red-950/60 hover:text-red-200"
-          >
-            Выйти
-          </button>
-        </form>
+        <div className="flex items-center gap-2">
+          <ChangePasswordButton />
+          <form action="/auth/signout" method="post">
+            <button
+              type="submit"
+              className="rounded-lg border border-white/10 bg-bg-card px-4 py-2 text-sm font-medium text-gray-200 transition hover:bg-red-950/60 hover:text-red-200"
+            >
+              Выйти
+            </button>
+          </form>
+        </div>
       </section>
-
-      <ChangePasswordCard />
 
       {isAdmin && <VibixTrialStatus />}
       {isAdmin && <RelayToggle initialEnabled={relayEnabled} />}
