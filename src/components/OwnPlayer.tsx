@@ -642,9 +642,7 @@ export default function OwnPlayer({
           hlsRef.current = hls;
           hlsErrorRecoveryRef.current = 0;
           // master.m3u8 может содержать несколько ABR-вариантов (см. §12
-          // ARCHITECTURE.md) — показываем выбор только когда их больше одного,
-          // иначе (как сейчас почти всегда у Alloha — один уровень) селектор
-          // просто не рендерится.
+          // ARCHITECTURE.md) — показываем выбор только когда их больше одного.
           hls.on(Hls.Events.MANIFEST_PARSED, (_evt, data) => {
             if (cancelled) return;
             hlsErrorRecoveryRef.current = 0;
@@ -652,7 +650,18 @@ export default function OwnPlayer({
               .map((lvl, index) => ({ index, height: lvl.height }))
               .filter((l) => l.height > 0)
               .sort((a, b) => b.height - a.height);
-            setQualityLevels(levels);
+            if (effectiveSource === 'alloha') {
+              // У Alloha переключение ABR-уровня (и ручное, и автоматическое
+              // от hls.js при колебаниях сети) регулярно ломает
+              // воспроизведение — их CDN, похоже, валидирует подписанный URL
+              // сегмента только под тот вариант, что был выбран изначально.
+              // Фиксируем на лучшем доступном уровне сразу и не даём hls.js
+              // сменить его (нет свободного ABR = qualityLevels пуст —
+              // селектор не рендерится, ручной смены качества тоже нет).
+              if (levels.length > 0) hls.currentLevel = levels[0].index;
+            } else {
+              setQualityLevels(levels);
+            }
             setCurrentLevel(hls.currentLevel);
           });
           hls.on(Hls.Events.LEVEL_SWITCHED, (_evt, data) => {
