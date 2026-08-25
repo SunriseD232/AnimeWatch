@@ -77,6 +77,43 @@ export async function getTmdbRatingByImdbId(
   return entry?.voteAverage ?? null;
 }
 
+/**
+ * У Videoseed (см. videoseed-catalog.ts) нет поля со статусом сериала
+ * (идёт/закончен) — а без него нельзя безопасно скрывать сериал из
+ * «Продолжить просмотр» только по факту «дошёл до последней ИЗВЕСТНОЙ на
+ * момент просмотра серии»: если сериал ещё выходит, это скрыло бы карточку
+ * ровно в тот момент, когда должна выйти новая серия. TMDB даёт статус по
+ * тому же IMDb id, что уже резолвится для рейтинга/трейлера.
+ *
+ * true — идёт (Returning Series/In Production/Planned/Pilot), false —
+ * завершён (Ended/Canceled), null — не удалось определить (нет ключа, не
+ * найден в TMDB, это не сериал) — в этом случае вызывающий код НЕ должен
+ * скрывать карточку (безопасный дефолт — лучше лишняя карточка, чем
+ * потерянный онгоинг).
+ */
+export async function getTmdbSeriesOngoing(
+  imdbId: string,
+): Promise<boolean | null> {
+  const key = apiKey();
+  if (!key) return null;
+  const entry = await findTmdbEntry(imdbId);
+  if (!entry || entry.mediaType !== 'tv') return null;
+  try {
+    const res = await fetch(`${TMDB_API}/tv/${entry.id}?api_key=${key}`, {
+      next: { revalidate: 86400 },
+      signal: AbortSignal.timeout(TMDB_FETCH_TIMEOUT_MS),
+      // @ts-expect-error -- dispatcher — опция undici, не входит в типы lib.dom fetch.
+      dispatcher: vlessDispatcher(),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { status?: string };
+    if (!data.status) return null;
+    return ['Returning Series', 'In Production', 'Planned', 'Pilot'].includes(data.status);
+  } catch {
+    return null;
+  }
+}
+
 interface TmdbVideo {
   key: string;
   site: string;

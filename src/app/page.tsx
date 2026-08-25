@@ -5,11 +5,12 @@ import DiscoverTabs from '@/components/DiscoverTabs';
 import LoginBanner from '@/components/LoginBanner';
 import ModeSwitch from '@/components/ModeSwitch';
 import Pagination from '@/components/Pagination';
+import PlannedCard from '@/components/PlannedCard';
 import ScrollCarousel from '@/components/ScrollCarousel';
 import { CardGridSkeleton } from '@/components/Skeletons';
-import { getNewAnime, getPopularRanked } from '@/lib/shikimori';
+import { getAnime, getNewAnime, getPopularRanked } from '@/lib/shikimori';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
-import type { WatchProgress } from '@/lib/types';
+import type { UserListItem, WatchProgress } from '@/lib/types';
 
 const DISCOVER_TABS = [
   { key: 'new', label: 'Новинки', href: '/?tab=new' },
@@ -42,7 +43,36 @@ async function ContinueWatching() {
     .order('updated_at', { ascending: false })
     .limit(12);
 
-  const progress = (data ?? []) as WatchProgress[];
+  const items = (data ?? []) as WatchProgress[];
+
+  // Убираем из карусели то, что уже отмечено «Просмотрено» в списке — но
+  // ТОЛЬКО если аниме реально закончилось. Онгоинг никогда не трогаем: если
+  // просто дошёл до последней вышедшей на сегодня серии, статус мог стать
+  // completed автоматически (см. onEnded в WatchPlayer.tsx), а карточка
+  // всё равно должна остаться — новая серия выйдет, и надо куда вернуться.
+  // Не смогли проверить статус (Shikimori недоступен и т.п.) — не скрываем,
+  // безопасный дефолт в пользу лишней карточки, а не потерянного онгоинга.
+  let progress = items;
+  if (items.length > 0) {
+    const ids = items.map((p) => p.shikimori_id);
+    const { data: listRows } = await supabase
+      .from('user_list')
+      .select('shikimori_id, status')
+      .eq('content_type', 'anime')
+      .in('shikimori_id', ids);
+    const statusById = new Map((listRows ?? []).map((r) => [r.shikimori_id, r.status]));
+
+    progress = (
+      await Promise.all(
+        items.map(async (p) => {
+          if (statusById.get(p.shikimori_id) !== 'completed') return p;
+          const anime = await getAnime(p.shikimori_id).catch(() => null);
+          if (!anime) return p;
+          return anime.status === 'ongoing' ? p : null;
+        }),
+      )
+    ).filter((p): p is WatchProgress => p !== null);
+  }
 
   if (progress.length === 0) {
     return (
@@ -63,6 +93,46 @@ async function ContinueWatching() {
         </div>
       ))}
     </ScrollCarousel>
+  );
+}
+
+/** «Вы хотели посмотреть» — тайтлы со статусом planned в списке
+ *  пользователя. Возвращает null (секция целиком не рендерится), если
+ *  список пуст или гость — не хотим показывать пустой заголовок. */
+async function PlannedCarousel() {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await getCachedUser();
+  if (!user) return null;
+
+  const { data } = await supabase
+    .from('user_list')
+    .select('*')
+    .eq('content_type', 'anime')
+    .eq('status', 'planned')
+    .order('created_at', { ascending: false })
+    .limit(12);
+
+  const items = (data ?? []) as UserListItem[];
+  if (items.length === 0) return null;
+
+  return (
+    <section className="animate-rise flex flex-col gap-4" style={{ animationDelay: '40ms' }}>
+      <h2 className="text-xl font-bold">Вы хотели посмотреть</h2>
+      <ScrollCarousel className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2">
+        {items.map((i) => (
+          <div key={i.id} className="w-40 shrink-0 snap-start sm:w-48">
+            <PlannedCard
+              contentType="anime"
+              shikimoriId={i.shikimori_id}
+              title={i.anime_title}
+              posterUrl={i.poster_url}
+            />
+          </div>
+        ))}
+      </ScrollCarousel>
+    </section>
   );
 }
 
@@ -140,6 +210,12 @@ export default function HomePage({
           <ContinueWatching />
         </Suspense>
       </section>
+
+      {/* Пустой список (гость/нет planned-тайтлов) — PlannedCarousel сам
+          вернёт null, секция не появится вообще, скелетон тут ни к чему. */}
+      <Suspense fallback={null}>
+        <PlannedCarousel />
+      </Suspense>
 
       <section
         className="animate-rise flex flex-col gap-4"
