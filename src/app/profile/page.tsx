@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import ChangePasswordCard from '@/components/ChangePasswordCard';
 import ProfileTabs from '@/components/ProfileTabs';
 import VibixTrialStatus from '@/components/VibixTrialStatus';
 import RelayToggle from '@/components/RelayToggle';
@@ -52,6 +53,8 @@ export default async function ProfilePage() {
           </button>
         </form>
       </section>
+
+      <ChangePasswordCard />
 
       {isAdmin && <VibixTrialStatus />}
       {isAdmin && <RelayToggle initialEnabled={relayEnabled} />}

@@ -8,10 +8,16 @@ import Pagination from '@/components/Pagination';
 import PlannedCard from '@/components/PlannedCard';
 import ScrollCarousel from '@/components/ScrollCarousel';
 import { CardGridSkeleton } from '@/components/Skeletons';
-import { getCinemaById, getNewCinema, getPopularCinemaRanked } from '@/lib/videoseed-catalog';
+import {
+  getCinemaById,
+  getCinemaEpisodesTotalMap,
+  getNewCinema,
+  getPopularCinemaRanked,
+} from '@/lib/videoseed-catalog';
 import { getTmdbSeriesOngoing } from '@/lib/tmdb';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
+import { getEpisodeProgressMap } from '@/lib/watch/progressMap';
 
 export const metadata = { title: 'Фильмы и сериалы — MediaWatch' };
 
@@ -174,12 +180,19 @@ async function DiscoverGrid({ tab, page }: { tab: string; page: number }) {
   }
 
   const hasPrev = page > 1;
+  const progressMap = await getEpisodeProgressMap('cinema', data.items.map((item) => item.id));
+  const episodesTotalMap = await getCinemaEpisodesTotalMap([...progressMap.keys()]);
 
   return (
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
         {data.items.map((item) => (
-          <CinemaCard key={item.id} item={item} />
+          <CinemaCard
+            key={item.id}
+            item={item}
+            currentEpisode={progressMap.get(item.id) ?? null}
+            episodesTotal={episodesTotalMap.get(item.id) ?? null}
+          />
         ))}
       </div>
 

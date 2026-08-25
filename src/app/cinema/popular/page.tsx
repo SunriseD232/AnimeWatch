@@ -1,6 +1,7 @@
 import CinemaCard from '@/components/CinemaCard';
 import Pagination from '@/components/Pagination';
-import { getPopularCinemaRanked } from '@/lib/videoseed-catalog';
+import { getCinemaEpisodesTotalMap, getPopularCinemaRanked } from '@/lib/videoseed-catalog';
+import { getEpisodeProgressMap } from '@/lib/watch/progressMap';
 
 export const metadata = { title: 'Популярное — MediaWatch' };
 
@@ -39,12 +40,19 @@ export default async function PopularCinemaPage({
   }
 
   const hasPrev = page > 1;
+  const progressMap = await getEpisodeProgressMap('cinema', data.items.map((item) => item.id));
+  const episodesTotalMap = await getCinemaEpisodesTotalMap([...progressMap.keys()]);
 
   return (
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
         {data.items.map((item) => (
-          <CinemaCard key={item.id} item={item} />
+          <CinemaCard
+            key={item.id}
+            item={item}
+            currentEpisode={progressMap.get(item.id) ?? null}
+            episodesTotal={episodesTotalMap.get(item.id) ?? null}
+          />
         ))}
       </div>
 

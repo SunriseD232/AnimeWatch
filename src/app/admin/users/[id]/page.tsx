@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import AdminResetPasswordCard from '@/components/AdminResetPasswordCard';
 import UserListView from '@/components/UserListView';
 import { isAdminEmail } from '@/lib/admin';
 import { getCachedUser } from '@/lib/supabase/server';
@@ -57,6 +58,8 @@ export default async function AdminUserProfilePage({
           Список пользователя — только просмотр, изменить отсюда ничего нельзя.
         </p>
       </div>
+
+      <AdminResetPasswordCard userId={params.id} />
 
       <UserListView items={items} readOnly />
     </div>

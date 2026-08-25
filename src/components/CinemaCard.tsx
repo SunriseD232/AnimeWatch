@@ -10,9 +10,26 @@ import ExpandTitleButton from '@/components/ExpandTitleButton';
  * (api.videoseed.tv), поэтому используем обычный <img> без next/image —
  * так не нужен allowlist доменов и ничего не ломается на неизвестном хосте.
  */
-export default function CinemaCard({ item }: { item: CinemaShort }) {
+export default function CinemaCard({
+  item,
+  /** Серия, на которой пользователь остановился (watch_progress) — null/не
+   *  передан, если тайтл ещё не начат. */
+  currentEpisode = null,
+  /** Всего серий — CinemaShort (каталог) его не содержит, только
+   *  CinemaFull (детальная карточка), поэтому это отдельный проп: страница
+   *  каталога догружает его ТОЛЬКО для тайтлов с прогрессом (обычно
+   *  единицы из 24), см. getCinemaEpisodesTotalMap. null — бейдж не рендерится
+   *  (тайтл без прогресса, фильм, или подгрузка не удалась — fail-open). */
+  episodesTotal = null,
+}: {
+  item: CinemaShort;
+  currentEpisode?: number | null;
+  episodesTotal?: number | null;
+}) {
   const [expanded, setExpanded] = useState(false);
   const titleRef = useRef<HTMLHeadingElement>(null);
+  // >1 — не показываем «1 из 1» у фильмов на одну серию.
+  const showProgress = currentEpisode != null && episodesTotal != null && episodesTotal > 1;
 
   return (
     <div className="card-lift group relative flex flex-col overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60">
@@ -49,6 +66,21 @@ export default function CinemaCard({ item }: { item: CinemaShort }) {
             <span className="absolute right-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-xs font-medium text-amber-300">
               ★ {item.rating.toFixed(1)}
             </span>
+          )}
+          {showProgress && (
+            <>
+              <span className="absolute bottom-1.5 left-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-xs font-medium text-gray-100">
+                {currentEpisode}/{episodesTotal}
+              </span>
+              <div className="absolute inset-x-0 bottom-0 h-1 bg-white/10">
+                <div
+                  className="h-full bg-accent"
+                  style={{
+                    width: `${Math.min(100, ((currentEpisode as number) / (episodesTotal as number)) * 100)}%`,
+                  }}
+                />
+              </div>
+            </>
           )}
         </div>
         <div className="flex flex-col gap-1 p-2.5">

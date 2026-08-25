@@ -11,6 +11,7 @@ import { CardGridSkeleton } from '@/components/Skeletons';
 import { getAnime, getNewAnime, getPopularRanked } from '@/lib/shikimori';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
+import { getEpisodeProgressMap } from '@/lib/watch/progressMap';
 
 const DISCOVER_TABS = [
   { key: 'new', label: 'Новинки', href: '/?tab=new' },
@@ -172,12 +173,13 @@ async function DiscoverGrid({
   }
 
   const hasPrev = page > 1;
+  const progressMap = await getEpisodeProgressMap('anime', data.items.map((a) => a.id));
 
   return (
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
         {data.items.map((a) => (
-          <AnimeCard key={a.id} anime={a} />
+          <AnimeCard key={a.id} anime={a} currentEpisode={progressMap.get(a.id) ?? null} />
         ))}
       </div>
 

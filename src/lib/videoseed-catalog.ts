@@ -20,6 +20,7 @@
 import { getTmdbRatingByImdbId } from './tmdb';
 import { getCachedJson } from './cache/apiCache';
 import { signImageUrl } from './extract/proxy';
+import { mapWithConcurrency } from './concurrency';
 import type { OwnPlayerTranslation } from './extract/types';
 
 const VIDEOSEED_API = 'https://api.videoseed.tv/apiv2.php';
@@ -565,6 +566,31 @@ export async function getCinemaById(
     countries: splitList(base.country),
     idImdb: base.id_imdb ?? null,
   };
+}
+
+/**
+ * Общее число серий для НЕБОЛЬШОГО набора id — CinemaShort (карточки в
+ * каталоге) этого поля не содержит вовсе (только CinemaFull, детальная
+ * карточка тайтла), а тянуть его для всех 24 карточек страницы ради бейджа
+ * прогресса было бы 24 лишних запроса к Videoseed на каждый рендер каталога.
+ * Вызывающая сторона (страницы каталога/карусели) сама сужает список ДО
+ * вызова этой функции — только id, у которых есть watch_progress (обычно
+ * единицы), см. getEpisodeProgressMap. getCinemaById кэширован (600с), так
+ * что повторный вызов для того же id в других разделах сайта не бьёт по
+ * квоте заново.
+ */
+export async function getCinemaEpisodesTotalMap(
+  kinopoiskIds: number[],
+): Promise<Map<number, number>> {
+  if (kinopoiskIds.length === 0) return new Map();
+  const results = await mapWithConcurrency(kinopoiskIds, 4, (id) =>
+    getCinemaById(id).catch(() => null),
+  );
+  const map = new Map<number, number>();
+  results.forEach((full, i) => {
+    if (full) map.set(kinopoiskIds[i], full.episodesTotal);
+  });
+  return map;
 }
 
 /**

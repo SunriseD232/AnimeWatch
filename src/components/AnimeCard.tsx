@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRef, useState } from 'react';
-import { imageUrl, type ShikimoriAnimeShort } from '@/lib/shikimori';
+import { episodeCount, imageUrl, type ShikimoriAnimeShort } from '@/lib/shikimori';
 import ExpandTitleButton from '@/components/ExpandTitleButton';
 
 const KIND_LABELS: Record<string, string> = {
@@ -16,8 +16,13 @@ const KIND_LABELS: Record<string, string> = {
 
 export default function AnimeCard({
   anime,
+  /** Серия, на которой пользователь остановился (watch_progress) — null/не
+   *  передан, если тайтл ещё не начат: бейдж «X из Y» тогда не рендерится,
+   *  см. getEpisodeProgressMap. */
+  currentEpisode = null,
 }: {
   anime: ShikimoriAnimeShort;
+  currentEpisode?: number | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -27,6 +32,9 @@ export default function AnimeCard({
   const kind = anime.kind ? KIND_LABELS[anime.kind] ?? anime.kind : null;
   // Анонс — тайтл ещё не вышел нигде, смотреть нечего (см. страницу тайтла).
   const isAnons = anime.status === 'anons';
+  const total = episodeCount(anime);
+  // total>1 — не показываем «1 из 1» у фильмов/OVA на одну серию.
+  const showProgress = currentEpisode != null && total > 1;
 
   return (
     <div className="card-lift group relative flex flex-col overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60">
@@ -58,6 +66,19 @@ export default function AnimeCard({
             <span className="absolute left-1.5 top-1.5 rounded-md bg-accent/90 px-1.5 py-0.5 text-xs font-medium text-white">
               Анонс
             </span>
+          )}
+          {showProgress && (
+            <>
+              <span className="absolute bottom-1.5 left-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-xs font-medium text-gray-100">
+                {currentEpisode}/{total}
+              </span>
+              <div className="absolute inset-x-0 bottom-0 h-1 bg-white/10">
+                <div
+                  className="h-full bg-accent"
+                  style={{ width: `${Math.min(100, ((currentEpisode as number) / total) * 100)}%` }}
+                />
+              </div>
+            </>
           )}
         </div>
         <div className="flex flex-col gap-1 p-2.5">

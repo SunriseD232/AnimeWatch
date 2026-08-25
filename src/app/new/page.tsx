@@ -1,6 +1,7 @@
 import AnimeCard from '@/components/AnimeCard';
 import Pagination from '@/components/Pagination';
 import { getNewAnime } from '@/lib/shikimori';
+import { getEpisodeProgressMap } from '@/lib/watch/progressMap';
 
 export const metadata = { title: 'Новинки — MediaWatch' };
 
@@ -35,12 +36,13 @@ export default async function NewAnimePage({
   }
 
   const hasPrev = page > 1;
+  const progressMap = await getEpisodeProgressMap('anime', data.items.map((a) => a.id));
 
   return (
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
         {data.items.map((a) => (
-          <AnimeCard key={a.id} anime={a} />
+          <AnimeCard key={a.id} anime={a} currentEpisode={progressMap.get(a.id) ?? null} />
         ))}
       </div>
 
