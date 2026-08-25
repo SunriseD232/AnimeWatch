@@ -234,6 +234,8 @@ export default async function AnimePage({
             total={total}
             currentEpisode={progress?.episode ?? null}
             watchedEpisodes={watchedEpisodes}
+            title={title}
+            posterUrl={poster}
           />
         </section>
       )}

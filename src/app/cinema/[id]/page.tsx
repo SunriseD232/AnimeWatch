@@ -297,6 +297,8 @@ export default async function CinemaPage({
             currentEpisode={progress?.episode ?? null}
             watched={watched}
             idImdb={item.idImdb}
+            title={title}
+            posterUrl={item.poster}
           />
         </section>
       )}
