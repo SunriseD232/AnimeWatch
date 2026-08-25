@@ -360,6 +360,28 @@ export default function OwnPlayer({
   // Capacitor.isNativePlatform() === false, и это состояние всегда false.
   const [externalScreenConnected, setExternalScreenConnected] = useState(false);
   const [buffering, setBuffering] = useState(true);
+  // Отдельно от buffering: перемотка к сохранённой позиции реально ЗАПУЩЕНА
+  // (video.currentTime только что переставили), но браузер ещё не отчитался
+  // о завершении (событие seeked) — см. seekPending в эффекте ниже. Раньше
+  // это состояние существовало только как локальная переменная внутри
+  // эффекта и не влияло на разметку: onCanPlay уже мог снять buffering=false
+  // в тот же момент, когда applyResumeSeek только САМА выставила seekPending
+  // — тогда рендерился кликабельный оверлей "Смотреть", хотя видео ещё
+  // ищет сохранённую позицию (attemptPlay сам себя не запускал, ждал seeked).
+  // Клик по этому оверлею вызывает togglePlay → play() НАПРЯМУЮ, в обход
+  // этой защиты — ровно то залипание, которое описал пользователь
+  // (воспроизведение стартует, если ткнуть play/pause посреди загрузки).
+  // Явно показываем то же состояние загрузки, что и buffering, вместо
+  // кликабельного плей-оверлея, пока идёт эта перемотка.
+  const [seeking, setSeeking] = useState(false);
+  // togglePlay (см. ниже) вызывается напрямую из onClick на самом <video> —
+  // не только через кликабельный оверлей "Смотреть", который теперь скрыт
+  // на время seeking. Без этого рефа клик прямо по видео (а не по оверлею)
+  // всё ещё мог вызвать v.play() в обход перемотки к сохранённой позиции —
+  // ref, а не сам useState, чтобы не тянуть seeking в зависимости
+  // useCallback ниже.
+  const seekingRef = useRef(seeking);
+  seekingRef.current = seeking;
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isEnded, setIsEnded] = useState(false);
   // Уровни качества из hls.js (только для HLS-источников с несколькими
@@ -519,6 +541,7 @@ export default function OwnPlayer({
     const controller = new AbortController();
     setLoadState('probing');
     setBuffering(true);
+    setSeeking(false);
     setIsEnded(false);
     userPausedRef.current = false;
     autoplayMutedRef.current = false;
@@ -793,6 +816,7 @@ export default function OwnPlayer({
       const clamped = Number.isFinite(dur) && dur > 0 ? Math.min(target, dur - 0.5) : target;
       if (clamped > 0 && Math.abs(video.currentTime - clamped) > 1) {
         seekPending = true;
+        setSeeking(true);
         video.currentTime = clamped;
       }
     };
@@ -936,6 +960,7 @@ export default function OwnPlayer({
     // пользователь сам поставил паузу, это просто no-op.
     const onSeeked = () => {
       seekPending = false;
+      setSeeking(false);
       attemptPlay();
     };
     const onError = () => setLoadState('failed');
@@ -1119,6 +1144,12 @@ export default function OwnPlayer({
   const togglePlay = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
+    // Идёт перемотка к сохранённой позиции (см. seeking/seekingRef выше) —
+    // v.play() здесь запустил бы воспроизведение до того, как сик реально
+    // доехал (проверено вживую: именно так клик по видео "расклеивал"
+    // зависшую загрузку раньше времени). attemptPlay сам продолжит, как
+    // только придёт событие seeked — тут просто ничего не делаем.
+    if (seekingRef.current) return;
     if (v.paused) {
       // Явный клик пользователя — снимаем «сам поставил на паузу», иначе
       // после ручной паузы attemptPlay (см. эффект событий видео) навсегда
@@ -1426,13 +1457,13 @@ export default function OwnPlayer({
           </div>
         )}
 
-        {buffering && !(Capacitor.isNativePlatform() && externalScreenConnected) && (
+        {(buffering || seeking) && !(Capacitor.isNativePlatform() && externalScreenConnected) && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="h-12 w-12 animate-spin rounded-full border-2 border-white/20 border-t-white" />
           </div>
         )}
 
-        {!playing && !buffering && !isEnded && !(Capacitor.isNativePlatform() && externalScreenConnected) && (
+        {!playing && !buffering && !seeking && !isEnded && !(Capacitor.isNativePlatform() && externalScreenConnected) && (
           <button
             type="button"
             onClick={togglePlay}
