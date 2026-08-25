@@ -20,6 +20,16 @@ export function fixPosterUrl(url: string | null): string | null {
   return url.replace('//shikimori.one', '//shikimori.io');
 }
 
+/** Формат даты-времени вида «5 авг, 14:32» — используется в истории просмотра и в админском бейдже присутствия. */
+export function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 /** Процент просмотра серии (0..100), null если длительность неизвестна. */
 export function watchPercent(
   position: number,

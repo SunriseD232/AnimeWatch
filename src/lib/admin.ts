@@ -12,11 +12,19 @@ export function isAdminEmail(email: string | null | undefined): boolean {
   return !!email && ADMIN_EMAILS.includes(email);
 }
 
+export interface AdminUserEntry {
+  id: string;
+  email: string;
+  /** ISO-время последнего heartbeat (см. миграцию 0021_user_presence.sql) — null, если пользователь никогда не заходил (нет строки в user_presence). */
+  lastSeenAt: string | null;
+  online: boolean;
+}
+
 export interface PresenceSummary {
   totalCount: number;
-  totalEmails: string[];
   onlineCount: number;
-  onlineEmails: string[];
+  /** Онлайн — первыми, дальше по убыванию lastSeenAt (никогда не заходившие — в конце). */
+  users: AdminUserEntry[];
 }
 
 /**
@@ -57,29 +65,45 @@ export async function getPresenceSummary(): Promise<PresenceSummary> {
 
     // perPage=1000 — с большим запасом относительно реальной аудитории
     // этого закрытого self-hosted сайта (доступ только по коду
-    // регистрации); при таком масштабе пагинация не нужна.
+    // регистрации); при таком масштабе пагинация не нужна. last_seen_at —
+    // без threshold-фильтра, нужен для КАЖДОГО пользователя (в т.ч. давно
+    // не заходивших), не только для тех, кто онлайн прямо сейчас.
     const [{ data: usersData, error: usersError }, { data: presenceRows }] =
       await Promise.all([
         service.auth.admin.listUsers({ page: 1, perPage: 1000 }),
-        service.from('user_presence').select('user_id').gte('last_seen_at', threshold),
+        service.from('user_presence').select('user_id, last_seen_at'),
       ]);
 
     const users = !usersError && usersData ? usersData.users : [];
-    const totalEmails = users
-      .map((u) => u.email ?? u.id)
-      .sort((a, b) => a.localeCompare(b));
+    const lastSeenById = new Map(
+      (presenceRows ?? []).map((r) => [r.user_id as string, r.last_seen_at as string]),
+    );
 
-    const onlineIds = new Set((presenceRows ?? []).map((r) => r.user_id as string));
-    const onlineEmails = users
-      .filter((u) => onlineIds.has(u.id))
-      .map((u) => u.email ?? u.id)
-      .sort((a, b) => a.localeCompare(b));
+    const entries: AdminUserEntry[] = users.map((u) => {
+      const lastSeenAt = lastSeenById.get(u.id) ?? null;
+      return {
+        id: u.id,
+        email: u.email ?? u.id,
+        lastSeenAt,
+        online: lastSeenAt !== null && lastSeenAt >= threshold,
+      };
+    });
+
+    // Онлайн — первыми, дальше по убыванию lastSeenAt (ISO-строки
+    // сравниваются лексикографически так же, как хронологически),
+    // никогда не заходившие (lastSeenAt===null) — в самом конце.
+    entries.sort((a, b) => {
+      if (a.online !== b.online) return a.online ? -1 : 1;
+      if (a.lastSeenAt && b.lastSeenAt) return b.lastSeenAt.localeCompare(a.lastSeenAt);
+      if (a.lastSeenAt) return -1;
+      if (b.lastSeenAt) return 1;
+      return a.email.localeCompare(b.email);
+    });
 
     return {
-      totalCount: totalEmails.length,
-      totalEmails,
-      onlineCount: onlineEmails.length,
-      onlineEmails,
+      totalCount: entries.length,
+      onlineCount: entries.filter((e) => e.online).length,
+      users: entries,
     };
   });
 }

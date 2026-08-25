@@ -2,18 +2,7 @@
 
 import Link from 'next/link';
 import type { WatchedEpisode } from '@/lib/types';
-import { fixPosterUrl } from '@/lib/format';
-
-/** Формат даты для истории — «5 авг, 14:32». */
-function formatWatchedAt(iso: string): string {
-  const date = new Date(iso);
-  return date.toLocaleString('ru-RU', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
+import { fixPosterUrl, formatDateTime } from '@/lib/format';
 
 export default function HistoryView({ items }: { items: WatchedEpisode[] }) {
   if (items.length === 0) {
@@ -59,7 +48,7 @@ export default function HistoryView({ items }: { items: WatchedEpisode[] }) {
             </span>
           </div>
           <span className="shrink-0 text-xs text-gray-500">
-            {formatWatchedAt(ep.watched_at)}
+            {formatDateTime(ep.watched_at)}
           </span>
         </Link>
       ))}

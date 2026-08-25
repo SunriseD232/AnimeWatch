@@ -150,8 +150,11 @@ function ListCard({
 
 export default function UserListView({
   items,
+  readOnly = false,
 }: {
   items: UserListItem[];
+  /** Просмотр чужого списка админом (см. /admin/users/[id]) — без выбора/массовых действий. */
+  readOnly?: boolean;
 }) {
   const { toast } = useToast();
   const [type, setType] = useState<ContentType>('anime');
@@ -282,7 +285,7 @@ export default function UserListView({
             );
           })}
         </div>
-        {visible.length > 0 && (
+        {visible.length > 0 && !readOnly && (
           <button
             type="button"
             onClick={toggleSelectMode}
