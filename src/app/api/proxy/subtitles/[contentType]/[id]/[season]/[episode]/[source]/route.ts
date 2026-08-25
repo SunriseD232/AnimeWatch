@@ -71,30 +71,46 @@ export async function GET(request: NextRequest, { params }: { params: RouteParam
       return NextResponse.json({ subtitles });
     }
 
-    let vtt: string | null = null;
+    // ru + en параллельно — subtitle_cache кэширует НАВСЕГДА (в т.ч. промахи,
+    // см. getCachedSubtitle), так что квота OpenSubtitles (100/сутки) тратится
+    // на добавление en только один раз на серию, а не на каждый визит.
+    const LANGS: { lang: 'ru' | 'en'; label: string }[] = [
+      { lang: 'ru', label: 'Русский' },
+      { lang: 'en', label: 'English' },
+    ];
+    let vttByLang: (string | null)[];
     if (contentType === 'cinema') {
       const item = await getCinemaById(shikimoriId);
-      if (item?.idImdb) {
-        vtt = await getCachedSubtitle({
-          contentType,
-          shikimoriId,
-          season,
-          episode,
-          imdbId: item.idImdb,
-          isSeries: item.isSerial,
-        });
-      }
+      vttByLang = item?.idImdb
+        ? await Promise.all(
+            LANGS.map(({ lang }) =>
+              getCachedSubtitle({
+                contentType,
+                shikimoriId,
+                season,
+                episode,
+                lang,
+                imdbId: item.idImdb!,
+                isSeries: item.isSerial,
+              }),
+            ),
+          )
+        : LANGS.map(() => null);
     } else {
       const anime = await getAnime(shikimoriId).catch(() => null);
-      if (anime?.name) {
-        vtt = await getCachedSubtitle({ contentType, shikimoriId, season, episode, title: anime.name });
-      }
+      vttByLang = anime?.name
+        ? await Promise.all(
+            LANGS.map(({ lang }) => getCachedSubtitle({ contentType, shikimoriId, season, episode, lang, title: anime.name })),
+          )
+        : LANGS.map(() => null);
     }
 
-    if (!vtt) return NextResponse.json({ subtitles: [] });
-    return NextResponse.json({
-      subtitles: [{ lang: 'ru', label: 'Русский', url: vttDataUrl(vtt) }],
-    });
+    const subtitles = LANGS.map(({ lang, label }, i) => {
+      const vtt = vttByLang[i];
+      return vtt ? { lang, label, url: vttDataUrl(vtt) } : null;
+    }).filter((s): s is { lang: 'ru' | 'en'; label: string; url: string } => s !== null);
+
+    return NextResponse.json({ subtitles });
   } catch (err) {
     console.error('[proxy/subtitles] Упало:', err);
     return NextResponse.json({ subtitles: [] });
