@@ -12,6 +12,11 @@ import { vlessDispatcher } from '@/lib/net/vlessProxy';
  */
 
 const RAW_TOKEN_TTL_MS = 6 * 60 * 60 * 1000; // хватает на любой сеанс просмотра
+// Постеры (см. signImageUrl) не живут в рамках одного сеанса просмотра — они
+// сохраняются в БД (watch_progress.poster_url, user_list.poster_url) и
+// должны открываться и через месяцы. TTL сегментов тут неприменим — токен
+// протух бы прямо в «Продолжить просмотр» через несколько часов.
+const IMAGE_TOKEN_TTL_MS = 100 * 365 * 24 * 60 * 60 * 1000;
 
 function secret(): string {
   const s = process.env.PROXY_SIGNING_SECRET;
@@ -27,13 +32,31 @@ function fromBase64url(input: string): string {
   return Buffer.from(input, 'base64url').toString('utf8');
 }
 
-/** Подписывает {url, headers} в опаковый токен для /api/proxy/raw?u=... */
-export function signRawUrl(url: string, headers: Record<string, string>): string {
+function signWithTtl(url: string, headers: Record<string, string>, ttlMs: number): string {
   const payload = base64url(
-    JSON.stringify({ u: url, h: headers, exp: Date.now() + RAW_TOKEN_TTL_MS }),
+    JSON.stringify({ u: url, h: headers, exp: Date.now() + ttlMs }),
   );
   const sig = createHmac('sha256', secret()).update(payload).digest('hex');
   return `/api/proxy/raw?u=${payload}&s=${sig}`;
+}
+
+/** Подписывает {url, headers} в опаковый токен для /api/proxy/raw?u=... */
+export function signRawUrl(url: string, headers: Record<string, string>): string {
+  return signWithTtl(url, headers, RAW_TOKEN_TTL_MS);
+}
+
+/**
+ * Подписывает URL картинки (постер) — тот же /api/proxy/raw, но с TTL,
+ * рассчитанным на то, что ссылка переживёт БД-запись, а не один сеанс
+ * просмотра. Используется там, где postgres хранит постер напрямую с
+ * внешнего CDN (см. videoseed-catalog.ts) — проверено вживую 2026-08-23:
+ * прямые хотлинки на api.videoseed.tv не грузятся с части клиентских сетей
+ * (ERR_TIMED_OUT/ERR_CONNECTION_CLOSED), при этом сама VPS до того же URL
+ * достаётся мгновенно — проксирование через собственный сервер решает это
+ * так же, как уже решено для видеосегментов.
+ */
+export function signImageUrl(url: string): string {
+  return signWithTtl(url, {}, IMAGE_TOKEN_TTL_MS);
 }
 
 /** Проверяет и разворачивает токен из /api/proxy/raw?u=...&s=... */
@@ -351,7 +374,13 @@ export async function fetchAndProxy(
     if (v) passHeaders.set(key, v);
   }
   if (!passHeaders.has('accept-ranges')) passHeaders.set('accept-ranges', 'bytes');
-  passHeaders.set('Cache-Control', 'private, no-store');
+  // Постеры (см. signImageUrl) — статичные картинки, безопасно кэшируемые и
+  // CDN, и браузером; сегменты видео/остальное — no-store, как раньше (там
+  // подписанный URL живёт недолго и может расходиться по Range-запросам).
+  passHeaders.set(
+    'Cache-Control',
+    (contentType ?? '').startsWith('image/') ? 'public, max-age=604800, immutable' : 'private, no-store',
+  );
 
   return new Response(upstream.body, { status: upstream.status, headers: passHeaders });
 }

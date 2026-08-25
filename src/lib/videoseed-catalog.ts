@@ -19,6 +19,7 @@
 
 import { getTmdbRatingByImdbId } from './tmdb';
 import { getCachedJson } from './cache/apiCache';
+import { signImageUrl } from './extract/proxy';
 import type { OwnPlayerTranslation } from './extract/types';
 
 const VIDEOSEED_API = 'https://api.videoseed.tv/apiv2.php';
@@ -190,8 +191,15 @@ function toShort(item: VsRawItem): CinemaShort | null {
   const kpId = Number(item.id_kp);
   // Без kinopoisk_id не сможем ни искать видео, ни хранить прогресс.
   if (!Number.isFinite(kpId) || kpId <= 0) return null;
-  const poster = item.poster ?? null;
-  if (!poster) return null;
+  const rawPoster = item.poster ?? null;
+  if (!rawPoster) return null;
+  // Прямые хотлинки на api.videoseed.tv не грузятся с части клиентских
+  // сетей (проверено вживую 2026-08-23 — ERR_TIMED_OUT/ERR_CONNECTION_
+  // CLOSED, при этом сама VPS до того же URL достаётся мгновенно) —
+  // проксируем через себя, как уже сделано для видео. signImageUrl — не
+  // signRawUrl: этот poster оседает в БД (watch_progress/user_list), TTL
+  // сегмента (часы) тут сломал бы картинку в «Продолжить просмотр».
+  const poster = signImageUrl(rawPoster);
 
   const year = Number(item.year);
 
