@@ -183,6 +183,11 @@ interface CachedArgs {
   lang?: string;
   imdbId?: string | null;
   title?: string;
+  /** Второе название для повторной попытки, если поиск по title ничего не
+   *  дал (напр. русское название аниме, когда title — ромадзи/английское) —
+   *  OpenSubtitles иногда каталогизирует один и тот же тайтл под локальным
+   *  названием, которого нет в первом варианте. */
+  altTitle?: string | null;
   /** Фильмы кино (season/episode тут всегда 1 просто по конвенции проекта,
    *  см. resolved_streams и т.д.) — у OpenSubtitles фильмы каталогизированы
    *  БЕЗ season/episode вообще, передать их означало бы отфильтровать
@@ -201,6 +206,7 @@ export async function getCachedSubtitle({
   lang = 'ru',
   imdbId,
   title,
+  altTitle,
   isSeries,
 }: CachedArgs): Promise<string | null> {
   const supabase = createServiceClient();
@@ -222,7 +228,13 @@ export async function getCachedSubtitle({
   // сезону в каталоге OpenSubtitles (абсолютная vs относительная нумерация
   // серий по кура́м). Кино — по season/episode только для сериалов.
   const searchSeason = contentType === 'cinema' && isSeries ? season : undefined;
-  const vtt = await findSubtitle({ lang, episode, season: searchSeason, imdbId, title });
+  let vtt = await findSubtitle({ lang, episode, season: searchSeason, imdbId, title });
+
+  // Вторая попытка по altTitle — только для title-based поиска (imdb_id уже
+  // однозначно определяет тайтл, второе название тут не нужно и не поможет).
+  if (!vtt && !imdbId && altTitle && altTitle !== title) {
+    vtt = await findSubtitle({ lang, episode, season: searchSeason, imdbId, title: altTitle });
+  }
 
   await supabase.from('subtitle_cache').upsert(
     { content_type: contentType, shikimori_id: shikimoriId, season, episode, lang, vtt },

@@ -13,14 +13,19 @@ import type { ExtractSource } from '@/lib/extract/types';
  * субтитры — не часть m3u8/mp4-потока, а самостоятельные .vtt-файлы.
  * OwnPlayer запрашивает их отдельно и добавляет <track> в <video>.
  *
- * Два независимых источника субтитров:
+ * Два независимых источника субтитров, объединяются ПОЭЗЫЧНО (не
+ * all-or-nothing, как раньше — это и была причина «где-то только русский,
+ * где-то только английский»: если Videoseed отдавал хоть одну дорожку,
+ * OpenSubtitles для недостающего языка вообще не спрашивали):
  *  1. Videoseed отдаёт реальные .vtt при извлечении видео (см.
- *     vps-extractor/src/videoseed.js) — используем resolveStream() (кэш-
- *     first, попадёт в уже тёплый кэш видео без повторного извлечения).
+ *     vps-extractor/src/videoseed.js, коды языка там ISO 639-2, 'rus'/'eng')
+ *     — используем resolveStream() (кэш-first, попадёт в уже тёплый кэш
+ *     видео без повторного извлечения).
  *  2. OpenSubtitles (см. lib/subtitles/opensubtitles.ts) — не привязан к
  *     видео-извлечению вообще, матчится по imdb_id (кино) или названию
- *     (аниме). Проверяем ТОЛЬКО если (1) ничего не дал — иначе на каждый
- *     визит тратили бы небольшую (100/сутки) квоту API впустую.
+ *     (аниме). Спрашиваем ТОЛЬКО про языки, которых нет среди (1) — так и
+ *     квота (100/сутки) не тратится впустую на уже закрытый Videoseed язык,
+ *     и недостающий не остаётся без попытки.
  */
 
 export const runtime = 'nodejs';
@@ -44,6 +49,22 @@ function vttDataUrl(vtt: string): string {
   return `data:text/vtt;charset=utf-8,${encodeURIComponent(vtt)}`;
 }
 
+/** Коды языка у Videoseed — ISO 639-2 (3 буквы, см. vps-extractor/src/
+ *  videoseed.js), у OpenSubtitles-фолбэка — ISO 639-1 (2 буквы, 'ru'/'en').
+ *  Нужно, чтобы понять, какой из двух целевых языков Videoseed уже закрыл,
+ *  не запрашивая его повторно у OpenSubtitles. */
+const NATIVE_LANG_TO_ISO2: Record<string, 'ru' | 'en'> = {
+  rus: 'ru',
+  ru: 'ru',
+  eng: 'en',
+  en: 'en',
+};
+
+const TARGET_LANGS: { lang: 'ru' | 'en'; label: string }[] = [
+  { lang: 'ru', label: 'Русский' },
+  { lang: 'en', label: 'English' },
+];
+
 export async function GET(request: NextRequest, { params }: { params: RouteParams }) {
   const contentType: 'anime' | 'cinema' = params.contentType === 'cinema' ? 'cinema' : 'anime';
   const shikimoriId = Number(params.id);
@@ -60,57 +81,86 @@ export async function GET(request: NextRequest, { params }: { params: RouteParam
 
   try {
     const resolved = await resolveStream({ contentType, shikimoriId, season, episode, source, translationId });
-    if (resolved?.subtitles?.length) {
-      // Реальный домен Videoseed наружу не отдаём — те же подписанные
-      // /api/proxy/raw ссылки, что и для сегментов (см. lib/extract/proxy.ts).
-      const subtitles = resolved.subtitles.map((s) => ({
-        lang: s.lang,
-        label: s.label,
-        url: signRawUrl(s.url, resolved.headers),
-      }));
-      return NextResponse.json({ subtitles });
+
+    // Реальный домен Videoseed наружу не отдаём — те же подписанные
+    // /api/proxy/raw ссылки, что и для сегментов (см. lib/extract/proxy.ts).
+    // Оставляем ВСЕ языки, что дал Videoseed (не только ru/en) — украинский,
+    // например, лишним не будет.
+    const nativeSubs = (resolved?.subtitles ?? []).map((s) => ({
+      lang: s.lang,
+      label: s.label,
+      url: signRawUrl(s.url, resolved!.headers),
+    }));
+    const coveredIso2 = new Set(
+      nativeSubs
+        .map((s) => NATIVE_LANG_TO_ISO2[s.lang.toLowerCase()])
+        .filter((l): l is 'ru' | 'en' => l != null),
+    );
+    const missingLangs = TARGET_LANGS.filter((l) => !coveredIso2.has(l.lang));
+
+    // Спрашиваем OpenSubtitles только про недостающие языки — subtitle_cache
+    // кэширует НАВСЕГДА (в т.ч. промахи, см. getCachedSubtitle), так что
+    // квота (100/сутки) тратится на конкретную серию+язык максимум один раз.
+    let fallbackSubs: { lang: 'ru' | 'en'; label: string; url: string }[] = [];
+    if (missingLangs.length > 0) {
+      let vttByLang: (string | null)[];
+      if (contentType === 'cinema') {
+        const item = await getCinemaById(shikimoriId);
+        vttByLang = item
+          ? await Promise.all(
+              missingLangs.map(({ lang }) =>
+                getCachedSubtitle(
+                  item.idImdb
+                    ? {
+                        contentType,
+                        shikimoriId,
+                        season,
+                        episode,
+                        lang,
+                        imdbId: item.idImdb,
+                        isSeries: item.isSerial,
+                      }
+                    : // Нет imdb_id (бывает у части каталога Videoseed) — не
+                      // просто отказываемся от субтитров, ищем хотя бы по
+                      // названию, как для аниме (менее точно, но лучше, чем
+                      // ничего — findSubtitle всё равно валидирует номер
+                      // серии/схожесть названия перед тем, как отдать файл).
+                      { contentType, shikimoriId, season, episode, lang, title: item.title },
+                ),
+              ),
+            )
+          : missingLangs.map(() => null);
+      } else {
+        const anime = await getAnime(shikimoriId).catch(() => null);
+        vttByLang = anime?.name
+          ? await Promise.all(
+              missingLangs.map(({ lang }) =>
+                getCachedSubtitle({
+                  contentType,
+                  shikimoriId,
+                  season,
+                  episode,
+                  lang,
+                  title: anime.name,
+                  // Второй заход по русскому названию — OpenSubtitles иногда
+                  // каталогизирует аниме под локальным, а не ромадзи-именем
+                  // (см. altTitle в getCachedSubtitle).
+                  altTitle: anime.russian || null,
+                }),
+              ),
+            )
+          : missingLangs.map(() => null);
+      }
+
+      fallbackSubs = missingLangs
+        .map(({ lang, label }, i) => {
+          const vtt = vttByLang[i];
+          return vtt ? { lang, label, url: vttDataUrl(vtt) } : null;
+        })
+        .filter((s): s is { lang: 'ru' | 'en'; label: string; url: string } => s !== null);
     }
 
-    // ru + en параллельно — subtitle_cache кэширует НАВСЕГДА (в т.ч. промахи,
-    // см. getCachedSubtitle), так что квота OpenSubtitles (100/сутки) тратится
-    // на добавление en только один раз на серию, а не на каждый визит.
-    const LANGS: { lang: 'ru' | 'en'; label: string }[] = [
-      { lang: 'ru', label: 'Русский' },
-      { lang: 'en', label: 'English' },
-    ];
-    let vttByLang: (string | null)[];
-    if (contentType === 'cinema') {
-      const item = await getCinemaById(shikimoriId);
-      vttByLang = item?.idImdb
-        ? await Promise.all(
-            LANGS.map(({ lang }) =>
-              getCachedSubtitle({
-                contentType,
-                shikimoriId,
-                season,
-                episode,
-                lang,
-                imdbId: item.idImdb!,
-                isSeries: item.isSerial,
-              }),
-            ),
-          )
-        : LANGS.map(() => null);
-    } else {
-      const anime = await getAnime(shikimoriId).catch(() => null);
-      vttByLang = anime?.name
-        ? await Promise.all(
-            LANGS.map(({ lang }) => getCachedSubtitle({ contentType, shikimoriId, season, episode, lang, title: anime.name })),
-          )
-        : LANGS.map(() => null);
-    }
-
-    const subtitles = LANGS.map(({ lang, label }, i) => {
-      const vtt = vttByLang[i];
-      return vtt ? { lang, label, url: vttDataUrl(vtt) } : null;
-    }).filter((s): s is { lang: 'ru' | 'en'; label: string; url: string } => s !== null);
-
-    return NextResponse.json({ subtitles });
+    return NextResponse.json({ subtitles: [...nativeSubs, ...fallbackSubs] });
   } catch (err) {
     console.error('[proxy/subtitles] Упало:', err);
     return NextResponse.json({ subtitles: [] });
