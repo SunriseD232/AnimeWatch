@@ -35,7 +35,7 @@ export default async function ProfilePage() {
   const items = (data ?? []) as UserListItem[];
   const historyItems = (history ?? []) as WatchedEpisode[];
   const isAdmin = isAdminEmail(user.email);
-  const relayEnabled = isAdmin ? await getVpsRelayEnabled() : false;
+  const relayEnabled = isAdmin ? await getVpsRelayEnabled(true) : false;
 
   return (
     <div className="flex flex-col gap-8">

@@ -21,7 +21,7 @@ async function requireAdmin() {
 export async function GET() {
   const admin = await requireAdmin();
   if (!admin) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-  const enabled = await getVpsRelayEnabled();
+  const enabled = await getVpsRelayEnabled(true);
   return NextResponse.json({ enabled });
 }
 
