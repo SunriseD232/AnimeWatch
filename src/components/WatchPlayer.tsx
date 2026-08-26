@@ -158,6 +158,11 @@ export default function WatchPlayer({
   const activeOwnPlayerTranslationTitleRef = useRef<string | null>(
     savedTranslationTitle ?? null,
   );
+  // Озвучка «Наш плеер», управляемая СНАРУЖИ — полоска над плеером (см.
+  // панель ниже), тот же паттерн двусторонней синхронизации, что и в
+  // Player.tsx (кино) — OwnPlayer сам сообщает нам текущую озвучку через
+  // onTranslationChange, мы отражаем её обратно через selectedTranslationId.
+  const [ownPlayerTranslationId, setOwnPlayerTranslationId] = useState<number | null>(null);
   // Контейнер, в который PipPlayerHost порталит реальный OwnPlayer (см.
   // эффект show/hide ниже и components/pip/PipPlayerHost.tsx).
   const ownPlayerDockRef = useRef<HTMLDivElement | null>(null);
@@ -573,6 +578,7 @@ export default function WatchPlayer({
             : resumeFrom,
         translations: ownPlayerTranslations,
         initialTranslationTitle: savedTranslationTitle,
+        selectedTranslationId: ownPlayerTranslationId,
         skipOpening,
         skipEnding,
         nextHref: hasNext ? `${watchBase}/${shikimoriId}/${activeEpisode + 1}` : null,
@@ -586,6 +592,7 @@ export default function WatchPlayer({
           // Аниме сверяется по title, не id — video_id Yummy нестабилен
           // между сериями (см. миграцию 0008 и коммент у объявления ref).
           activeOwnPlayerTranslationTitleRef.current = translation?.title ?? null;
+          setOwnPlayerTranslationId(translation?.id ?? null);
         },
       },
       ownPlayerDockRef.current,
@@ -643,85 +650,127 @@ export default function WatchPlayer({
 
       {/* Переключатель источника — когда есть альтернатива Kodik */}
       {!resolving && (aniQualities || hasYummy) && (
-        <div className="flex items-center gap-2 text-sm">
-          <span className="shrink-0 text-gray-400">Плеер:</span>
-          {/* overflow-x-auto + whitespace-nowrap — до 4 вкладок (включая
-              длинную «AniLibria · 720p») не влезают в строку на мобильном
-              без этого, подписи переносились внутри своих же пилюль. */}
-          <div className="inline-flex max-w-full overflow-x-auto rounded-full bg-bg-card p-0.5 ring-1 ring-white/5">
-            {aniQualities && (
-              <button
-                type="button"
-                onClick={() => switchTo('hls')}
-                className={[
-                  'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
-                  source === 'hls'
-                    ? 'bg-accent text-white'
-                    : 'text-gray-300 hover:text-white',
-                ].join(' ')}
-              >
-                AniLibria · {aniQualities[0]?.label ?? '720'}p
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => switchTo('kodik')}
-              className={[
-                'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
-                source === 'kodik'
-                  ? 'bg-accent text-white'
-                  : 'text-gray-300 hover:text-white',
-              ].join(' ')}
-            >
-              Kodik
-            </button>
-            {hasYummy && (
-              <button
-                type="button"
-                onClick={() => switchTo('yummy')}
-                title="Yummy. Позиция запоминается приблизительно, не посекундно"
-                className={[
-                  'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
-                  source === 'yummy'
-                    ? 'bg-accent text-white'
-                    : 'text-gray-300 hover:text-white',
-                ].join(' ')}
-              >
-                Yummy
-                <span
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toast(
-                      'Этот плеер не запоминает точную позицию — только приблизительно',
-                      'info',
-                    );
-                  }}
-                  aria-hidden="true"
-                  className="ml-1 cursor-help align-super text-[10px] text-gray-400"
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <div className="flex items-center gap-2">
+            <span className="shrink-0 text-gray-400">Плеер:</span>
+            {/* overflow-x-auto + whitespace-nowrap — до 4 вкладок (включая
+                длинную «AniLibria · 720p») не влезают в строку на мобильном
+                без этого, подписи переносились внутри своих же пилюль. */}
+            <div className="inline-flex max-w-full overflow-x-auto rounded-full bg-bg-card p-0.5 ring-1 ring-white/5">
+              {aniQualities && (
+                <button
+                  type="button"
+                  onClick={() => switchTo('hls')}
+                  className={[
+                    'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
+                    source === 'hls'
+                      ? 'bg-accent text-white'
+                      : 'text-gray-300 hover:text-white',
+                  ].join(' ')}
                 >
-                  ≈
-                </span>
-              </button>
-            )}
-            {hasOwnPlayer && (
+                  AniLibria · {aniQualities[0]?.label ?? '720'}p
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => switchTo('own')}
+                onClick={() => switchTo('kodik')}
                 className={[
                   'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
-                  source === 'own'
+                  source === 'kodik'
                     ? 'bg-accent text-white'
                     : 'text-gray-300 hover:text-white',
                 ].join(' ')}
               >
-                Наш плеер
+                Kodik
               </button>
+              {hasYummy && (
+                <button
+                  type="button"
+                  onClick={() => switchTo('yummy')}
+                  title="Yummy. Позиция запоминается приблизительно, не посекундно"
+                  className={[
+                    'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
+                    source === 'yummy'
+                      ? 'bg-accent text-white'
+                      : 'text-gray-300 hover:text-white',
+                  ].join(' ')}
+                >
+                  Yummy
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toast(
+                        'Этот плеер не запоминает точную позицию — только приблизительно',
+                        'info',
+                      );
+                    }}
+                    aria-hidden="true"
+                    className="ml-1 cursor-help align-super text-[10px] text-gray-400"
+                  >
+                    ≈
+                  </span>
+                </button>
+              )}
+              {hasOwnPlayer && (
+                <button
+                  type="button"
+                  onClick={() => switchTo('own')}
+                  className={[
+                    'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
+                    source === 'own'
+                      ? 'bg-accent text-white'
+                      : 'text-gray-300 hover:text-white',
+                  ].join(' ')}
+                >
+                  Наш плеер
+                </button>
+              )}
+            </div>
+            {(switching || switchingEpisode) && (
+              <span className="text-xs text-gray-400">
+                {switchingEpisode ? 'переключаем серию…' : 'переключаем…'}
+              </span>
             )}
           </div>
-          {(switching || switchingEpisode) && (
-            <span className="text-xs text-gray-400">
-              {switchingEpisode ? 'переключаем серию…' : 'переключаем…'}
-            </span>
+
+          {/* Озвучка/серия «Наш плеер» — прямо над самим плеером. Только для
+              вкладки «Наш плеер»: у AniLibria/Kodik/Yummy нет доступа к их
+              внутреннему интерфейсу, чтобы вынести туда то же самое. Озвучка
+              синхронизирована с меню настроек внутри OwnPlayer в обе стороны
+              — см. ownPlayerTranslationId/selectedTranslationId выше.
+              Сезона у аниме в UI нет (см. Props — каждый «сезон» тут
+              отдельный тайтл Shikimori), поэтому блок сезона не нужен. */}
+          {source === 'own' && hasOwnPlayer && (
+            <div className="flex flex-wrap items-center gap-2">
+              {ownPlayerTranslations.length > 1 && (
+                <select
+                  value={ownPlayerTranslationId ?? ''}
+                  onChange={(e) => setOwnPlayerTranslationId(Number(e.target.value))}
+                  aria-label="Озвучка"
+                  className="rounded-lg border border-white/10 bg-bg-card px-2.5 py-1.5 text-xs text-gray-100 focus:border-accent focus:outline-none"
+                >
+                  {ownPlayerTranslations.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.title}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {total > 1 && (
+                <select
+                  value={activeEpisode}
+                  onChange={(e) => switchEpisode(Number(e.target.value))}
+                  aria-label="Серия"
+                  className="rounded-lg border border-white/10 bg-bg-card px-2.5 py-1.5 text-xs text-gray-100 focus:border-accent focus:outline-none"
+                >
+                  {Array.from({ length: total }, (_, i) => i + 1).map((ep) => (
+                    <option key={ep} value={ep}>
+                      Серия {ep}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
           )}
         </div>
       )}

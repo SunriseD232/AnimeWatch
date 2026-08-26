@@ -55,6 +55,13 @@ interface Props {
    *  каталог чуть переименует/переформатирует подпись озвучки. Пробуем
    *  ПЕРВЫМ (только contentType==='cinema' — у аниме этот id нестабилен). */
   savedTranslationId?: number | null;
+  /** Озвучка, выбранная СНАРУЖИ — новая полоска над плеером в Player.tsx/
+   *  WatchPlayer.tsx (см. эффект синхронизации ниже). Применяется, только
+   *  если id реально есть в АКТУАЛЬНОМ списке translations — иначе можно
+   *  попасть на устаревший id ещё от прошлой серии, пока родитель не
+   *  подхватил новый список через onTranslationChange (двусторонняя связь:
+   *  родитель эхом отражает то, что мы сами ему только что сообщили). */
+  selectedTranslationId?: number | null;
   skipOpening?: SkipSegment | null;
   skipEnding?: SkipSegment | null;
   /** Ссылка на следующую серию — кнопка внутри плеера. null — некуда. */
@@ -199,6 +206,7 @@ export default function OwnPlayer({
   translations,
   initialTranslationTitle,
   savedTranslationId,
+  selectedTranslationId,
   skipOpening,
   skipEnding,
   nextHref,
@@ -1239,6 +1247,22 @@ export default function OwnPlayer({
     },
     [currentTime, resumeFrom, translations],
   );
+
+  // --- Внешний выбор озвучки (новая полоска над плеером в Player.tsx/
+  // WatchPlayer.tsx) — та же смена дорожки, что и из меню настроек/старого
+  // floating-селектора, просто триггер снаружи, а не изнутри. Guard по
+  // translations.find(...) обязателен: пока идёт бесшовное переключение
+  // серии (см. эффект «Смена серии» выше), сначала обновляется episode,
+  // родитель ещё держит id ОТ ПРОШЛОЙ серии (свой ownPlayerTranslationId
+  // обновится только когда МЫ сами сообщим новый через onTranslationChange
+  // чуть ниже) — без проверки наличия id в СВЕЖЕМ списке can словить гонку и
+  // применить чужой, более не существующий id поверх новой серии.
+  useEffect(() => {
+    if (selectedTranslationId == null || selectedTranslationId === translationId) return;
+    if (!translations.some((t) => t.id === selectedTranslationId)) return;
+    changeTranslation(selectedTranslationId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTranslationId, translations]);
 
   // Смена качества — hls.js переключает уровень на лету, без перезагрузки
   // src и без потери позиции (в отличие от смены серии/озвучки).

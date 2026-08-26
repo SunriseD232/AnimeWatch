@@ -280,6 +280,17 @@ export default function Player({
       ? { id: savedTranslationId, title: savedTranslationTitle }
       : null,
   );
+  // Озвучка «Наш плеер», управляемая СНАРУЖИ — новая полоска над плеером
+  // (см. панель ниже). Источник истины для двусторонней синхронизации с
+  // селектором внутри самого OwnPlayer (меню настроек) — OwnPlayer сам
+  // сообщает нам ТЕКУЩУЮ озвучку через onTranslationChange (см. ниже), а мы
+  // прокидываем её обратно через selectedTranslationId в pipHost.show —
+  // если сменили тут, OwnPlayer подхватит (см. его эффект синхронизации),
+  // если сменили в его собственном меню — мы узнаем через onTranslationChange
+  // и подсветим то же значение тут.
+  const [ownPlayerTranslationId, setOwnPlayerTranslationId] = useState<number | null>(
+    savedTranslationId ?? null,
+  );
 
   // Синхронизируем активные сезон/серию при смене маршрута.
   useEffect(() => {
@@ -906,6 +917,7 @@ export default function Player({
         translations: ownPlayerTranslations,
         initialTranslationTitle: savedTranslationTitle,
         savedTranslationId,
+        selectedTranslationId: ownPlayerTranslationId,
         nextHref: next ? linkFor(next) : null,
         nextLabel: next && next.season !== activeSeason ? `Сезон ${next.season}` : undefined,
         onNext: next ? () => switchEpisode(next) : undefined,
@@ -919,6 +931,7 @@ export default function Player({
         },
         onTranslationChange: (translation) => {
           activeOwnPlayerTranslationRef.current = translation;
+          setOwnPlayerTranslationId(translation?.id ?? null);
         },
       },
       ownPlayerDockRef.current,
@@ -1011,58 +1024,119 @@ export default function Player({
 
       {/* Переключатель плеера — когда есть альтернативы Kodik */}
       {(hasVibix || hasVideoseed || hasAlloha || hasOwnPlayer) && (
-        <div className="flex items-center gap-2 text-sm">
-          <span className="shrink-0 text-gray-400">Плеер:</span>
-          {/* overflow-x-auto + whitespace-nowrap — на узких экранах 5 вкладок
-              (Vibix/Videoseed/Alloha/Kodik/Наш плеер) не влезают в строку без
-              этого: «Наш плеер» переносился на два ряда внутри своей пилюли. */}
-          <div className="inline-flex max-w-full overflow-x-auto rounded-full bg-bg-card p-0.5 ring-1 ring-white/5">
-            {(
-              [
-                hasVibix ? (['vibix', 'Vibix', false] as const) : null,
-                hasVideoseed ? (['videoseed', 'Videoseed', true] as const) : null,
-                hasAlloha ? (['alloha', 'Alloha', true] as const) : null,
-                ['kodik', 'Kodik', false] as const,
-                hasOwnPlayer ? (['own', 'Наш плеер', false] as const) : null,
-              ].filter(Boolean) as ReadonlyArray<readonly [PlayerKind, string, boolean]>
-            ).map(([kind, label, approxTracking]) => (
-              <button
-                key={kind}
-                type="button"
-                onClick={() => switchPlayer(kind)}
-                title={
-                  approxTracking
-                    ? `${label}. Позиция запоминается приблизительно, не посекундно`
-                    : undefined
-                }
-                className={[
-                  'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
-                  player === kind
-                    ? 'bg-accent text-white'
-                    : 'text-gray-300 hover:text-white',
-                ].join(' ')}
-              >
-                {label}
-                {approxTracking && (
-                  <span
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toast(
-                        'Этот плеер не запоминает точную позицию — только приблизительно',
-                        'info',
-                      );
-                    }}
-                    aria-hidden="true"
-                    className="ml-1 cursor-help align-super text-[10px] text-gray-400"
-                  >
-                    ≈
-                  </span>
-                )}
-              </button>
-            ))}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <div className="flex items-center gap-2">
+            <span className="shrink-0 text-gray-400">Плеер:</span>
+            {/* overflow-x-auto + whitespace-nowrap — на узких экранах 5 вкладок
+                (Vibix/Videoseed/Alloha/Kodik/Наш плеер) не влезают в строку без
+                этого: «Наш плеер» переносился на два ряда внутри своей пилюли. */}
+            <div className="inline-flex max-w-full overflow-x-auto rounded-full bg-bg-card p-0.5 ring-1 ring-white/5">
+              {(
+                [
+                  hasVibix ? (['vibix', 'Vibix', false] as const) : null,
+                  hasVideoseed ? (['videoseed', 'Videoseed', true] as const) : null,
+                  hasAlloha ? (['alloha', 'Alloha', true] as const) : null,
+                  ['kodik', 'Kodik', false] as const,
+                  hasOwnPlayer ? (['own', 'Наш плеер', false] as const) : null,
+                ].filter(Boolean) as ReadonlyArray<readonly [PlayerKind, string, boolean]>
+              ).map(([kind, label, approxTracking]) => (
+                <button
+                  key={kind}
+                  type="button"
+                  onClick={() => switchPlayer(kind)}
+                  title={
+                    approxTracking
+                      ? `${label}. Позиция запоминается приблизительно, не посекундно`
+                      : undefined
+                  }
+                  className={[
+                    'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
+                    player === kind
+                      ? 'bg-accent text-white'
+                      : 'text-gray-300 hover:text-white',
+                  ].join(' ')}
+                >
+                  {label}
+                  {approxTracking && (
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toast(
+                          'Этот плеер не запоминает точную позицию — только приблизительно',
+                          'info',
+                        );
+                      }}
+                      aria-hidden="true"
+                      className="ml-1 cursor-help align-super text-[10px] text-gray-400"
+                    >
+                      ≈
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+            {switchingEpisode && (
+              <span className="text-xs text-gray-400">переключаем…</span>
+            )}
           </div>
-          {switchingEpisode && (
-            <span className="text-xs text-gray-400">переключаем…</span>
+
+          {/* Озвучка/сезон/серия «Наш плеер» — прямо над самим плеером, а не
+              погребены в его меню настроек/сетке эпизодов ниже. Только для
+              вкладки «Наш плеер»: у остальных плееров (Vibix/Videoseed/
+              Kodik/Alloha) нет доступа к их внутреннему интерфейсу, чтобы
+              провернуть то же самое, а сезон для них по-прежнему выбирается
+              в панели ниже. Озвучка синхронизирована с меню настроек внутри
+              OwnPlayer в обе стороны — см. ownPlayerTranslationId/
+              selectedTranslationId выше. */}
+          {player === 'own' && hasOwnPlayer && (
+            <div className="flex flex-wrap items-center gap-2">
+              {ownPlayerTranslations.length > 1 && (
+                <select
+                  value={ownPlayerTranslationId ?? ''}
+                  onChange={(e) => setOwnPlayerTranslationId(Number(e.target.value))}
+                  aria-label="Озвучка"
+                  className="rounded-lg border border-white/10 bg-bg-card px-2.5 py-1.5 text-xs text-gray-100 focus:border-accent focus:outline-none"
+                >
+                  {ownPlayerTranslations.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.title}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {multiSeason && (
+                <select
+                  value={activeSeason}
+                  onChange={(e) =>
+                    switchEpisode({ season: Number(e.target.value), episode: 1 })
+                  }
+                  aria-label="Сезон"
+                  className="rounded-lg border border-white/10 bg-bg-card px-2.5 py-1.5 text-xs text-gray-100 focus:border-accent focus:outline-none"
+                >
+                  {seasonsList.map((s) => (
+                    <option key={s.season} value={s.season}>
+                      Сезон {s.season}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {showEpisode && (
+                <select
+                  value={activeEpisode}
+                  onChange={(e) =>
+                    switchEpisode({ season: activeSeason, episode: Number(e.target.value) })
+                  }
+                  aria-label="Серия"
+                  className="rounded-lg border border-white/10 bg-bg-card px-2.5 py-1.5 text-xs text-gray-100 focus:border-accent focus:outline-none"
+                >
+                  {Array.from({ length: currentSeasonEpisodes }, (_, i) => i + 1).map((ep) => (
+                    <option key={ep} value={ep}>
+                      Серия {ep}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -1177,8 +1251,10 @@ export default function Player({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Выбор сезона (для многосезонных сериалов) */}
-          {multiSeason && (
+          {/* Выбор сезона (для многосезонных сериалов) — во вкладке «Наш
+              плеер» тот же выбор уже есть в полоске над плеером (см. выше),
+              не дублируем. */}
+          {multiSeason && player !== 'own' && (
             <label className="flex items-center gap-2 text-sm text-gray-400">
               Сезон:
               <select
