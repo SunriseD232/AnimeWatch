@@ -227,6 +227,32 @@ final class OfflineDownloadManager: NSObject {
         try? data.write(to: indexURL, options: .atomic)
     }
 
+    private var indexSaveWorkItem: DispatchWorkItem?
+
+    /// Вызывать только с stateQueue. Дебаунс записи индекса на диск —
+    /// updateItemLocked зовётся на КАЖДЫЙ скачанный сегмент (completedSegments
+    /// += 1), при сотнях сегментов на серию это раньше означало atomic-запись
+    /// файла на диск по нескольку раз в секунду на этой же serial-очереди, на
+    /// которой listDownloads()/getDownloadStatus() (SwiftUI, JS-мост) делают
+    /// .sync — запись боролась за диск с самими сегментами (пишутся
+    /// параллельно) и усугубляла зависание из-за обхода диска в
+    /// DownloadsViewModel.getStorageInfo() (см. его комментарий про рост
+    /// библиотеки) — воспроизведено вживую 2026-08-26: чем больше уже
+    /// скачано, тем быстрее новая закачка вешала приложение. Прогресс на
+    /// экране всё равно берётся из @Published-состояния в памяти
+    /// (уведомление шлётся сразу, см. notifyItemsChanged), а резюме после
+    /// паузы/сбоя — по факту наличия файла на диске (fileExists), не по
+    /// persisted completedSegments, так что отставание записи на полсекунды
+    /// ничем не грозит даже при force-quit.
+    private func scheduleIndexSaveLocked() {
+        indexSaveWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.saveIndexToDiskLocked()
+        }
+        indexSaveWorkItem = work
+        stateQueue.asyncAfter(deadline: .now() + 0.5, execute: work)
+    }
+
     private func notifyItemsChanged() {
         NotificationCenter.default.post(name: .offlineDownloadItemsChanged, object: nil)
     }
@@ -259,7 +285,7 @@ final class OfflineDownloadManager: NSObject {
     private func updateItemLocked(_ id: String, _ mutate: (inout DownloadItem) -> Void) {
         guard let index = items.firstIndex(where: { $0.id == id }) else { return }
         mutate(&items[index])
-        saveIndexToDiskLocked()
+        scheduleIndexSaveLocked()
     }
 
     private func itemDirURL(_ itemId: String) -> URL {

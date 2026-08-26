@@ -13,6 +13,9 @@ final class DownloadsViewModel: ObservableObject {
 
     private var observers: [NSObjectProtocol] = []
     private var reloadWorkItem: DispatchWorkItem?
+    private var storageInfoInFlight = false
+    private var lastStorageInfoAt: Date = .distantPast
+    private let storageInfoMinInterval: TimeInterval = 2.0
 
     init() {
         isAuthed = OfflineDownloadManager.shared.isAuthed
@@ -46,19 +49,37 @@ final class DownloadsViewModel: ObservableObject {
 
     func reload() {
         items = OfflineDownloadManager.shared.listDownloads().sorted { $0.createdAt > $1.createdAt }
-        // getStorageInfo() обходит директорией ВСЕХ загрузок через
-        // FileManager.enumerator — с ростом числа скачанных сегментов (тут
-        // дебаунс всё равно может звать это по нескольку раз в секунду) это
-        // синхронное сканирование на главном потоке начинает не укладываться
-        // в интервал дебаунса, и следующие вызовы наслаиваются друг на
-        // друга — воспроизведено вживую 2026-08-21: приложение зависало
-        // ближе к концу закачки серии из 257 сегментов. Считаем на фоне,
-        // на главный поток возвращаемся только чтобы присвоить @Published.
+        refreshStorageInfoIfDue()
+    }
+
+    /// getStorageInfo() обходит ВСЮ директорию загрузок (FileManager.enumerator
+    /// по каждому файлу каждой уже скачанной серии, не только текущей) —
+    /// раньше просто уносили это на фон (Task.detached), но ничего не мешало
+    /// НЕСКОЛЬКИМ таким обходам идти параллельно: reload() зовётся на каждое
+    /// уведомление о прогрессе (дебаунс 0.3с в scheduleReload — при активной
+    /// закачке это несколько раз в секунду). Пока библиотека небольшая, один
+    /// обход укладывается в 0.3с и всё в порядке; по мере роста библиотеки
+    /// (десятки серий, тысячи файлов) один обход начинает занимать ДОЛЬШЕ
+    /// интервала дебаунса — новые обходы запускались поверх ещё не
+    /// завершившихся, без всякого ограничения на конкурентность, насыщая
+    /// I/O и пул фоновых потоков GCD ровно теми же дисковыми операциями,
+    /// что нужны самой закачке (запись сегментов) — воспроизведено вживую
+    /// 2026-08-26: чем больше уже скачано, тем быстрее новая закачка вешала
+    /// приложение намертво (и дальше — watchdog kill). Не даём второму
+    /// обходу стартовать, пока не завершился первый, и не чаще, чем раз в
+    /// storageInfoMinInterval — точные до байта цифры на экране загрузок не
+    /// нужны, важно не блокировать сам процесс закачки.
+    private func refreshStorageInfoIfDue() {
+        guard !storageInfoInFlight else { return }
+        guard Date().timeIntervalSince(lastStorageInfoAt) >= storageInfoMinInterval else { return }
+        storageInfoInFlight = true
         Task.detached(priority: .utility) { [weak self] in
             let info = OfflineDownloadManager.shared.getStorageInfo()
             await MainActor.run {
                 self?.usedBytes = info.usedBytes
                 self?.freeBytes = info.freeBytes
+                self?.lastStorageInfoAt = Date()
+                self?.storageInfoInFlight = false
             }
         }
     }
