@@ -13,10 +13,34 @@ import UIKit
 /// (5с — тот же интервал, что useProgressSaver на веб-стороне и
 /// ExternalDisplayManager) сохраняет позицию локально; отправка на сервер
 /// при восстановлении сети — фаза C.
+/// Прячет и таб-бар (MediaWatch/Загрузки), и navigation bar (заголовок +
+/// кнопка «Назад») на время просмотра — офлайн-плеер открывается через
+/// NavigationLink внутри NavigationView в DownloadsView.swift, оба SwiftUI
+/// ничего из этого сами не скрывают. Без этого поверх видео всё время висел
+/// таб-бар снизу и бар с кнопкой назад сверху — не полноэкранно, не похоже
+/// на обычный видео-плеер. Восстанавливает оба при уходе с экрана —
+/// tabBarController/navigationController тут резолвятся из реальной
+/// UIKit-иерархии (SwiftUI NavigationView создаёт настоящий
+/// UINavigationController под капотом), не зависят от того, что видит сам
+/// SwiftUI-код.
+final class ImmersivePlayerViewController: AVPlayerViewController {
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        tabBarController?.tabBar.isHidden = true
+        navigationController?.setNavigationBarHidden(true, animated: animated)
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        tabBarController?.tabBar.isHidden = false
+        navigationController?.setNavigationBarHidden(false, animated: animated)
+    }
+}
+
 struct DownloadPlayerView: UIViewControllerRepresentable {
     let item: DownloadItem
 
-    func makeUIViewController(context: Context) -> AVPlayerViewController {
+    func makeUIViewController(context: Context) -> ImmersivePlayerViewController {
         // Без этого категория AVAudioSession остаётся дефолтной
         // (.soloAmbient) — она подчиняется аппаратному переключателю
         // «Бесшумно» сбоку телефона и глушится им независимо от громкости
@@ -27,7 +51,7 @@ struct DownloadPlayerView: UIViewControllerRepresentable {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try? AVAudioSession.sharedInstance().setActive(true)
 
-        let controller = AVPlayerViewController()
+        let controller = ImmersivePlayerViewController()
         let dirName = item.id.replacingOccurrences(of: ":", with: "_")
         let playlistURL: URL
         if let port = OfflineHTTPServer.shared.ensureRunning(),
@@ -81,9 +105,9 @@ struct DownloadPlayerView: UIViewControllerRepresentable {
         return controller
     }
 
-    func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {}
+    func updateUIViewController(_ uiViewController: ImmersivePlayerViewController, context: Context) {}
 
-    static func dismantleUIViewController(_ uiViewController: AVPlayerViewController, coordinator: Coordinator) {
+    static func dismantleUIViewController(_ uiViewController: ImmersivePlayerViewController, coordinator: Coordinator) {
         if let token = coordinator.timeObserverToken {
             coordinator.player?.removeTimeObserver(token)
         }
