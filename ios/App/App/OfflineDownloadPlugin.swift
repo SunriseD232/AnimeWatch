@@ -33,17 +33,28 @@ public class OfflineDownloadPlugin: CAPPlugin, CAPBridgedPlugin {
 
     public override func load() {
         let center = NotificationCenter.default
-        observers.append(center.addObserver(forName: .offlineDownloadProgress, object: nil, queue: .main) { [weak self] note in
+        // queue: nil (не .main) — см. подробный комментарий у аналогичных
+        // observer'ов в DownloadsViewModel.swift: эти уведомления шлются из
+        // OfflineDownloadManager.stateQueue (фоновая очередь), а queue: .main
+        // может синхронно заблокировать отправителя, ожидая выполнения
+        // блока на главном потоке — если тот в этот момент сам ждёт
+        // stateQueue (см. listDownloads()/getDownloadStatus()), оба потока
+        // блокируют друг друга навсегда (пойманный вживую deadlock, см.
+        // DownloadsViewModel.swift). notifyListeners сам не требует главного
+        // потока, но переходим на него явным async — предсказуемее, чем
+        // полагаться на то, что Capacitor's notifyListeners всегда безопасен
+        // с произвольного потока.
+        observers.append(center.addObserver(forName: .offlineDownloadProgress, object: nil, queue: nil) { [weak self] note in
             guard let info = note.userInfo as? [String: Any] else { return }
-            self?.notifyListeners("downloadProgress", data: info)
+            DispatchQueue.main.async { self?.notifyListeners("downloadProgress", data: info) }
         })
-        observers.append(center.addObserver(forName: .offlineDownloadComplete, object: nil, queue: .main) { [weak self] note in
+        observers.append(center.addObserver(forName: .offlineDownloadComplete, object: nil, queue: nil) { [weak self] note in
             guard let info = note.userInfo as? [String: Any] else { return }
-            self?.notifyListeners("downloadComplete", data: info)
+            DispatchQueue.main.async { self?.notifyListeners("downloadComplete", data: info) }
         })
-        observers.append(center.addObserver(forName: .offlineDownloadFailed, object: nil, queue: .main) { [weak self] note in
+        observers.append(center.addObserver(forName: .offlineDownloadFailed, object: nil, queue: nil) { [weak self] note in
             guard let info = note.userInfo as? [String: Any] else { return }
-            self?.notifyListeners("downloadFailed", data: info)
+            DispatchQueue.main.async { self?.notifyListeners("downloadFailed", data: info) }
         })
     }
 
