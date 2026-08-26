@@ -38,6 +38,19 @@ interface PipHostContextValue {
 
 const PipHostContext = createContext<PipHostContextValue | null>(null);
 
+/** Безопасное «спрятанное» состояние постоянного контейнера — за экраном,
+ *  непрозрачный (см. комментарий в rAF-цикле про то, почему НЕ opacity:0),
+ *  но pointer-events:none, чтобы ничего не перехватывать под собой. */
+function resetHolderOffscreen(holder: HTMLDivElement): void {
+  holder.style.position = 'fixed';
+  holder.style.top = '0';
+  holder.style.left = '-10000px';
+  holder.style.width = '480px';
+  holder.style.height = '270px';
+  holder.style.opacity = '1';
+  holder.style.pointerEvents = 'none';
+}
+
 export function usePipPlayerHost(): PipHostContextValue {
   const ctx = useContext(PipHostContext);
   if (!ctx) throw new Error('usePipPlayerHost вызван вне PipPlayerHost');
@@ -147,9 +160,26 @@ export function PipPlayerHost({ children }: { children: ReactNode }) {
   // постоянного контейнера под текущий dock (если он есть и подключён к
   // документу) — либо уводим контейнер за экран, если dock'а сейчас нет.
   useEffect(() => {
-    if (!session) return;
     const holder = holderRef.current;
     if (!holder) return;
+
+    if (!session) {
+      // Сессии нет — контейнер должен быть гарантированно спрятан. Раньше
+      // тут был просто `return` без сброса стилей: rAF-цикл ниже двигает
+      // holder ИМПЕРАТИВНО (holder.style.top = ...), в обход React, а сам
+      // JSX-проп style={{...}} ни разу не меняется между рендерами (те же
+      // литералы каждый раз) — React сравнивает со своей последней версией
+      // этого не изменившегося объекта и ничего не переприменяет, то есть
+      // НЕ возвращает стили к «безопасным», если последний реальный тик
+      // застал контейнер поверх видео (top/left страницы, pointerEvents:
+      // 'auto'). Если сессия обрывалась ИМЕННО на этом кадре (см. show/
+      // unclaimDock), эти координаty так и оставались на элементе навсегда
+      // — невидимый (aria-hidden) div с pointer-events:auto зависал ровно
+      // там, где был плеер, и перехватывал клики (воспроизведено вживую на
+      // /cinema/322). Принудительно возвращаем «спрятанное» состояние.
+      resetHolderOffscreen(holder);
+      return;
+    }
 
     const tick = () => {
       const dock = dockElRef.current;
@@ -171,13 +201,7 @@ export function PipPlayerHost({ children }: { children: ReactNode }) {
         // Chrome трактует это похоже на display:none, хотя формально это не
         // он) — с нормальным размером и полной непрозрачностью, просто вне
         // видимой области, плавающее окно продолжает работать корректно.
-        holder.style.position = 'fixed';
-        holder.style.top = '0';
-        holder.style.left = '-10000px';
-        holder.style.width = '480px';
-        holder.style.height = '270px';
-        holder.style.opacity = '1';
-        holder.style.pointerEvents = 'none';
+        resetHolderOffscreen(holder);
       }
       rafRef.current = requestAnimationFrame(tick);
     };
