@@ -52,7 +52,12 @@ export default function CinemaCard({
           {item.poster ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={item.poster}
+              // Постер идёт через /api/proxy/raw (см. signImageUrl в
+              // videoseed-catalog.ts) — он же умеет ресайзить в WebP по ?w=
+              // (см. maybeResizeImage в api/proxy/raw/route.ts), 480 с
+              // запасом под retina-плотность при карточке ~230px в сетке
+              // grid-cols-6.
+              src={`${item.poster}&w=480`}
               alt={item.title}
               loading="lazy"
               className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
