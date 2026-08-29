@@ -82,6 +82,12 @@ workflows:
     instance_type: mac_mini_m2
     environment:
       node: 22.3.0
+      # Реальный запуск (build от 2026-08-29) упал на
+      # ':capacitor-android:compileDebugJavaWithJavac' с "invalid source
+      # release: 21" — @capacitor/android 8.5.0 требует sourceCompatibility
+      # 21 (см. node_modules/@capacitor/android/capacitor/build.gradle), а
+      # дефолтный JDK на Mac-образе Codemagic младше. Явно выбираем JDK 21.
+      java: 21
     scripts:
       - name: Install npm dependencies
         script: npm ci
