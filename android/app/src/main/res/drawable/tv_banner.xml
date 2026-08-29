@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  TV-баннер (полка запуска Android TV, 320x180dp — требование Google, см.
+  android:banner в AndroidManifest.xml). Простая заглушка на основе цветов
+  src/app/icon.svg (тот же синий #5E94FF/светлый треугольник) — единственный
+  готовый брендинг в проекте, отдельного лого/wordmark-файла нет. Векторный
+  drawable, а не PNG — не нужен внешний рендер-инструмент, Android рисует
+  его как обычный drawable ресурс.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+
+    <path
+        android:pathData="M0,0h320v180h-320z"
+        android:fillColor="#12151C" />
+
+    <path
+        android:pathData="M124,60 a20,20 0 0,1 20,-20 h32 a20,20 0 0,1 20,20 v60 a20,20 0 0,1 -20,20 h-32 a20,20 0 0,1 -20,-20 z"
+        android:fillColor="#5E94FF" />
+
+    <path
+        android:pathData="M148,72 L148,108 L172,90 Z"
+        android:fillColor="#ECEFF1" />
+
+</vector>

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MediaWatch</string>
+    <string name="title_activity_main">MediaWatch</string>
+    <string name="package_name">ru.mediawatch.app</string>
+    <string name="custom_url_scheme">ru.mediawatch.app</string>
+</resources>

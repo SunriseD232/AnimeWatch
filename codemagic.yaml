@@ -66,3 +66,35 @@ workflows:
         notify:
           success: true
           failure: true
+
+  android-tv:
+    name: MediaWatch Android TV (debug, для sideload)
+    max_build_duration: 30
+    # В отличие от iOS, Android не требует Mac — сборка идёт на обычном
+    # Linux-раннере Codemagic (Android SDK/JDK там уже предустановлены).
+    instance_type: linux_x2
+    environment:
+      node: 22.3.0
+    scripts:
+      - name: Install npm dependencies
+        script: npm ci
+      - name: Sync Capacitor Android project
+        script: npx cap sync android
+      - name: Build debug APK
+        # assembleDebug, а не Release — в отличие от iOS (там ЛЮБАЯ сборка
+        # требует что-то на выходе подписать, отсюда unsigned .ipa + eSign
+        # на телефоне), Gradle сам подписывает debug-сборку встроенным
+        # debug-keystore. Отдельного шага переподписи не нужно — apk сразу
+        # ставится через adb install/файловый менеджер на самом TV.
+        script: |
+          chmod +x android/gradlew
+          cd android && ./gradlew assembleDebug
+    artifacts:
+      - android/app/build/outputs/apk/debug/*.apk
+    publishing:
+      email:
+        recipients:
+          - 2000gva@gmail.com
+        notify:
+          success: true
+          failure: true

@@ -154,3 +154,18 @@ body {
 .player-range:disabled::-webkit-slider-thumb {
   background: rgba(255, 255, 255, 0.4);
 }
+
+/* Видимое кольцо фокуса для навигации пультом Android TV (см.
+   src/lib/tvNav.ts, src/components/TvNavigation.tsx — компонент ставит
+   data-tv на <html>, только когда сайт открыт в TV-обёртке через
+   Capacitor appendUserAgent "MediaWatchTV", см. capacitor.config.ts).
+   Обычный веб/iOS-обёртку не трогаем — там фокус подсвечивать незачем
+   (мышь/тач), а часть кнопок сознательно гасит контур через
+   focus:outline-none (Tailwind) под мышиный клик. !important — чтобы
+   переопределить именно эти focus:outline-none у конкретных кнопок, а не
+   полагаться на порядок правил в собранном Tailwind-бандле. */
+html[data-tv] :focus-visible {
+  outline: 3px solid #2997ff !important;
+  outline-offset: 2px !important;
+  border-radius: 4px;
+}

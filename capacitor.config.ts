@@ -16,6 +16,13 @@ import type { CapacitorConfig } from '@capacitor/cli';
  *
  * appId — предварительный (ru.mediawatch.app), должен совпадать с Bundle ID,
  * зарегистрированным на developer.apple.com при настройке подписи в Codemagic.
+ *
+ * android — та же оболочка, но под Android TV (см. android/app — leanback-
+ * манифест, LEANBACK_LAUNCHER intent-filter). appendUserAgent добавляет
+ * маркер "MediaWatchTV" к User-Agent WebView — сайт детектит его в
+ * src/lib/tvNav.ts и включает навигацию стрелками пульта (spatial
+ * navigation), которая не нужна и не должна включаться в обычном браузере
+ * или потенциальном будущем Android-приложении для телефона.
  */
 const config: CapacitorConfig = {
   appId: 'ru.mediawatch.app',
@@ -26,6 +33,9 @@ const config: CapacitorConfig = {
     // Отдаём HTTP(S)-контент как есть, без переписывания схемы под capacitor:// —
     // проще для cookie/relative-URL поведения при указании на реальный домен.
     cleartext: false,
+  },
+  android: {
+    appendUserAgent: 'MediaWatchTV',
   },
   ios: {
     // 'never' — WKWebView занимает экран полностью, от края до края;

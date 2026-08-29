@@ -8,6 +8,7 @@ import PwaRegister from '@/components/PwaRegister';
 import PresenceHeartbeat from '@/components/PresenceHeartbeat';
 import NativeAuthBridge from '@/components/NativeAuthBridge';
 import OfflineSyncTrigger from '@/components/OfflineSyncTrigger';
+import TvNavigation from '@/components/TvNavigation';
 import { PipPlayerHost } from '@/components/pip/PipPlayerHost';
 
 // Inter — ближайшее веб-приближение SF Pro (см. tailwind.config.ts).
@@ -60,6 +61,7 @@ export default function RootLayout({
         <PresenceHeartbeat />
         <NativeAuthBridge />
         <OfflineSyncTrigger />
+        <TvNavigation />
         <ToastProvider>
           <PipPlayerHost>
             <Suspense fallback={<div className="h-[57px] border-b border-white/5" />}>
