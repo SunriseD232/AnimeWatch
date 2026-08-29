@@ -70,9 +70,16 @@ workflows:
   android-tv:
     name: MediaWatch Android TV (debug, для sideload)
     max_build_duration: 30
-    # В отличие от iOS, Android не требует Mac — сборка идёт на обычном
-    # Linux-раннере Codemagic (Android SDK/JDK там уже предустановлены).
-    instance_type: linux_x2
+    # Изначально стоял linux_x2 (Android сам по себе не требует Mac) — но
+    # реальный запуск сборки упал мгновенно с "The selected instance type
+    # is not available with the current billing plan" (см. историю сборок
+    # в Codemagic, build от 2026-08-29): текущий тариф аккаунта включает
+    # только mac_mini_m2 (уже используется ios-unsigned), Linux-минуты не
+    # куплены отдельно. На Mac-образах Codemagic Android SDK/JDK/Gradle
+    # тоже предустановлены (иначе не собрать Android рядом с iOS на одной
+    # машине), так что сборка технически идентична, просто чуть дороже по
+    # минутам, чем Linux был бы.
+    instance_type: mac_mini_m2
     environment:
       node: 22.3.0
     scripts:
