@@ -1,4 +1,3 @@
-import { allohaDispatcher } from '@/lib/net/allohaProxy';
 import type { OwnPlayerTranslation } from '@/lib/extract/types';
 
 /**
@@ -13,13 +12,18 @@ import type { OwnPlayerTranslation } from '@/lib/extract/types';
  *     Videoseed — у их плеера нет postMessage с точным временем.
  *  2. Наше извлечение через VPS Puppeteer (ownPlayerTranslations) —
  *     озвучка в списке «Наш плеер», точный трекинг позиции (нативный
- *     <video>), но качество — то, что подхватил экстрактор при клике +
- *     ожидании: обычно НЕ максимальное (см. vps-extractor/src/alloha.js —
- *     их плеер сам выбирает "auto"-качество при подключении, через
- *     RU-прокси часто занижает его из-за пропускной способности моста).
+ *     <video>), качество форсируется на максимум самим экстрактором (см.
+ *     vps-extractor/src/alloha.js forceHighestQuality).
  *
- * Гео-заблокирована — без RU-прокси (см. lib/net/allohaProxy.ts) даже сам
- * API-запрос с валидным токеном не проходит.
+ * Гео-заблокирована по API-эндпоинту Alloha (без валидного российского IP
+ * запрос с токеном не проходит) — раньше это требовало RU-прокси
+ * (lib/net/allohaProxy.ts, удалён 2026-08-30), но с переездом сайта на
+ * self-host сама VPS уже российская (проверено вживую: прямой curl на
+ * api.alloha.tv с VPS отдаёт success без всякого прокси) — прокси стал не
+ * нужен ни здесь, ни в vps-extractor (тот же вывод для /bnsi/, см.
+ * ARCHITECTURE.md §12.6). Если сайт когда-нибудь снова переедет на
+ * инфраструктуру с не-российским IP (как раньше был Vercel) — понадобится
+ * восстановить прокси на обоих концах.
  *
  * "ONLY FOR PERSONAL USE" — токены создаются самостоятельно, несколько
  * штук про запас (не все могут быть активны сразу), поэтому пробуем по
@@ -52,8 +56,6 @@ async function fetchWithToken(kinopoiskId: number, token: string): Promise<Alloh
     const res = await fetch(`${ALLOHA_API}?token=${token}&kp=${kinopoiskId}`, {
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(ALLOHA_TIMEOUT_MS),
-      // @ts-expect-error -- dispatcher — опция undici, не входит в типы lib.dom fetch.
-      dispatcher: allohaDispatcher(),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as AllohaResponse;
