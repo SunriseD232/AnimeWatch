@@ -979,7 +979,17 @@ export default function OwnPlayer({
       clearGapWatchdog();
       gapWatchdogTimer = setTimeout(() => {
         gapWatchdogTimer = null;
-        if (video.readyState >= 3 || video.paused) return;
+        // Не встревать поверх ещё идущего сика к сохранённой позиции
+        // (seekPending/applyResumeSeek выше) — сеть при возобновлении на
+        // середине HLS-потока тоже стреляет 'waiting', пока hls.js
+        // догружает нужный (небуферизованный) кусок. Без этой проверки
+        // этот watchdog мог сработать РАНЬШЕ seekWatchdogTimer и перекинуть
+        // currentTime на какой-то ДРУГОЙ уже буферизованный участок (например,
+        // на начальный прогрев с нуля, который hls.js успел скачать ДО того,
+        // как стала известна цель резюма) — воспроизведение стартовало не
+        // с той позиции, что сохранил пользователь, а с произвольной точки
+        // в пределах 20с от неё, без всякой видимой ошибки.
+        if (seekPending || video.readyState >= 3 || video.paused) return;
         const b = video.buffered;
         const t = video.currentTime;
         for (let i = 0; i < b.length; i++) {
