@@ -816,6 +816,24 @@ export default function OwnPlayer({
     // успел загрузиться). attemptPlay ждёт seekPending, чтобы не запускать
     // play() поверх ещё не завершённой перемотки.
     let seekPending = false;
+    // Сик на сохранённую позицию иногда не долетает до события 'seeked'
+    // ВООБЩЕ — не «пара секунд метаний readyState», как в комментарии у
+    // attemptPlay ниже, а зависание навсегда: video.seeking остаётся true
+    // бесконечно, hls.js при этом исправно продолжает догружать сегменты
+    // вперёд (десятки запросов подряд), а attemptPlay() ниже видит
+    // seekPending=true и не трогает play() — тупик, воспроизведено вживую
+    // (см. /cinema/watch/988784/1/6 — readyState застрял на 1 при уже
+    // буферизованных вокруг currentTime данных, .play() руками сразу же
+    // всё разблокировал). Watchdog — тот же приём, что и gapWatchdogTimer
+    // у onWaiting чуть ниже: не ждём 'seeked' бесконечно, через 4с
+    // принудительно снимаем seekPending и пробуем играть сами.
+    let seekWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearSeekWatchdog = () => {
+      if (seekWatchdogTimer) {
+        clearTimeout(seekWatchdogTimer);
+        seekWatchdogTimer = null;
+      }
+    };
     const applyResumeSeek = () => {
       const target = seekTargetRef.current;
       if (target == null || target <= 1) return;
@@ -835,6 +853,14 @@ export default function OwnPlayer({
         seekPending = true;
         setSeeking(true);
         video.currentTime = clamped;
+        clearSeekWatchdog();
+        seekWatchdogTimer = setTimeout(() => {
+          seekWatchdogTimer = null;
+          if (!seekPending) return;
+          seekPending = false;
+          setSeeking(false);
+          attemptPlay();
+        }, 4_000);
       }
     };
     // Запускаем воспроизведение сами (вместо атрибута autoPlay на <video>,
@@ -976,6 +1002,7 @@ export default function OwnPlayer({
     // уже проверяет playingRef/userPausedRef — если видео и так играет или
     // пользователь сам поставил паузу, это просто no-op.
     const onSeeked = () => {
+      clearSeekWatchdog();
       seekPending = false;
       setSeeking(false);
       attemptPlay();
@@ -1006,6 +1033,7 @@ export default function OwnPlayer({
       video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('error', onError);
       clearGapWatchdog();
+      clearSeekWatchdog();
     };
   }, [save, onEnded, loadState]);
 
