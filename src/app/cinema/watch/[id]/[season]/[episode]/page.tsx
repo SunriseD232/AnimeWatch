@@ -3,6 +3,7 @@ import Player from '@/components/Player';
 import { getCinemaById } from '@/lib/videoseed-catalog';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import { getVibixEmbed } from '@/lib/video/vibix';
+import { getTmdbSeriesOngoing } from '@/lib/tmdb';
 import { resolveCinemaEpisodeSources } from '@/lib/watch/resolveCinemaEpisode';
 import type { WatchProgress } from '@/lib/types';
 
@@ -82,7 +83,7 @@ export default async function CinemaWatchPage({
   // Vibix — заголовок-уровня (один и тот же embed на весь тайтл, серию/сезон
   // передаём прямо в его iframe-SDK, см. VibixPlayer.tsx) — не часть общего
   // резолвера серии (resolveCinemaEpisodeSources), т.к. не завязан на неё.
-  const [vibixEmbed, sources] = await Promise.all([
+  const [vibixEmbed, sources, ongoing] = await Promise.all([
     getVibixEmbed(kinopoiskId),
     resolveCinemaEpisodeSources({
       kinopoiskId,
@@ -92,6 +93,11 @@ export default async function CinemaWatchPage({
       translationId: initialTranslationId,
       resumeFrom,
     }),
+    // Только сериалы — у фильмов «ещё выходит» не бывает (см. isOngoing в
+    // Player.tsx). Тот же вызов и тот же безопасный дефолт при неизвестном
+    // статусе (не скрывать/не завершать), что уже применяется для карточки
+    // «Продолжить просмотр» в cinema/page.tsx.
+    item.isSerial && item.idImdb ? getTmdbSeriesOngoing(item.idImdb) : Promise.resolve(null),
   ]);
 
   // Число серий в текущем сезоне (для «Серия X из Y»).
@@ -125,6 +131,7 @@ export default async function CinemaWatchPage({
       otherEpisode={otherEpisode}
       fallback={sources.kodikFallback}
       isAuthed={!!user}
+      isOngoing={ongoing === true}
     />
   );
 }

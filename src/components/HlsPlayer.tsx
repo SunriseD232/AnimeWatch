@@ -122,6 +122,27 @@ export default function HlsPlayer({
       if (Hls.isSupported()) {
         const hls = new Hls({ enableWorker: true });
         hlsRef.current = hls;
+        // Без этого фатальная ошибка hls.js (протухшая ссылка на сегмент,
+        // сетевой сбой) молча вешала плеер намертво — буфер доигрывался до
+        // конца, дальше ничего не менялось. Тот же приём, что уже есть в
+        // OwnPlayer.tsx: network — startLoad() с ограничением на подряд
+        // идущие попытки (не зацикливаться, если апстрим реально недоступен),
+        // media — recoverMediaError().
+        let networkErrorRetries = 0;
+        hls.on(Hls.Events.ERROR, (_evt, data) => {
+          if (cancelled || !data.fatal) return;
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              networkErrorRetries += 1;
+              if (networkErrorRetries <= 2) hls.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              hls.recoverMediaError();
+              break;
+            default:
+              break;
+          }
+        });
         hls.loadSource(currentSrc);
         hls.attachMedia(video);
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {

@@ -464,7 +464,13 @@ export default function OwnPlayer({
   // только в ветке loadState==='ready', см. ниже), применяем к самому
   // элементу отдельным эффектом ниже, когда он реально появится в DOM.
   useEffect(() => {
-    const stored = Number(window.localStorage.getItem(VOLUME_KEY));
+    // Проверяем строку ДО Number() — Number(null) === 0, неотличимо от
+    // реально сохранённого 0 (полностью приглушённая громкость), из-за
+    // чего у любого нового посетителя (ключ ещё не записан) плеер стартовал
+    // молча вместо дефолтных volume=1/muted=false.
+    const raw = window.localStorage.getItem(VOLUME_KEY);
+    if (raw === null) return;
+    const stored = Number(raw);
     if (Number.isFinite(stored) && stored >= 0 && stored <= 1) {
       setVolume(stored);
       setMuted(stored === 0);

@@ -50,12 +50,24 @@ interface Args {
  * вызовам с одинаковым ключом — как удачным (нашли в кэше), так и идущим в
  * реальное извлечение.
  *
- * Сигнал отмены НЕ прокидывается сюда специально: если он подписан у
- * оригинального (первого) вызова через extractViaVps, оборвать извлечение
- * должен только он сам, пока не появилось конкурентов на тот же ключ — общую
- * работу, которую уже ждут другие вызовы, отменять нельзя.
+ * joined — раньше здесь был только комментарий о намерении ("отменить может
+ * только оригинальный вызов, пока не появились конкуренты"), без реального
+ * применения: signal самого первого вызова передавался в extractViaVps как
+ * есть, и его отмена (например, первый клиент ушёл со страницы) обрывала
+ * ОБЩЕЕ извлечение для всех, кто успел коалесцироваться на этот же ключ,
+ * хотя их собственные запросы не отменялись. Теперь извлечение всегда идёт
+ * через свой internal AbortController: пока joined=false (мы всё ещё
+ * единственный интересант), abort исходного signal пробрасывается в него как
+ * раньше; как только кто-то коалесцировался (joined=true), дальнейшие abort
+ * этого signal уже игнорируются — общая работа, которую уже ждут другие
+ * вызовы, не отменяется.
  */
-const inFlightResolutions = new Map<string, Promise<ResolvedStream | null>>();
+interface InFlight {
+  promise: Promise<ResolvedStream | null>;
+  joined: boolean;
+}
+
+const inFlightResolutions = new Map<string, InFlight>();
 
 function resolutionKey(args: Args): string {
   const translationSlot = args.translationId ?? 0;
@@ -73,13 +85,28 @@ function resolutionKey(args: Args): string {
 export async function resolveStream(args: Args): Promise<ResolvedStream | null> {
   const key = resolutionKey(args);
   const existing = inFlightResolutions.get(key);
-  if (existing) return existing;
+  if (existing) {
+    existing.joined = true;
+    return existing.promise;
+  }
 
-  const promise = resolveStreamUncoalesced(args).finally(() => {
+  const controller = new AbortController();
+  const entry: InFlight = { joined: false, promise: Promise.resolve(null) };
+  if (args.signal) {
+    if (args.signal.aborted) {
+      controller.abort();
+    } else {
+      args.signal.addEventListener('abort', () => {
+        if (!entry.joined) controller.abort();
+      });
+    }
+  }
+
+  entry.promise = resolveStreamUncoalesced({ ...args, signal: controller.signal }).finally(() => {
     inFlightResolutions.delete(key);
   });
-  inFlightResolutions.set(key, promise);
-  return promise;
+  inFlightResolutions.set(key, entry);
+  return entry.promise;
 }
 
 async function resolveStreamUncoalesced({

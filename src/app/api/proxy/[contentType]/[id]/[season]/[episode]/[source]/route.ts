@@ -65,13 +65,10 @@ function pickDashUrl(
  *  на HEAD-пробе (OwnPlayer.tsx), чтобы построить селектор качества для DASH
  *  без ABR-уровней hls.js (см. rewriteDashManifest — тут одно качество на
  *  манифест, не один multi-variant master). */
-async function respondDash(
-  range: string | null,
-  url: string,
-  headers: Record<string, string>,
+function withDashQualities(
+  proxied: Response,
   qualities: { height: number; url: string }[] | undefined,
-): Promise<Response> {
-  const proxied = await fetchAndProxy(range, url, headers);
+): Response {
   if (!qualities || qualities.length === 0) return proxied;
   const respHeaders = new Headers(proxied.headers);
   respHeaders.set('X-Video-Qualities', qualities.map((q) => q.height).join(','));
@@ -165,7 +162,19 @@ async function handleGet(
     const qRaw = request.nextUrl.searchParams.get('q');
     const qHeight = qRaw != null && Number.isFinite(Number(qRaw)) ? Number(qRaw) : undefined;
     const dashUrl = pickDashUrl(resolved, qHeight);
-    return respondDash(range, dashUrl, resolved.headers, resolved.qualities);
+    const dashProxied = await fetchAndProxy(range, dashUrl, resolved.headers);
+    if (dashProxied.status !== 404) return withDashQualities(dashProxied, resolved.qualities);
+
+    // Та же логика самолечения, что и у остального ниже (см. комментарий у
+    // forceFresh) — раньше эта ветка возвращалась ДО общего ретрая, и
+    // протухший (раньше 15-минутного TTL resolved_streams) подписанный .mpd
+    // Aksor просто падал с 404 без попытки переизвлечь.
+    await dashProxied.body?.cancel().catch(() => {});
+    const freshDash = await resolveStream({ ...resolveArgs, forceFresh: true });
+    if (!freshDash) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+    const freshDashUrl = pickDashUrl(freshDash, qHeight);
+    const retriedDash = await fetchAndProxy(range, freshDashUrl, freshDash.headers);
+    return withDashQualities(retriedDash, freshDash.qualities);
   }
 
   const proxied = await fetchAndProxy(range, resolved.url, resolved.headers);

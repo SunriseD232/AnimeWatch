@@ -32,7 +32,15 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const ALLOWED_SOURCES = new Set<ExtractSource>(['alloha', 'videoseed', 'sibnet', 'kodik', 'cvh', 'aksor']);
+const ALLOWED_SOURCES = new Set<ExtractSource>([
+  'alloha',
+  'videoseed',
+  'sibnet',
+  'kodik',
+  'cvh',
+  'aksor',
+  'realdebrid',
+]);
 
 interface RouteParams {
   contentType: string;
@@ -80,7 +88,15 @@ export async function GET(request: NextRequest, { params }: { params: RouteParam
   const translationId = tRaw != null && Number.isFinite(Number(tRaw)) ? Number(tRaw) : undefined;
 
   try {
-    const resolved = await resolveStream({ contentType, shikimoriId, season, episode, source, translationId });
+    // Real-Debrid намеренно НЕ резолвим здесь — для него resolveStream
+    // запускает полноценный подбор торрента (см. realdebridResolve.ts),
+    // дорогую операцию с реальными сторонними запросами, которая тут не
+    // нужна вообще: своих субтитров у Real-Debrid нет, только внешний
+    // OpenSubtitles-фолбэк ниже, который на source никак не завязан.
+    const resolved =
+      source === 'realdebrid'
+        ? null
+        : await resolveStream({ contentType, shikimoriId, season, episode, source, translationId });
 
     // Реальный домен Videoseed наружу не отдаём — те же подписанные
     // /api/proxy/raw ссылки, что и для сегментов (см. lib/extract/proxy.ts).

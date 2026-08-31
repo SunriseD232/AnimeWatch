@@ -70,6 +70,13 @@ interface Props {
   otherEpisode: number | null;
   fallback: boolean;
   isAuthed: boolean;
+  /** Сериал ещё выходит (см. getTmdbSeriesOngoing в lib/tmdb.ts — у Videoseed
+   *  своего статуса нет). false для фильмов и для сериалов без известного
+   *  статуса — тот же безопасный дефолт, что уже применяется в cinema/page.tsx
+   *  для карточки «Продолжить просмотр». Без этого onEpisodeEnded ниже не
+   *  может отличить «досмотрел до последней вышедшей серии» от «сериал
+   *  закончился насовсем» и помечал тайтл completed в обоих случаях. */
+  isOngoing: boolean;
 }
 
 const SAVE_INTERVAL_MS = 10_000;
@@ -165,6 +172,7 @@ export default function Player({
   otherEpisode,
   fallback: initialFallback,
   isAuthed,
+  isOngoing,
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
@@ -211,10 +219,18 @@ export default function Player({
   const hasVideoseed = videoseedUrl !== null;
   const hasAlloha = allohaUrl !== null;
   const hasOwnPlayer = ownPlayerTranslations.length > 0;
+  // Только для выбора плеера ПО УМОЛЧАНИЮ: сентинел Real-Debrid (id: -1)
+  // добавляется в ownPlayerTranslations безусловно (см. resolveCinemaEpisode.ts/
+  // resolveAnimeEpisode.ts), поэтому hasOwnPlayer сам по себе всегда true — не
+  // годится как признак "здесь реально есть что показать". Без этого различия
+  // тайтл, для которого Kodik/Videoseed/Alloha не резолвнули НИЧЕГО, всё равно
+  // по умолчанию открывался на «Наш плеер» с одним нерабочим без доступного
+  // торрента Real-Debrid вместо честного фолбэка на Kodik/Videoseed/Alloha.
+  const hasRealOwnPlayer = ownPlayerTranslations.some((t) => t.id !== -1);
   const [player, setPlayer] = useState<PlayerKind>(
     hasVibix
       ? 'vibix'
-      : hasOwnPlayer
+      : hasRealOwnPlayer
         ? 'own'
         : hasVideoseed
           ? 'videoseed'
@@ -253,6 +269,12 @@ export default function Player({
   // Ожидающее восстановление позиции в Vibix (команда seek после готовности).
   const vibixSeekRef = useRef<number | null>(resumeFrom);
   const translationRef = useRef<number | null>(initialTranslationId);
+  // Счётчик-последовательность для switchEpisode — быстрый повторный вызов
+  // (двойной клик «След.», либо ручной клик, обогнавший таймер автоперехода)
+  // запускает второй fetch поверх ещё не завершившегося первого; без этой
+  // проверки более старый ответ, пришедший ПОСЛЕ нового (сетевой джиттер),
+  // тихо перезаписывал уже применённое состояние новой серии.
+  const switchSeqRef = useRef(0);
   translationRef.current = translationId;
   const activeSeasonRef = useRef(activeSeason);
   activeSeasonRef.current = activeSeason;
@@ -487,7 +509,7 @@ export default function Player({
           season: finishedSeason,
           episode: finishedEpisode,
           watched_episode: true,
-          completed: step === null,
+          completed: step === null && !isOngoing,
         }),
         keepalive: true,
       }).catch(() => {});
@@ -523,6 +545,7 @@ export default function Player({
     }
   }, [
     isAuthed,
+    isOngoing,
     seasonsList,
     contentType,
     shikimoriId,
@@ -758,6 +781,11 @@ export default function Player({
     async (target: StepTarget, pushHistory = true) => {
       saveProgress(true);
 
+      // Захватываем номер ЭТОГО вызова — если к моменту ответа сюда же
+      // придёт более новый вызов (двойной клик/гонка с автопереходом), его
+      // seq уйдёт вперёд, и этот более старый ответ ниже себя не применит.
+      const seq = ++switchSeqRef.current;
+
       setSwitchingEpisode(true);
       setShowOtherBanner(false);
       setEnded(false);
@@ -783,6 +811,7 @@ export default function Player({
         );
         if (!res.ok) throw new Error('bad response');
         const data = (await res.json()) as EpisodeSourcesResponse;
+        if (switchSeqRef.current !== seq) return; // обогнали более новым вызовом — не применяем
 
         setEmbedUrl(data.kodikEmbedUrl);
         setTranslations(data.kodikTranslations);
@@ -800,10 +829,11 @@ export default function Player({
         }
         document.title = `${animeTitle} — MediaWatch`;
       } catch {
+        if (switchSeqRef.current !== seq) return; // тот же случай — уже неактуально
         toast('Не удалось переключить серию, открываю страницу заново', 'error');
         router.push(linkForTarget(watchBase, shikimoriId, target));
       } finally {
-        setSwitchingEpisode(false);
+        if (switchSeqRef.current === seq) setSwitchingEpisode(false);
       }
     },
     [saveProgress, isSerial, shikimoriId, watchBase, animeTitle, toast, router],

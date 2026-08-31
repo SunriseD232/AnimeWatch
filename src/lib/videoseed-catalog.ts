@@ -615,7 +615,18 @@ export async function getVideoseedOwnPlayerTranslations(
   season: number,
   episode: number,
 ): Promise<OwnPlayerTranslation[]> {
-  const items = await vsFetch({ item: 'search', kp: String(kinopoiskId) }, 600);
+  // vsFetch бросает на не-2xx, на status!=='success' и на собственном
+  // таймауте (см. её же комментарий про зависания Videoseed) — в отличие от
+  // соседей (getKodikOwnPlayerTranslations, getAllohaSources), этот вызов
+  // раньше ничем не был обёрнут и падал сквозь Promise.all в
+  // resolveCinemaEpisodeSources, роняя всю страницу серии транзиентной
+  // ошибкой одного источника вместо деградации до пустого списка.
+  let items: Awaited<ReturnType<typeof vsFetch>>;
+  try {
+    items = await vsFetch({ item: 'search', kp: String(kinopoiskId) }, 600);
+  } catch {
+    return [];
+  }
   const base = items[0];
   if (!base?.translation_iframe) return [];
 

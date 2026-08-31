@@ -23,7 +23,11 @@ interface RouteParams {
   segment: string[];
 }
 
-async function handleGet(request: NextRequest, { params }: { params: RouteParams }): Promise<Response> {
+async function handleGet(
+  request: NextRequest,
+  { params }: { params: RouteParams },
+  isHeadProbe: boolean,
+): Promise<Response> {
   const resolved = verifyDashBaseToken(params.token);
   if (!resolved) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
@@ -38,13 +42,19 @@ async function handleGet(request: NextRequest, { params }: { params: RouteParams
   }
 
   const url = resolved.baseDirUrl + segment.map((s) => decodeURIComponent(s)).join('/');
-  const range = request.headers.get('range');
+  let range = request.headers.get('range');
+  // Тот же приём, что в /api/proxy/raw/route.ts и /api/proxy/.../[source]/
+  // route.ts — HEAD без Range иначе тянет сегмент целиком через relay только
+  // чтобы отбросить тело (см. их комментарии: живой инцидент на 300МБ файле).
+  if (isHeadProbe && !range) {
+    range = 'bytes=0-0';
+  }
   return fetchAndProxy(range, url, resolved.headers);
 }
 
 export async function GET(request: NextRequest, ctx: { params: RouteParams }) {
   try {
-    return await handleGet(request, ctx);
+    return await handleGet(request, ctx, false);
   } catch (err) {
     console.error('[proxy/dash-seg] Необработанная ошибка:', err);
     const message = err instanceof Error ? err.message : String(err);
@@ -54,7 +64,7 @@ export async function GET(request: NextRequest, ctx: { params: RouteParams }) {
 
 export async function HEAD(request: NextRequest, ctx: { params: RouteParams }) {
   try {
-    const res = await handleGet(request, ctx);
+    const res = await handleGet(request, ctx, true);
     // .cancel() зависал намертво на relay-цепочке в других роутах этого же
     // проекта — на всякий случай дочитываем так же, тело сегмента маленькое.
     await res.arrayBuffer().catch(() => {});
