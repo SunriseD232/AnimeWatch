@@ -16,6 +16,7 @@ import type { OwnPlayerTranslation } from '@/lib/extract/types';
 import type { SeasonInfo } from '@/lib/videoseed-catalog';
 import type { ContentType, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
+import { logEvent } from '@/lib/clientLog';
 import { useVideoseedEstimator } from '@/hooks/useVideoseedEstimator';
 import VibixPlayer from '@/components/VibixPlayer';
 import { usePipPlayerHost } from '@/components/pip/PipPlayerHost';
@@ -349,12 +350,16 @@ export default function Player({
   }, [hasVideoseed, hasVibix, hasAlloha, hasOwnPlayer]);
 
   // Переключение плеера с сохранением выбора.
-  const switchPlayer = useCallback((next: PlayerKind) => {
-    setPlayer(next);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(PLAYER_PREF_KEY, next);
-    }
-  }, []);
+  const switchPlayer = useCallback(
+    (next: PlayerKind) => {
+      logEvent('cinema.switch_player', { shikimoriId, season: activeSeason, episode: activeEpisode, from: player, to: next });
+      setPlayer(next);
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(PLAYER_PREF_KEY, next);
+      }
+    },
+    [shikimoriId, activeSeason, activeEpisode, player],
+  );
 
   const next = computeStep(seasonsList, activeSeason, activeEpisode, 1);
   const prev = computeStep(seasonsList, activeSeason, activeEpisode, -1);
@@ -494,6 +499,14 @@ export default function Player({
     const finishedSeason = activeSeasonRef.current;
     const finishedEpisode = activeEpisodeRef.current;
     const step = computeStep(seasonsList, finishedSeason, finishedEpisode, 1);
+    logEvent('cinema.episode_ended', {
+      shikimoriId,
+      season: finishedSeason,
+      episode: finishedEpisode,
+      hasNext: step !== null,
+      isOngoing,
+      markedCompleted: step === null && !isOngoing,
+    });
 
     if (isAuthed) {
       // Серия досмотрена — для подсветки в сетке; если это была последняя,
@@ -785,6 +798,13 @@ export default function Player({
       // придёт более новый вызов (двойной клик/гонка с автопереходом), его
       // seq уйдёт вперёд, и этот более старый ответ ниже себя не применит.
       const seq = ++switchSeqRef.current;
+      logEvent('cinema.switch_episode_start', {
+        shikimoriId,
+        fromSeason: activeSeasonRef.current,
+        fromEpisode: activeEpisodeRef.current,
+        toSeason: target.season,
+        toEpisode: target.episode,
+      });
 
       setSwitchingEpisode(true);
       setShowOtherBanner(false);
@@ -828,8 +848,15 @@ export default function Player({
           window.history.pushState(null, '', linkForTarget(watchBase, shikimoriId, target));
         }
         document.title = `${animeTitle} — MediaWatch`;
-      } catch {
+        logEvent('cinema.switch_episode_ok', { shikimoriId, season: target.season, episode: target.episode });
+      } catch (err) {
         if (switchSeqRef.current !== seq) return; // тот же случай — уже неактуально
+        logEvent('cinema.switch_episode_failed', {
+          shikimoriId,
+          season: target.season,
+          episode: target.episode,
+          message: err instanceof Error ? err.message : String(err),
+        });
         toast('Не удалось переключить серию, открываю страницу заново', 'error');
         router.push(linkForTarget(watchBase, shikimoriId, target));
       } finally {

@@ -624,7 +624,11 @@ export async function getVideoseedOwnPlayerTranslations(
   let items: Awaited<ReturnType<typeof vsFetch>>;
   try {
     items = await vsFetch({ item: 'search', kp: String(kinopoiskId) }, 600);
-  } catch {
+  } catch (err) {
+    console.error(
+      `[videoseed] getVideoseedOwnPlayerTranslations kp=${kinopoiskId} упал:`,
+      err instanceof Error ? err.message : err,
+    );
     return [];
   }
   const base = items[0];

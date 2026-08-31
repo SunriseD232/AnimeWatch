@@ -25,6 +25,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, reason: 'anon' }, { status: 200 });
   }
 
+  const logTag = `[progress] user=${user.id}`;
+
   const shikimoriId = Number(body.shikimori_id);
   const episode = Number(body.episode);
   // Сезон опционален: аниме/фильмы шлют 1 (или вовсе не шлют).
@@ -67,8 +69,10 @@ export async function POST(request: NextRequest) {
         },
       );
       if (error) {
+        console.error(`${logTag} watched_episode upsert failed: ${error.message}`);
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
+      console.log(`${logTag} watched_episode content=${contentType} id=${shikimoriId} s=${season} e=${episode}`);
     }
     if (body.completed === true) {
       const { error } = await supabase.from('user_list').upsert(
@@ -83,8 +87,10 @@ export async function POST(request: NextRequest) {
         { onConflict: 'user_id,content_type,shikimori_id' },
       );
       if (error) {
+        console.error(`${logTag} completed upsert failed: ${error.message}`);
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
+      console.log(`${logTag} completed content=${contentType} id=${shikimoriId}`);
     }
     return NextResponse.json({ ok: true });
   }
@@ -125,8 +131,10 @@ export async function POST(request: NextRequest) {
       { onConflict: 'user_id,content_type,shikimori_id' },
     );
     if (markError) {
+      console.error(`${logTag} mark upsert failed: ${markError.message}`);
       return NextResponse.json({ error: markError.message }, { status: 500 });
     }
+    console.log(`${logTag} mark content=${contentType} id=${shikimoriId} s=${season} e=${episode}`);
     return NextResponse.json({ ok: true, marked: true });
   }
 
@@ -158,6 +166,10 @@ export async function POST(request: NextRequest) {
   );
 
   if (error) {
+    // Обычное периодическое сохранение позиции (интервал, см.
+    // useProgressSaver) не логируем на успехе — слишком часто, чтобы нести
+    // диагностическую ценность построчно. Ошибка тут редкая и всегда важна.
+    console.error(`${logTag} position upsert failed: ${error.message}`);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
   return NextResponse.json({ ok: true });

@@ -330,7 +330,11 @@ export async function fetchAndProxy(
   let upstream: Response;
   try {
     upstream = await fetchUpstream(url, upstreamHeaders);
-  } catch {
+  } catch (err) {
+    console.error(
+      `[extract/proxy] fetchUpstream упал url=${url}:`,
+      err instanceof Error ? err.message : err,
+    );
     return new Response(JSON.stringify({ error: 'upstream_unreachable' }), {
       status: 502,
       headers: { 'Content-Type': 'application/json' },

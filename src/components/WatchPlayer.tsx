@@ -20,6 +20,7 @@ import type { YummyTranslation } from '@/lib/video/yummy';
 import type { OwnPlayerTranslation } from '@/lib/extract/types';
 import type { ContentType, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
+import { logEvent } from '@/lib/clientLog';
 import { usePipPlayerHost } from '@/components/pip/PipPlayerHost';
 
 interface SkipSegment {
@@ -307,6 +308,13 @@ export default function WatchPlayer({
     setEnded(true);
     const finishedEpisode = activeEpisode;
     const nextEpisode = hasNext ? finishedEpisode + 1 : null;
+    logEvent('anime.episode_ended', {
+      shikimoriId,
+      episode: finishedEpisode,
+      hasNext,
+      isOngoing,
+      markedCompleted: nextEpisode === null && !isOngoing,
+    });
 
     if (isAuthed) {
       // Серия досмотрена; тайтл — в «Просмотрено», только если это
@@ -435,6 +443,11 @@ export default function WatchPlayer({
   // несколько секунд, не хуже текущего поведения.
   const switchEpisode = useCallback(
     async (targetEpisode: number, pushHistory = true) => {
+      logEvent('anime.switch_episode_start', {
+        shikimoriId,
+        fromEpisode: activeEpisodeRef.current,
+        toEpisode: targetEpisode,
+      });
       setSwitchingEpisode(true);
       setShowOtherBanner(false);
       setEnded(false);
@@ -474,7 +487,13 @@ export default function WatchPlayer({
           window.history.pushState(null, '', `${watchBase}/${shikimoriId}/${targetEpisode}`);
         }
         document.title = `${animeTitle} — MediaWatch`;
-      } catch {
+        logEvent('anime.switch_episode_ok', { shikimoriId, episode: targetEpisode });
+      } catch (err) {
+        logEvent('anime.switch_episode_failed', {
+          shikimoriId,
+          episode: targetEpisode,
+          message: err instanceof Error ? err.message : String(err),
+        });
         toast('Не удалось переключить серию, открываю страницу заново', 'error');
         router.push(`${watchBase}/${shikimoriId}/${targetEpisode}`);
       } finally {

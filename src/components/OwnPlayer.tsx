@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { useProgressSaver } from '@/hooks/useProgressSaver';
+import { logEvent } from '@/lib/clientLog';
 import { formatTime } from '@/lib/format';
 import type { ContentType } from '@/lib/types';
 import type { ExtractSource, Subtitle } from '@/lib/extract/types';
@@ -583,11 +584,27 @@ export default function OwnPlayer({
         dashQualitiesRef.current = res.headers.get('x-video-qualities');
         if (!res.ok) {
           if (cancelled) return;
+          logEvent('player.probe_failed', {
+            source: effectiveSource,
+            shikimoriId,
+            season,
+            episode,
+            status: res.status,
+          });
           setLoadState(res.status === 404 ? 'unavailable' : 'failed');
           return;
         }
-      } catch {
-        if (!cancelled) setLoadState('failed');
+      } catch (err) {
+        if (!cancelled) {
+          logEvent('player.probe_error', {
+            source: effectiveSource,
+            shikimoriId,
+            season,
+            episode,
+            message: err instanceof Error ? err.message : String(err),
+          });
+          setLoadState('failed');
+        }
         return;
       }
       if (cancelled || !ok) return;
@@ -689,6 +706,15 @@ export default function OwnPlayer({
           // смену серии и возврат обратно — то же самое делает retry() ниже.
           hls.on(Hls.Events.ERROR, (_evt, data) => {
             if (cancelled || !data.fatal) return;
+            logEvent('player.hls_fatal_error', {
+              source: effectiveSource,
+              shikimoriId,
+              season,
+              episode,
+              errorType: data.type,
+              details: data.details,
+              recoveryAttempt: hlsErrorRecoveryRef.current,
+            });
             switch (data.type) {
               case Hls.ErrorTypes.NETWORK_ERROR:
                 hlsErrorRecoveryRef.current += 1;
@@ -863,6 +889,13 @@ export default function OwnPlayer({
         seekWatchdogTimer = setTimeout(() => {
           seekWatchdogTimer = null;
           if (!seekPending) return;
+          logEvent('player.seek_watchdog_fired', {
+            source: effectiveSource,
+            shikimoriId,
+            season,
+            episode,
+            target: clamped,
+          });
           seekPending = false;
           setSeeking(false);
           attemptPlay();
@@ -995,6 +1028,14 @@ export default function OwnPlayer({
         for (let i = 0; i < b.length; i++) {
           const start = b.start(i);
           if (start > t && start - t < 20) {
+            logEvent('player.gap_watchdog_fired', {
+              source: effectiveSource,
+              shikimoriId,
+              season,
+              episode,
+              from: t,
+              to: start + 0.1,
+            });
             video.currentTime = start + 0.1;
             break;
           }
@@ -1023,7 +1064,17 @@ export default function OwnPlayer({
       setSeeking(false);
       attemptPlay();
     };
-    const onError = () => setLoadState('failed');
+    const onError = () => {
+      logEvent('player.video_element_error', {
+        source: effectiveSource,
+        shikimoriId,
+        season,
+        episode,
+        code: video.error?.code ?? null,
+        message: video.error?.message ?? null,
+      });
+      setLoadState('failed');
+    };
 
     video.addEventListener('loadedmetadata', onLoadedMetadata);
     video.addEventListener('play', onPlay);
@@ -1051,6 +1102,13 @@ export default function OwnPlayer({
       clearGapWatchdog();
       clearSeekWatchdog();
     };
+    // effectiveSource/episode/season/shikimoriId читаются только внутри
+    // logEvent(...) (диагностика, не влияет на поведение) — не добавляем в
+    // зависимости: loadState уже проксирует их актуальность (каждая смена
+    // источника проходит через probing→ready, пересоздавая этот эффект), а
+    // включение их напрямую заставляло бы пересоздавать все обработчики
+    // <video> при каждом чихе, а не только при реальной смене источника.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [save, onEnded, loadState]);
 
   // --- Фуллскрин --------------------------------------------------------------
@@ -1266,9 +1324,16 @@ export default function OwnPlayer({
   }, []);
 
   const retry = useCallback(() => {
+    logEvent('player.retry', {
+      source: effectiveSource,
+      shikimoriId,
+      season,
+      episode,
+      fromTime: currentTime,
+    });
     seekTargetRef.current = currentTime > 1 ? currentTime : resumeFrom;
     setReloadKey((k) => k + 1);
-  }, [currentTime, resumeFrom]);
+  }, [currentTime, resumeFrom, effectiveSource, shikimoriId, season, episode]);
   // retry() пересоздаётся на каждый тик currentTime (см. deps выше) — hls.js
   // ERROR-обработчик в эффекте подключения источника захватывает retry ОДИН
   // раз при коннекте и не видит более поздних версий, иначе после долгого
@@ -1287,9 +1352,17 @@ export default function OwnPlayer({
       // (см. коммент у объявления activeTranslationTitleRef выше).
       const picked = translations.find((t) => t.id === id);
       if (picked) activeTranslationTitleRef.current = picked.title;
+      logEvent('player.change_translation', {
+        shikimoriId,
+        season,
+        episode,
+        fromId: translationId,
+        toId: id,
+        toSource: picked?.source ?? null,
+      });
       setTranslationId(id);
     },
-    [currentTime, resumeFrom, translations],
+    [currentTime, resumeFrom, translations, shikimoriId, season, episode, translationId],
   );
 
   // --- Внешний выбор озвучки (новая полоска над плеером в Player.tsx/
@@ -1312,6 +1385,14 @@ export default function OwnPlayer({
   // src и без потери позиции (в отличие от смены серии/озвучки).
   const changeQuality = useCallback(
     (index: number) => {
+      logEvent('player.change_quality', {
+        source: effectiveSource,
+        shikimoriId,
+        season,
+        episode,
+        index,
+        height: qualityLevels[index]?.height ?? null,
+      });
       if (hlsRef.current) {
         hlsRef.current.currentLevel = index;
         setCurrentLevel(index);
@@ -1327,7 +1408,7 @@ export default function OwnPlayer({
       setDashQualityHeight(lvl.height);
       setCurrentLevel(index);
     },
-    [qualityLevels, currentTime, resumeFrom],
+    [qualityLevels, currentTime, resumeFrom, effectiveSource, shikimoriId, season, episode],
   );
 
   const changeSpeed = useCallback((rate: number) => {

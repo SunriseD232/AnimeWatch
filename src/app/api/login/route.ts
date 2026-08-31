@@ -44,11 +44,13 @@ export async function POST(request: NextRequest) {
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
+    console.log(`[login] failed email=${email} ip=${ip} reason=${error.message}`);
     return NextResponse.json(
       { error: error.message, remaining: rl.remaining },
       { status: 400 },
     );
   }
 
+  console.log(`[login] ok email=${email} ip=${ip}`);
   return NextResponse.json({ ok: true });
 }
