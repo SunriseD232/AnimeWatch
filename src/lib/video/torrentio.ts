@@ -77,7 +77,8 @@ async function fetchStreams(path: string): Promise<TorrentioStream[]> {
         if (aHuge !== bHuge) return aHuge ? 1 : -1;
         return b.seeders - a.seeders;
       });
-  } catch {
+  } catch (err) {
+    console.error(`[torrentio] fetchStreams path=${path} упал:`, err instanceof Error ? err.message : err);
     return [];
   }
 }

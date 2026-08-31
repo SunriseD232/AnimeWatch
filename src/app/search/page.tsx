@@ -28,7 +28,8 @@ async function AnimeResults({ query }: { query: string }) {
         ))}
       </div>
     );
-  } catch {
+  } catch (err) {
+    console.error(`[search] AnimeResults query=${query} упал:`, err instanceof Error ? err.message : err);
     return (
       <p className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
         Ошибка поиска. Попробуйте ещё раз.
@@ -57,7 +58,8 @@ async function CinemaResults({ query }: { query: string }) {
         ))}
       </div>
     );
-  } catch {
+  } catch (err) {
+    console.error(`[search] CinemaResults query=${query} упал:`, err instanceof Error ? err.message : err);
     return (
       <p className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
         Ошибка поиска. Попробуйте ещё раз.

@@ -44,7 +44,11 @@ export async function GET(request: NextRequest) {
           }));
 
     return NextResponse.json({ items });
-  } catch {
+  } catch (err) {
+    console.error(
+      `[search/suggest] q=${q} type=${type} упал:`,
+      err instanceof Error ? err.message : err,
+    );
     return NextResponse.json({ items: [] });
   }
 }

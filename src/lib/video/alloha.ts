@@ -60,7 +60,11 @@ async function fetchWithToken(kinopoiskId: number, token: string): Promise<Alloh
     if (!res.ok) return null;
     const data = (await res.json()) as AllohaResponse;
     return data.status === 'success' ? data : null;
-  } catch {
+  } catch (err) {
+    console.error(
+      `[alloha] fetchWithToken kp=${kinopoiskId} упал:`,
+      err instanceof Error ? err.message : err,
+    );
     return null;
   }
 }

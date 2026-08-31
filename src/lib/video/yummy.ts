@@ -101,7 +101,8 @@ async function yummyFetch<T>(path: string, revalidate: number): Promise<T | null
     });
     if (!res.ok) return null;
     return (await res.json()) as T;
-  } catch {
+  } catch (err) {
+    console.error(`[yummy] yummyFetch path=${path} упал:`, err instanceof Error ? err.message : err);
     return null;
   }
 }

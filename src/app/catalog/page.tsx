@@ -63,7 +63,8 @@ export default async function CatalogPage({
       pageSize: PAGE_SIZE,
       excludeAnons: !showAnons,
     });
-  } catch {
+  } catch (err) {
+    console.error('[catalog] getAnimeCatalog упал:', err instanceof Error ? err.message : err);
     return (
       <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
         Не удалось загрузить каталог Shikimori. Попробуйте обновить страницу

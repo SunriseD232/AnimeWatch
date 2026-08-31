@@ -149,6 +149,13 @@ export default function WatchPlayer({
   // Прогрели ли уже следующую серию «Наш плеер» — сброс на каждую новую
   // активную серию (см. эффект прогрева ниже).
   const prewarmedRef = useRef(false);
+  // Счётчик-последовательность для switchEpisode — тот же приём, что и в
+  // Player.tsx (кино): быстрый повторный вызов (двойной клик «След.»/
+  // автопереход) запускает второй fetch поверх ещё не завершившегося
+  // первого; без проверки более старый ответ, пришедший ПОСЛЕ нового
+  // (сетевой джиттер), тихо перезаписывал уже применённое состояние новой
+  // серии.
+  const switchSeqRef = useRef(0);
   // Озвучка, которую реально смотрит пользователь В «Наш плеер» (сообщает
   // сам OwnPlayer через onTranslationChange, см. ниже) — эффект прогрева
   // использует title, чтобы прогреть СЛЕДУЮЩУЮ серию под ТУ ЖЕ озвучку, а
@@ -443,6 +450,10 @@ export default function WatchPlayer({
   // несколько секунд, не хуже текущего поведения.
   const switchEpisode = useCallback(
     async (targetEpisode: number, pushHistory = true) => {
+      // Захватываем номер ЭТОГО вызова — если к моменту ответа сюда же
+      // придёт более новый вызов, его seq уйдёт вперёд, и этот более
+      // старый ответ ниже себя не применит.
+      const seq = ++switchSeqRef.current;
       logEvent('anime.switch_episode_start', {
         shikimoriId,
         fromEpisode: activeEpisodeRef.current,
@@ -472,6 +483,7 @@ export default function WatchPlayer({
         );
         if (!res.ok) throw new Error('bad response');
         const data = (await res.json()) as EpisodeSourcesResponse;
+        if (switchSeqRef.current !== seq) return; // обогнали более новым вызовом — не применяем
 
         setKodikEmbed(data.kodikEmbedUrl);
         setKodikTranslations(data.kodikTranslations);
@@ -489,6 +501,7 @@ export default function WatchPlayer({
         document.title = `${animeTitle} — MediaWatch`;
         logEvent('anime.switch_episode_ok', { shikimoriId, episode: targetEpisode });
       } catch (err) {
+        if (switchSeqRef.current !== seq) return; // тот же случай — уже неактуально
         logEvent('anime.switch_episode_failed', {
           shikimoriId,
           episode: targetEpisode,
@@ -497,7 +510,7 @@ export default function WatchPlayer({
         toast('Не удалось переключить серию, открываю страницу заново', 'error');
         router.push(`${watchBase}/${shikimoriId}/${targetEpisode}`);
       } finally {
-        setSwitchingEpisode(false);
+        if (switchSeqRef.current === seq) setSwitchingEpisode(false);
       }
     },
     [shikimoriId, kodikInitialTranslationId, watchBase, animeTitle, toast, router],

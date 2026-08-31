@@ -137,7 +137,11 @@ export async function resolveMagnetDirectUrl(
     if (!unrestricted.download) return null;
 
     return { url: unrestricted.download };
-  } catch {
+  } catch (err) {
+    console.error(
+      `[realdebrid] resolveMagnetDirectUrl infoHash=${infoHash} torrentId=${torrentId ?? 'n/a'} упал:`,
+      err instanceof Error ? err.message : err,
+    );
     return null;
   } finally {
     // Не держим торрент в аккаунте — ждём (не fire-and-forget): туннель не

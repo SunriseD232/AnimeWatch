@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import type { SearchSuggestion } from '@/app/api/search/suggest/route';
+import { logEvent } from '@/lib/clientLog';
 
 /**
  * Поисковый инпут с debounce 400 мс. Меняет URL /search?q=...
@@ -92,6 +93,7 @@ export default function SearchBox() {
         const trimmed = value.trim();
         if (trimmed) {
           setOpen(false);
+          logEvent('search.submit', { q: trimmed, type: isCinema ? 'cinema' : 'anime' });
           router.push(buildHref(trimmed));
         }
       }}
@@ -131,6 +133,12 @@ export default function SearchBox() {
             e.preventDefault();
             const s = suggestions[activeIndex];
             setOpen(false);
+            logEvent('search.suggestion_click', {
+              id: s.id,
+              contentType: s.contentType,
+              title: s.title,
+              via: 'keyboard',
+            });
             router.push(
               `/${s.contentType === 'cinema' ? 'cinema' : 'anime'}/${s.id}`,
             );
@@ -155,7 +163,15 @@ export default function SearchBox() {
             <li key={`${s.contentType}:${s.id}`} role="option" aria-selected={i === activeIndex}>
               <Link
                 href={`/${s.contentType === 'cinema' ? 'cinema' : 'anime'}/${s.id}`}
-                onClick={() => setOpen(false)}
+                onClick={() => {
+                  setOpen(false);
+                  logEvent('search.suggestion_click', {
+                    id: s.id,
+                    contentType: s.contentType,
+                    title: s.title,
+                    via: 'click',
+                  });
+                }}
                 className={[
                   'flex items-center gap-3 px-3 py-2 text-sm transition',
                   i === activeIndex ? 'bg-white/10' : 'hover:bg-white/5',

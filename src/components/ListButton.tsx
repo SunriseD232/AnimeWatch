@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
+import { logEvent } from '@/lib/clientLog';
 import type { ContentType, UserListStatus } from '@/lib/types';
 
 const STATUS_OPTIONS: { value: UserListStatus; label: string }[] = [
@@ -81,6 +82,7 @@ export default function ListButton({
         setStatus(null);
         setMuted(false);
         toast('Удалено из списка', 'success');
+        logEvent('list.removed', { contentType, shikimoriId });
       } else {
         const {
           data: { user },
@@ -100,9 +102,11 @@ export default function ListButton({
         if (error) throw error;
         setStatus(next);
         toast('Список обновлён', 'success');
+        logEvent('list.status_changed', { contentType, shikimoriId, from: status, to: next });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Ошибка';
+      logEvent('list.change_failed', { contentType, shikimoriId, to: next, message: msg });
       toast(msg, 'error');
     } finally {
       setSaving(false);
@@ -126,8 +130,10 @@ export default function ListButton({
         next ? 'Уведомления по тайтлу выключены' : 'Уведомления включены',
         'success',
       );
+      logEvent('list.mute_changed', { contentType, shikimoriId, muted: next });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Ошибка';
+      logEvent('list.mute_change_failed', { contentType, shikimoriId, message: msg });
       toast(msg, 'error');
     } finally {
       setSaving(false);

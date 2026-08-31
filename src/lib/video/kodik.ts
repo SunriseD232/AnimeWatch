@@ -103,8 +103,12 @@ export class KodikVideoSource implements VideoSource {
     if (this.token) {
       try {
         return await this.searchMode(params);
-      } catch {
+      } catch (err) {
         // Если API недоступен — деградируем до fallback.
+        console.error(
+          `[kodik] searchMode упал, деградирую до fallback:`,
+          err instanceof Error ? err.message : err,
+        );
         return this.fallbackMode(params);
       }
     }
@@ -217,7 +221,11 @@ export async function getKodikOwnPlayerTranslations(
   let data: KodikSearchResponse;
   try {
     data = await fetchKodikSearch(token, { kinopoiskId });
-  } catch {
+  } catch (err) {
+    console.error(
+      `[kodik] getKodikOwnPlayerTranslations kp=${kinopoiskId} упал:`,
+      err instanceof Error ? err.message : err,
+    );
     return [];
   }
   if (!data.results) return [];

@@ -65,7 +65,8 @@ export default async function CinemaCatalogPage({
       page,
       pageSize: PAGE_SIZE,
     });
-  } catch {
+  } catch (err) {
+    console.error('[cinema/catalog] getCinemaCatalog упал:', err instanceof Error ? err.message : err);
     return (
       <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
         Не удалось загрузить каталог Videoseed. Попробуйте обновить страницу
