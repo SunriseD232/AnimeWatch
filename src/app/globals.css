@@ -2,8 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Палитра по умолчанию. Значения — каналы RGB без rgb(), так требует
+   <alpha-value> в tailwind.config.ts (подробности — lib/theme.ts).
+   Пользовательская тема переопределяет эти же переменные инлайн на
+   <html> (components/ThemeScript.tsx), поэтому здесь именно дефолт для
+   неавторизованных и для тех, кто оформление не менял. */
 :root {
   color-scheme: dark;
+
+  /* Синий Apple для тёмного режима (#2997ff) + осветлённый hover (#47a9ff) */
+  --accent: 41 151 255;
+  --accent-hover: 71 169 255;
+
+  /* Истинно чёрный холст и уголь #1d1d1f для приподнятых поверхностей —
+     тот самый оттенок, что на apple.com в тёмных секциях. */
+  --bg: 0 0 0;
+  --bg-soft: 21 21 23;
+  --bg-card: 29 29 31;
 }
 
 html {
@@ -42,7 +57,7 @@ body {
   height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: #000000;
+  background: rgb(var(--bg));
 }
 ::-webkit-scrollbar-thumb {
   background: #2c2c2e;
@@ -82,7 +97,7 @@ body {
   transform: translateY(-4px);
   box-shadow:
     0 12px 32px -8px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(41, 151, 255, 0.25);
+    0 0 0 1px rgb(var(--accent) / 0.25);
 }
 
 /* Тонкий скроллбар для горизонтальных каруселей — прозрачный трек (без
@@ -113,7 +128,7 @@ body {
 /* Матовое стекло для панелей поверх контента (тулбар, меню, тосты) —
    в духе macOS/iOS vibrancy. */
 .glass {
-  background: rgba(29, 29, 31, 0.72);
+  background: rgb(var(--bg-card) / 0.72);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
 }

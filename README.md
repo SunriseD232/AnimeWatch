@@ -51,7 +51,7 @@ npm run dev                  # http://localhost:3000
 
 Откройте **SQL Editor** в Supabase и выполните файлы из
 [`supabase/migrations/`](supabase/migrations/) **по порядку номеров**
-(`0001_init.sql` … `0023_resolved_streams_all_sources.sql`) — одной первой миграции
+(`0001_init.sql` … `0024_user_theme.sql`) — одной первой миграции
 недостаточно, схема набиралась инкрементально.
 
 `0001_init.sql` создаёт таблицы `watch_progress` и `user_list`, включает RLS с
@@ -59,7 +59,7 @@ npm run dev                  # http://localhost:3000
 `watch_progress` в публикацию Realtime. Дальше добавляются
 `watched_episodes`, `episode_notifications`, `title_episode_baseline`,
 `system_notifications`, `resolved_streams`, `subtitle_cache`, `app_settings`,
-`api_response_cache`, `user_presence` и правки к ним.
+`api_response_cache`, `user_presence`, `user_theme` и правки к ним.
 
 > Через Supabase CLI: `supabase db push` (после `supabase link`).
 
@@ -170,6 +170,21 @@ bash scripts/deploy.sh
    публичная регистрация Supabase всё ещё доступна напрямую через anon key
    в обход кода приглашения — подробности в `ARCHITECTURE.md` §14.2.
 
+## Оформление
+
+Палитра задана CSS-переменными (`--accent`, `--bg`, `--bg-soft`, `--bg-card`)
+с дефолтами в [`globals.css`](src/app/globals.css); `tailwind.config.ts`
+ссылается на них, а не хранит цвета. По умолчанию — синий Apple `#2997ff` и
+чёрный холст.
+
+Пользователь меняет оформление в **профиле → «Оформление»**: акцент
+(произвольный HEX или пресет) и одна из трёх тёмных фоновых тем. Выбор
+хранится в таблице `user_theme` (миграция 0024) и подхватывается на других
+устройствах; `localStorage` — зеркало, чтобы тема применялась до первой
+отрисовки без мигания. Светлой темы нет: интерфейс построен на светлом тексте
+поверх тёмного холста. Детали — [`src/lib/theme.ts`](src/lib/theme.ts) и
+`ARCHITECTURE.md` §11.
+
 ## Структура
 
 ```
@@ -187,6 +202,7 @@ src/
     api/progress/                         upsert прогресса (+ /sync для офлайна)
     api/watch/anime|cinema/               данные страницы просмотра
     api/kodik/, api/trailer/, api/search/ прокси внешних источников
+    api/theme/                            персональная тема оформления
     api/proxy/                            собственный плеер: резолв + Range-прокси,
                                           subtitles, dash-seg, raw
     api/cron/check-episodes/              суточный крон уведомлений
@@ -199,11 +215,12 @@ src/
     supabase/                             клиенты browser/server + middleware
     shikimori.ts, tmdb.ts                 метаданные аниме / кино
     video/                                абстракция VideoSource + провайдеры
+    theme.ts                              палитра: пресеты, CSS-переменные
     extract/                              резолв ссылок, Range-прокси, клиент VPS
     subtitles/, watch/, cache/, net/      субтитры, логика просмотра, кэш, сеть
   native/                                 Capacitor: офлайн-загрузки, внешний экран
   middleware.ts                           обновление сессии + auth-gate
-supabase/migrations/                      0001 … 0023
+supabase/migrations/                      0001 … 0024
 vps-extractor/                            VPS-сервис извлечения (Puppeteer)
 ```
 

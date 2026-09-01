@@ -1736,7 +1736,7 @@ export default function OwnPlayer({
             disabled={!dur}
             className="player-range h-1.5 w-full cursor-pointer appearance-none rounded-full outline-none"
             style={{
-              background: `linear-gradient(to right, #bf5af2 ${progressPct}%, rgba(255,255,255,0.45) ${progressPct}%, rgba(255,255,255,0.45) ${bufferedPct}%, rgba(255,255,255,0.18) ${bufferedPct}%)`,
+              background: `linear-gradient(to right, rgb(var(--accent)) ${progressPct}%, rgba(255,255,255,0.45) ${progressPct}%, rgba(255,255,255,0.45) ${bufferedPct}%, rgba(255,255,255,0.18) ${bufferedPct}%)`,
             }}
           />
 

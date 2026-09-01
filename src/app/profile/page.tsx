@@ -4,10 +4,12 @@ import ProfileTabs from '@/components/ProfileTabs';
 import VibixTrialStatus from '@/components/VibixTrialStatus';
 import RelayToggle from '@/components/RelayToggle';
 import KodikPlayerToggle from '@/components/KodikPlayerToggle';
+import ThemeSettings from '@/components/ThemeSettings';
 import { isAdminEmail } from '@/lib/admin';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import { getTodaysSignupCode } from '@/lib/signupCode';
 import { getVpsRelayEnabled, getKodikPlayerEnabled } from '@/lib/settings';
+import { normalizeTheme } from '@/lib/theme';
 import type { UserListItem, WatchedEpisode } from '@/lib/types';
 
 export const metadata = { title: 'Профиль — MediaWatch' };
@@ -21,7 +23,7 @@ export default async function ProfilePage() {
   // Подстраховка (основная защита — в middleware).
   if (!user) redirect('/login?redirect=/profile');
 
-  const [{ data }, { data: history }] = await Promise.all([
+  const [{ data }, { data: history }, { data: themeRow }] = await Promise.all([
     supabase
       .from('user_list')
       .select('*')
@@ -31,6 +33,9 @@ export default async function ProfilePage() {
       .select('*')
       .order('watched_at', { ascending: false })
       .limit(200),
+    // Тема пользователя — рендерим настройки сразу с сохранёнными
+    // значениями, без промежуточного запроса с клиента (см. lib/theme.ts).
+    supabase.from('user_theme').select('accent, palette').eq('user_id', user.id).maybeSingle(),
   ]);
 
   const items = (data ?? []) as UserListItem[];
@@ -60,6 +65,8 @@ export default async function ProfilePage() {
       </section>
 
       {isAdmin && <VibixTrialStatus />}
+      <ThemeSettings initialTheme={normalizeTheme(themeRow)} />
+
       {isAdmin && <RelayToggle initialEnabled={relayEnabled} />}
       {isAdmin && <KodikPlayerToggle initialEnabled={kodikPlayerEnabled} />}
 

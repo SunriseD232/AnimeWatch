@@ -9,6 +9,8 @@ import PresenceHeartbeat from '@/components/PresenceHeartbeat';
 import NativeAuthBridge from '@/components/NativeAuthBridge';
 import OfflineSyncTrigger from '@/components/OfflineSyncTrigger';
 import { PipPlayerHost } from '@/components/pip/PipPlayerHost';
+import ThemeScript from '@/components/ThemeScript';
+import ThemeSync from '@/components/ThemeSync';
 
 // Inter — ближайшее веб-приближение SF Pro (см. tailwind.config.ts).
 // next/font сам самохостит файлы шрифта — никаких внешних запросов в рантайме.
@@ -55,8 +57,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ru" className={`dark ${inter.variable}`}>
+      <head>
+        {/* До любой отрисовки — иначе кадр стандартной палитры и перекраска
+            на глазах у пользователя (см. components/ThemeScript.tsx). */}
+        <ThemeScript />
+      </head>
       <body className="min-h-screen font-sans pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
         <PwaRegister />
+        <ThemeSync />
         <PresenceHeartbeat />
         <NativeAuthBridge />
         <OfflineSyncTrigger />

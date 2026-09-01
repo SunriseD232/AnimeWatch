@@ -8,21 +8,25 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      // Сами цвета здесь больше не задаются — только ссылки на CSS-
+      // переменные, чтобы пользователь мог поменять палитру в профиле без
+      // пересборки (см. lib/theme.ts). Дефолты переменных — в globals.css:
+      // тот же чёрный холст в духе Apple TV и синий Apple для dark mode,
+      // что были захардкожены здесь раньше.
+      //
+      // Формат каналов («41 151 255»), а не готовый rgb()/hex — обязателен
+      // для <alpha-value>: по коду 130+ мест вида `bg-accent/60` и
+      // `bg-bg-card/50`, с hex-строкой модификатор прозрачности Tailwind
+      // молча перестал бы работать.
       colors: {
-        // Тёмная палитра в духе Apple TV / apple.com: истинно чёрный холст,
-        // фирменный тёмный уголь (#1d1d1f) для приподнятых поверхностей —
-        // тот самый оттенок, что на apple.com в тёмных секциях.
         bg: {
-          DEFAULT: '#000000',
-          soft: '#151517',
-          card: '#1d1d1f',
+          DEFAULT: 'rgb(var(--bg) / <alpha-value>)',
+          soft: 'rgb(var(--bg-soft) / <alpha-value>)',
+          card: 'rgb(var(--bg-card) / <alpha-value>)',
         },
-        // Фиолетовый Apple для тёмного режима (systemPurple в dark mode) —
-        // тот же принцип, что и раньше с синим #2997ff: берём оттенок из
-        // системной палитры Apple, а не нейтральный «дефолт дизайн-системы».
         accent: {
-          DEFAULT: '#bf5af2',
-          hover: '#cc7bf5',
+          DEFAULT: 'rgb(var(--accent) / <alpha-value>)',
+          hover: 'rgb(var(--accent-hover) / <alpha-value>)',
         },
       },
       fontFamily: {
