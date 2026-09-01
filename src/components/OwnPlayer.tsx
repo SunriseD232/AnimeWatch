@@ -821,9 +821,13 @@ export default function OwnPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadState, src]);
 
-  // Применяем выбор дорожки к нативным <track> — по индексу, не по языку
-  // (проще и надёжнее сопоставления, дублей lang не бывает в рамках одной
-  // серии/озвучки).
+  // Применяем выбор дорожки к нативным <track> — по индексу, не по языку.
+  // ВАЖНО: дубли lang в рамках одной озвучки бывают (напр. Alloha отдаёт
+  // отдельно "(Russian) Надписи" и "(Russian) Субтитры", обе lang="rus", см.
+  // vps-extractor/src/alloha.js) — поэтому key на <track>/RadioOption ниже
+  // должен быть по индексу, а не по s.lang (иначе React схлопывает элементы
+  // с одинаковым key, и i-й <track> в DOM перестаёт соответствовать i-му
+  // элементу subtitles — эта индексация сломается).
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -1595,8 +1599,8 @@ export default function OwnPlayer({
           {/* mode ('showing'/'hidden') выставляется отдельным эффектом по
               activeSubtitleIndex — default тут не нужен и может конфликтовать
               с этим эффектом при первом монтировании. */}
-          {subtitles.map((s) => (
-            <track key={s.lang} kind="subtitles" src={s.url} srcLang={s.lang} label={s.label} />
+          {subtitles.map((s, i) => (
+            <track key={i} kind="subtitles" src={s.url} srcLang={s.lang} label={s.label} />
           ))}
         </video>
 
@@ -1898,7 +1902,7 @@ export default function OwnPlayer({
                           />
                           {subtitles.map((s, i) => (
                             <RadioOption
-                              key={s.lang}
+                              key={i}
                               label={s.label}
                               active={activeSubtitleIndex === i}
                               onClick={() => {
