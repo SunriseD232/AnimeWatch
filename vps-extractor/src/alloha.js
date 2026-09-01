@@ -215,7 +215,20 @@ function buildResolvedStream(bnsiData, embedOrigin) {
     url: qualities[0].url,
     headers: { Referer: `${embedOrigin}/`, Origin: embedOrigin },
     isHls: true,
-    ...(qualities.length > 1 ? { qualities } : {}),
+    // НЕ отдаём qualities наружу, хотя bnsi даёт их несколько (см. выше).
+    // OwnPlayer.tsx (см. её же комментарий у effectiveSource === 'alloha')
+    // уже давно и осознанно не даёт hls.js переключать ABR-уровень именно
+    // для Alloha — их CDN валидирует подписанный URL сегмента только под
+    // изначально выбранный вариант, переключение его ломает. Раньше это
+    // было мёртвым кодом: старый Puppeteer-путь фактически никогда не
+    // находил qualities для Alloha (probeQualities там заточен под путь
+    // Videoseed вида .../{H}.mp4:..., Alloha так не выглядит) — если тут
+    // всё же отдать qualities>1, proxy.ts синтезирует настоящий
+    // многоуровневый master (см. synthesizeMasterPlaylist), и hls.js
+    // ловит ИМЕННО ту поломку, от которой этот guard должен защищать
+    // (проверено вживую: бесконечный retry-луп/React error #185 у
+    // реального пользователя — см. коммит). Одна ссылка — то поведение,
+    // на которое OwnPlayer и рассчитан.
     ...(subtitles.length > 0 ? { subtitles } : {}),
   };
 }
