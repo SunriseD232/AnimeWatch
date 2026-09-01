@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'crypto';
+import { fetch as wreqFetchImpl } from 'node-wreq';
 import { getVpsRelayEnabled } from '@/lib/settings';
 import { vlessDispatcher } from '@/lib/net/vlessProxy';
 
@@ -10,6 +11,22 @@ import { vlessDispatcher } from '@/lib/net/vlessProxy';
  * в {url, headers} и умеет проверить, что токен создали мы сами (иначе
  * эндпоинт превратился бы в открытый SSRF-прокси на произвольные URL).
  */
+
+/**
+ * Минимальный интерфейс апстрим-ответа, которым реально пользуется
+ * fetchAndProxy ниже — общий знаменатель родного fetch()'а (Response из
+ * lib.dom) и node-wreq (см. needsFingerprintClient/wreqFetch) — их Response
+ * это разные классы, не совместимые номинально, но оба реализуют этот же
+ * набор полей/методов, так что структурная типизация TS их обоих сюда
+ * пропускает без приведения типов.
+ */
+interface UpstreamResponse {
+  readonly ok: boolean;
+  readonly status: number;
+  readonly headers: { get(name: string): string | null };
+  readonly body: ReadableStream<Uint8Array> | null;
+  text(): Promise<string>;
+}
 
 const RAW_TOKEN_TTL_MS = 6 * 60 * 60 * 1000; // хватает на любой сеанс просмотра
 // Постеры (см. signImageUrl) не живут в рамках одного сеанса просмотра — они
@@ -283,10 +300,60 @@ function needsVlessProxy(url: string): boolean {
   }
 }
 
+/**
+ * Alloha — конкретно её видео-CDN (vkvideo.cloud) — минимум один edge-сервер
+ * жёстко фингерпринтит клиента на TLS/HTTP-уровне: тот же подписанный URL с
+ * теми же заголовками — curl получает 200, а обычный fetch() (Node/undici)
+ * стабильно и воспроизводимо получает 403 (найдено вживую при разборе
+ * жалобы "Alloha иногда не грузится"). Несколько попыток переизвлечь
+ * (см. MAX_UPSTREAM_ATTEMPTS в /api/proxy/.../route.ts) НЕ помогают именно
+ * для этого класса блокировки — разные извлечения ОДНОГО И ТОГО ЖЕ
+ * перевода детерминированно попадают на один и тот же edge, ретрай просто
+ * бьётся в него снова.
+ *
+ * node-wreq (Rust-обёртка над реальным TLS/JA3 конкретного браузера) уже
+ * решает точно такую же проблему при ИЗВЛЕЧЕНИИ токенов (см.
+ * vps-extractor/src/videoseed-http.js — тот же профиль chrome_147 +
+ * http2:false) — здесь тот же приём применён для самой РАЗДАЧИ байт.
+ * Проверено вживую (см. коммит): .body — настоящий потоковый ReadableStream,
+ * Range/206 отрабатывают побайтово идентично curl — полноценная замена
+ * fetch() для этого случая, не только для текстовых ответов.
+ */
+const FINGERPRINT_CLIENT_HOSTS = [/(^|\.)vkvideo\.cloud$/i];
+
+function needsFingerprintClient(url: string): boolean {
+  try {
+    return FINGERPRINT_CLIENT_HOSTS.some((re) => re.test(new URL(url).hostname));
+  } catch {
+    return false;
+  }
+}
+
+/** Статический импорт (см. import в начале файла), не динамический — Next.js
+ *  standalone-сборка (см. next.config.js output:'standalone') трассирует
+ *  зависимости для node_modules/ ТОЛЬКО через статический анализ; проверено
+ *  вживую: с `await import('node-wreq')` внутри функции пакет вообще не
+ *  попадал в .next/standalone/node_modules — динамический import() с даже
+ *  литеральной строкой почему-то не был обнаружен трассировщиком (в отличие
+ *  от sharp, у которого статический import уже работал). */
+async function wreqFetch(
+  url: string,
+  headers: Record<string, string>,
+): Promise<UpstreamResponse> {
+  return wreqFetchImpl(url, {
+    headers,
+    browser: { profile: 'chrome_147', http2: false, headers: true },
+  });
+}
+
 async function fetchUpstream(
   url: string,
   upstreamHeaders: Record<string, string>,
-): Promise<Response> {
+): Promise<UpstreamResponse> {
+  if (needsFingerprintClient(url)) {
+    return wreqFetch(url, upstreamHeaders);
+  }
+
   if (needsVlessProxy(url)) {
     return fetch(url, {
       headers: upstreamHeaders,
@@ -327,7 +394,7 @@ export async function fetchAndProxy(
   const upstreamHeaders: Record<string, string> = { ...headers };
   if (incomingRange) upstreamHeaders.Range = incomingRange;
 
-  let upstream: Response;
+  let upstream: UpstreamResponse;
   try {
     upstream = await fetchUpstream(url, upstreamHeaders);
   } catch (err) {
