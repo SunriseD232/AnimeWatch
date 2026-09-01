@@ -212,10 +212,11 @@ export default function Player({
   // замена всей страницы (см. switchEpisode).
   const [switchingEpisode, setSwitchingEpisode] = useState(false);
 
-  // Плееры по приоритету: Vibix (основной — точный трекинг позиции) → Наш
-  // плеер (свой проксирующий стрим, без стороннего iframe/рекламы) →
-  // Videoseed → Alloha → Kodik. Vibix/Videoseed/Alloha доступны при наличии
-  // токенов и тайтла в их каталогах.
+  // Плееры по приоритету: Наш плеер (свой проксирующий стрим, без стороннего
+  // iframe/рекламы) → Vibix (точный трекинг позиции) → Alloha → Kodik.
+  // Videoseed как отдельный сторонний iframe-плеер убран из выбора (см.
+  // переключатель ниже) — Vibix/Alloha доступны при наличии токенов и
+  // тайтла в их каталогах.
   const hasVibix = vibixEmbed !== null;
   const hasVideoseed = videoseedUrl !== null;
   const hasAlloha = allohaUrl !== null;
@@ -229,15 +230,13 @@ export default function Player({
   // торрента Real-Debrid вместо честного фолбэка на Kodik/Videoseed/Alloha.
   const hasRealOwnPlayer = ownPlayerTranslations.some((t) => t.id !== -1);
   const [player, setPlayer] = useState<PlayerKind>(
-    hasVibix
-      ? 'vibix'
-      : hasRealOwnPlayer
-        ? 'own'
-        : hasVideoseed
-          ? 'videoseed'
-          : hasAlloha
-            ? 'alloha'
-            : 'kodik',
+    hasRealOwnPlayer
+      ? 'own'
+      : hasVibix
+        ? 'vibix'
+        : hasAlloha
+          ? 'alloha'
+          : 'kodik',
   );
 
   const [playing, setPlaying] = useState(false);
@@ -336,18 +335,22 @@ export default function Player({
 
   // Применяем сохранённое предпочтение плеера после монтирования (чтобы не
   // ловить рассинхрон гидрации). Только если выбранный плеер доступен здесь.
+  // 'videoseed' сознательно НЕ восстанавливаем — вкладка убрана из
+  // переключателя (см. его список ниже), старое сохранённое предпочтение
+  // "videoseed" у уже заходивших пользователей просто откатится на
+  // дефолтный выбор компонента, а не оставит их на скрытой вкладке без
+  // подсветки в переключателе.
   useEffect(() => {
     const pref = window.localStorage.getItem(PLAYER_PREF_KEY);
     if (
       pref === 'kodik' ||
-      (pref === 'videoseed' && hasVideoseed) ||
       (pref === 'vibix' && hasVibix) ||
       (pref === 'alloha' && hasAlloha) ||
       (pref === 'own' && hasOwnPlayer)
     ) {
       setPlayer(pref);
     }
-  }, [hasVideoseed, hasVibix, hasAlloha, hasOwnPlayer]);
+  }, [hasVibix, hasAlloha, hasOwnPlayer]);
 
   // Переключение плеера с сохранением выбора.
   const switchPlayer = useCallback(
@@ -1080,21 +1083,20 @@ export default function Player({
       )}
 
       {/* Переключатель плеера — когда есть альтернативы Kodik */}
-      {(hasVibix || hasVideoseed || hasAlloha || hasOwnPlayer) && (
+      {(hasVibix || hasAlloha || hasOwnPlayer) && (
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
           <div className="flex items-center gap-2">
             <span className="shrink-0 text-gray-400">Плеер:</span>
-            {/* overflow-x-auto + whitespace-nowrap — на узких экранах 5 вкладок
-                (Vibix/Videoseed/Alloha/Kodik/Наш плеер) не влезают в строку без
-                этого: «Наш плеер» переносился на два ряда внутри своей пилюли. */}
+            {/* overflow-x-auto + whitespace-nowrap — на узких экранах 4 вкладки
+                (Наш плеер/Vibix/Kodik/Alloha) не влезают в строку без этого:
+                «Наш плеер» переносился на два ряда внутри своей пилюли. */}
             <div className="inline-flex max-w-full overflow-x-auto rounded-full bg-bg-card p-0.5 ring-1 ring-white/5">
               {(
                 [
-                  hasVibix ? (['vibix', 'Vibix', false] as const) : null,
-                  hasVideoseed ? (['videoseed', 'Videoseed', true] as const) : null,
-                  hasAlloha ? (['alloha', 'Alloha', true] as const) : null,
-                  ['kodik', 'Kodik', false] as const,
                   hasOwnPlayer ? (['own', 'Наш плеер', false] as const) : null,
+                  hasVibix ? (['vibix', 'Vibix', false] as const) : null,
+                  ['kodik', 'Kodik', false] as const,
+                  hasAlloha ? (['alloha', 'Alloha', true] as const) : null,
                 ].filter(Boolean) as ReadonlyArray<readonly [PlayerKind, string, boolean]>
               ).map(([kind, label, approxTracking]) => (
                 <button
