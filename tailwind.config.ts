@@ -17,11 +17,12 @@ const config: Config = {
           soft: '#151517',
           card: '#1d1d1f',
         },
-        // Синий Apple для тёмного режима (тот же, что ссылки на apple.com
-        // в dark mode), а не нейтральный «дефолт дизайн-системы».
+        // Фиолетовый Apple для тёмного режима (systemPurple в dark mode) —
+        // тот же принцип, что и раньше с синим #2997ff: берём оттенок из
+        // системной палитры Apple, а не нейтральный «дефолт дизайн-системы».
         accent: {
-          DEFAULT: '#2997ff',
-          hover: '#47a9ff',
+          DEFAULT: '#bf5af2',
+          hover: '#cc7bf5',
         },
       },
       fontFamily: {

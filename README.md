@@ -12,7 +12,8 @@
 
 - **Next.js 14** (App Router, Server Components) + **TypeScript** + **Tailwind CSS**
 - **Supabase** — Postgres + Auth + Row Level Security + Realtime
-- **Vercel** — хостинг + Cron Jobs
+- **Самостоятельный хостинг на VPS** — standalone-сборка Next.js под PM2
+  (`output: 'standalone'` в `next.config.js`, деплой — `scripts/deploy.sh`)
 - **Capacitor 8** — iOS-обёртка (`ios/`, `capacitor.config.ts`, сборка в `codemagic.yaml`)
 - **Sentry** — мониторинг ошибок (опционально)
 - Воспроизведение: **hls.js** / **dashjs**
@@ -20,8 +21,8 @@
 - Балансеры/плееры: **Kodik**, **Videoseed**, **Vibix**, **AniLibria**,
   **YummyAnime**, **Alloha**
 
-Отдельного Node-сервера у сайта нет: вся серверная логика — Next.js Route
-Handlers / Server Components + Supabase. Единственный компонент вне Vercel —
+Вся серверная логика сайта — Next.js Route Handlers / Server Components +
+Supabase, отдельного бэкенда нет. Рядом на VPS живёт независимый сервис
 `vps-extractor/` (см. «Собственный плеер»).
 
 Требуется **Node 22.x** (см. `engines` в `package.json`).
@@ -114,7 +115,7 @@ SIGNUP_CODE_SECRET=...          # обязательно, см. §6 — без �
 «Наш плеер» стримит видео напрямую с сайта: прямая ссылка у эмбед-плеера
 источника (Alloha/Videoseed и др.) извлекается **отдельным VPS-сервисом**
 ([`vps-extractor/`](vps-extractor/README.md) — обычный Puppeteer на VPS),
-результат кэшируется в `resolved_streams` на 15 минут, а Vercel проксирует
+результат кэшируется в `resolved_streams` на 15 минут, а приложение проксирует
 байты Range-кусками в `<video>`.
 
 Серверное извлечение внутри Vercel serverless (`@sparticuz/chromium`) и
@@ -125,16 +126,34 @@ SIGNUP_CODE_SECRET=...          # обязательно, см. §6 — без �
 `/api/proxy/raw` отклоняет все запросы, чтобы не стать открытым SSRF-прокси) и
 `VPS_EXTRACTOR_URL` / `VPS_EXTRACTOR_TOKEN`. Подробности — `ARCHITECTURE.md` §12.
 
-## 5. Деплой на Vercel
+## 5. Деплой
 
-1. Импортируйте репозиторий в Vercel.
-2. В **Settings → Environment Variables** добавьте переменные из `.env.example`.
-3. Deploy. Сборка (`next build`) не требует дополнительной настройки.
-4. В Supabase **Authentication → URL Configuration** добавьте домен Vercel в
-   `Site URL` / `Redirect URLs`.
-5. Крон уведомлений о новых сериях описан в [`vercel.json`](vercel.json)
-   (`/api/cron/check-episodes`, ежедневно в 06:00 UTC) — задайте `CRON_SECRET`,
-   иначе эндпоинт не отличит вызов планировщика от постороннего запроса.
+CI/CD нет: пуш в `origin/main` сам по себе сайт **не** обновляет. Деплой —
+вручную по SSH на продакшен-VPS, из корня проекта:
+
+```bash
+bash scripts/deploy.sh
+```
+
+Скрипт делает `git pull` → `npm ci` → `npm run build`, копирует `public/` и
+`.next/static` внутрь `.next/standalone` (в standalone-режиме Next.js этого
+не делает сам — без этого шага сайт поднимается, но весь CSS/JS отдаёт 404),
+докладывает нативный бинарник `node-wreq` и перезапускает PM2-процесс
+`mediawatch-web`. Подробности — комментарии в самом
+[`scripts/deploy.sh`](scripts/deploy.sh).
+
+Прочее:
+
+- Переменные окружения — в `.env` на сервере (см. `.env.example`).
+- В Supabase **Authentication → URL Configuration** добавьте домен сайта в
+  `Site URL` / `Redirect URLs`.
+- Крон уведомлений о новых сериях (`/api/cron/check-episodes`, ежедневно в
+  06:00 UTC) описан в [`vercel.json`](vercel.json) — расписание оттуда
+  осталось со времён Vercel; на VPS вызов нужно завести системным
+  планировщиком, передавая заголовок `Authorization: Bearer $CRON_SECRET`
+  (без `CRON_SECRET` эндпоинт не отличит планировщик от постороннего запроса).
+- `vps-extractor/` разворачивается отдельно — см. его
+  [README](vps-extractor/README.md).
 
 ## 6. Код регистрации (обязательно)
 

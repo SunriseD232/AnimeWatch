@@ -415,7 +415,7 @@ true)`: проверяются ВСЕ вехи, чей срок уже наст�
 система классов `bg-*`/`accent-*` ещё до этого).
 
 - `bg.DEFAULT` `#000000`, `bg.card` `#1d1d1f` (оттенок apple.com dark-секций)
-- `accent` `#2997ff` / hover `#47a9ff` (синий Apple для dark mode)
+- `accent` `#bf5af2` / hover `#cc7bf5` (фиолетовый Apple, systemPurple dark mode)
 - Шрифт — Inter (`next/font/google`) → `-apple-system` как fallback
 - Утилиты: `.press` (тактильное сжатие кнопок), `.glass` (матовое стекло
   тулбара/меню), `.card-lift` (подъём + свечение карточек при наведении)
