@@ -121,8 +121,9 @@ export function hexToChannels(hex: string): string {
 
 /** Оттенок наведения: осветление к белому на `amount`. Отдельной настройки
  *  на hover нет намеренно — она бы только позволила выбрать несочетающуюся
- *  пару. 0.22 подобрано так, чтобы #2997ff дал примерно прежний #47a9ff. */
-export function lightenHex(hex: string, amount = 0.22): string {
+ *  пару. 0.14 подобрано так, чтобы #2997ff дал #46a6ff — прежний ручной
+ *  hover #47a9ff с точностью до единиц канала. */
+export function lightenHex(hex: string, amount = 0.14): string {
   const v = isHexColor(hex) ? hex : DEFAULT_THEME.accent;
   const n = parseInt(v.slice(1), 16);
   const mix = (c: number) => Math.round(c + (255 - c) * amount);

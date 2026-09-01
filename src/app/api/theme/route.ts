@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { DEFAULT_THEME, normalizeTheme } from '@/lib/theme';
+import { normalizeTheme } from '@/lib/theme';
 
 /**
  * GET/POST /api/theme — персональная тема оформления (см. lib/theme.ts,
@@ -19,8 +19,12 @@ export async function GET() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Неавторизованный — не ошибка: у него просто дефолтная тема.
-  if (!user) return NextResponse.json({ theme: DEFAULT_THEME });
+  // Неавторизованный — не ошибка, но и не «тема по умолчанию»: вернуть тут
+  // DEFAULT_THEME значило бы, что ThemeSync затрёт этим локальный выбор
+  // гостя (воспроизведено вживую: выбранный цвет откатывался к синему через
+  // мгновение после загрузки). null — «сервер про тему ничего не знает,
+  // оставь как есть».
+  if (!user) return NextResponse.json({ theme: null });
 
   const { data } = await supabase
     .from('user_theme')

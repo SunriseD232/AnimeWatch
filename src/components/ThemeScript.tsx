@@ -37,7 +37,7 @@ export default function ThemeScript() {
     };
     var lighten = function (h) {
       var n = parseInt(h.slice(1), 16);
-      var m = function (c) { return Math.round(c + (255 - c) * 0.22); };
+      var m = function (c) { return Math.round(c + (255 - c) * 0.14); };
       return m((n >> 16) & 255) + ' ' + m((n >> 8) & 255) + ' ' + m(n & 255);
     };
     var s = document.documentElement.style;

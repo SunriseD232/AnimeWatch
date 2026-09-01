@@ -21,7 +21,9 @@ export default function ThemeSync() {
         const res = await fetch('/api/theme');
         if (!res.ok || cancelled) return;
 
-        const { theme } = (await res.json()) as { theme: Theme };
+        // theme === null — гость: сервер про его тему ничего не знает, и
+        // затирать локальный выбор дефолтом нельзя (см. route.ts).
+        const { theme } = (await res.json()) as { theme: Theme | null };
         if (!theme || cancelled) return;
 
         const current = readStoredTheme();
