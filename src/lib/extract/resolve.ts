@@ -126,7 +126,7 @@ async function resolveStreamUncoalesced({
   if (!forceFresh) {
     const { data: cached } = await supabase
       .from('resolved_streams')
-      .select('url, headers, is_hls, is_dash, qualities, subtitles, expires_at')
+      .select('url, headers, is_hls, is_dash, qualities, subtitles, audio_tracks, expires_at')
       .eq('content_type', contentType)
       .eq('shikimori_id', shikimoriId)
       .eq('season', season)
@@ -143,6 +143,7 @@ async function resolveStreamUncoalesced({
         isDash: cached.is_dash ?? undefined,
         qualities: (cached.qualities as ResolvedStream['qualities']) ?? undefined,
         subtitles: (cached.subtitles as ResolvedStream['subtitles']) ?? undefined,
+        audioTracks: (cached.audio_tracks as ResolvedStream['audioTracks']) ?? undefined,
       };
     }
   }
@@ -203,6 +204,7 @@ async function resolveStreamUncoalesced({
       is_dash: resolved.isDash ?? false,
       qualities: resolved.qualities ?? null,
       subtitles: resolved.subtitles ?? null,
+      audio_tracks: resolved.audioTracks ?? null,
       expires_at: new Date(Date.now() + CACHE_TTL_MS).toISOString(),
     },
     { onConflict: 'content_type,shikimori_id,season,episode,source,translation_id' },

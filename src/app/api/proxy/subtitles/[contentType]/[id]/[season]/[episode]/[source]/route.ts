@@ -26,6 +26,13 @@ import type { ExtractSource } from '@/lib/extract/types';
  *     (аниме). Спрашиваем ТОЛЬКО про языки, которых нет среди (1) — так и
  *     квота (100/сутки) не тратится впустую на уже закрытый Videoseed язык,
  *     и недостающий не остаётся без попытки.
+ *
+ * Заодно (не по чистоте имени ручки, а по экономии round-trip'а — resolved
+ * уже под рукой) отдаём audioTracks: список ДОП. аудиодорожек (см.
+ * ResolvedStream.audioTracks — сейчас только у Alloha, напр. оригинал без
+ * перевода). Только label — сырые URL клиенту не нужны, переключение идёт
+ * через query-параметр ?audio=<индекс> на самом /api/proxy/.../[source]
+ * (см. его pickAudioTrackUrl), сервер сам подставляет нужный.
  */
 
 export const runtime = 'nodejs';
@@ -176,9 +183,11 @@ export async function GET(request: NextRequest, { params }: { params: RouteParam
         .filter((s): s is { lang: 'ru' | 'en'; label: string; url: string } => s !== null);
     }
 
-    return NextResponse.json({ subtitles: [...nativeSubs, ...fallbackSubs] });
+    const audioTracks = (resolved?.audioTracks ?? []).map((t) => ({ label: t.label }));
+
+    return NextResponse.json({ subtitles: [...nativeSubs, ...fallbackSubs], audioTracks });
   } catch (err) {
     console.error('[proxy/subtitles] Упало:', err);
-    return NextResponse.json({ subtitles: [] });
+    return NextResponse.json({ subtitles: [], audioTracks: [] });
   }
 }

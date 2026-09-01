@@ -1,0 +1,12 @@
+-- MediaWatch — миграция 0022: доп. аудиодорожки Alloha (напр. оригинал без перевода)
+-- Применить через Supabase SQL Editor.
+--
+-- Один /bnsi/-ответ Alloha (см. vps-extractor/src/alloha.js) содержит не
+-- только выбранную озвучку, но и другие полноценные аудиодорожки для той же
+-- серии (проверено вживую: "(Japanese) Original" рядом с выбранным дублем
+-- "(Russian) AniLibriaTV") — каждая со своим набором качеств, отдельным
+-- кодированием (не ABR-вариант одного потока, полноценная замена src при
+-- переключении). Та же схема кэширования, что и qualities/subtitles в
+-- 0009/0010: колонка на resolved_streams, живёт вместе с остальным резолвом
+-- до истечения TTL.
+alter table resolved_streams add column if not exists audio_tracks jsonb;

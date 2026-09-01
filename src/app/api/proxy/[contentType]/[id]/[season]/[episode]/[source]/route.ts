@@ -61,6 +61,24 @@ function pickDashUrl(
   return resolved.url;
 }
 
+/** Alloha иногда отдаёт рядом с основной озвучкой ещё аудиодорожки (см.
+ *  ResolvedStream.audioTracks) — ?audio=<индекс> подставляет её url вместо
+ *  основного. Каждая дорожка — ОДНА ссылка без своего набора качеств (см.
+ *  комментарий в alloha.js — переключение ABR-уровня у Alloha ломает
+ *  воспроизведение, поэтому качества там не отдаются вообще ни для
+ *  основной дорожки, ни для этих) — здесь просто меняем url, headers общие
+ *  для всех дорожек одного /bnsi/-ответа (тот же embedOrigin). */
+function pickAudioTrackUrl(
+  resolved: { url: string; audioTracks?: { label: string; url: string }[] },
+  audioIndex: number | undefined,
+): string {
+  if (audioIndex != null) {
+    const track = resolved.audioTracks?.[audioIndex];
+    if (track) return track.url;
+  }
+  return resolved.url;
+}
+
 /** X-Video-Qualities — список доступных высот через запятую, читает клиент
  *  на HEAD-пробе (OwnPlayer.tsx), чтобы построить селектор качества для DASH
  *  без ABR-уровней hls.js (см. rewriteDashManifest — тут одно качество на
@@ -108,6 +126,11 @@ async function handleGet(
   // Обычный веб-плеер сюда не попадает — это ручной opt-in для случая,
   // когда сегмент уже исчерпал собственные ретраи.
   const forceFresh = request.nextUrl.searchParams.get('fresh') === '1';
+  // ?audio=<индекс> — выбор доп. аудиодорожки (см. ResolvedStream.
+  // audioTracks/pickAudioTrackUrl выше) — сейчас реально бывает только у
+  // Alloha (напр. "(Japanese) Original" рядом с дублем).
+  const audioRaw = request.nextUrl.searchParams.get('audio');
+  const audioIndex = audioRaw != null && Number.isFinite(Number(audioRaw)) ? Number(audioRaw) : undefined;
 
   // request.signal — отражает реальное отключение клиента (Node.js runtime,
   // см. export const runtime='nodejs' выше). Пробрасываем до extractViaVps
@@ -177,7 +200,7 @@ async function handleGet(
     return withDashQualities(retriedDash, freshDash.qualities);
   }
 
-  const proxied = await fetchAndProxy(range, resolved.url, resolved.headers);
+  const proxied = await fetchAndProxy(range, pickAudioTrackUrl(resolved, audioIndex), resolved.headers);
   if (proxied.status !== 404) return proxied;
 
   // Кэш мог протухнуть раньше своего TTL — у Videoseed подписанные CDN-
@@ -200,7 +223,7 @@ async function handleGet(
       },
     });
   }
-  return fetchAndProxy(range, fresh.url, fresh.headers);
+  return fetchAndProxy(range, pickAudioTrackUrl(fresh, audioIndex), fresh.headers);
 }
 
 export async function GET(request: NextRequest, ctx: { params: RouteParams }) {

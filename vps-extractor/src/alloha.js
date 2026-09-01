@@ -180,6 +180,18 @@ function firstMirror(value) {
   return idx === -1 ? str : str.slice(0, idx);
 }
 
+/** Лучшее (максимальная высота) качество из карты {высота: URL} одной
+ *  записи hlsSource — используется и для основной дорожки, и для каждой
+ *  дополнительной в audioTracks (см. buildResolvedStream). */
+function bestQualityUrl(qualityMap) {
+  if (!qualityMap || typeof qualityMap !== 'object') return null;
+  const qualities = Object.entries(qualityMap)
+    .map(([height, url]) => ({ height: Number(height), url: firstMirror(url) }))
+    .filter((q) => Number.isFinite(q.height) && q.url)
+    .sort((a, b) => b.height - a.height);
+  return qualities[0]?.url ?? null;
+}
+
 /**
  * /bnsi/movies/{id} → ResolvedStream. hlsSource — по одной записи на
  * аудиодорожку (озвучка/оригинал), у каждой quality: {высота: URL} с
@@ -187,18 +199,13 @@ function firstMirror(value) {
  * с Referer/Origin эмбед-страницы, без дополнительных query-параметров).
  * Первую запись берём как основную (в единственном проверенном вживую
  * случае это была именно запрошенная озвучка, "оригинал" шёл вторым) —
- * тот же принцип "одна ссылка по умолчанию", что и у остальных источников.
+ * тот же принцип "одна ссылка по умолчанию", что и у остальных источников;
+ * остальные записи (если есть) уходят в audioTracks — см. её комментарий.
  */
 function buildResolvedStream(bnsiData, embedOrigin) {
-  const track = bnsiData?.hlsSource?.[0];
-  const qualityMap = track?.quality;
-  if (!qualityMap || typeof qualityMap !== 'object') return null;
-
-  const qualities = Object.entries(qualityMap)
-    .map(([height, url]) => ({ height: Number(height), url: firstMirror(url) }))
-    .filter((q) => Number.isFinite(q.height) && q.url)
-    .sort((a, b) => b.height - a.height);
-  if (qualities.length === 0) return null;
+  const hlsSource = Array.isArray(bnsiData?.hlsSource) ? bnsiData.hlsSource : [];
+  const url = bestQualityUrl(hlsSource[0]?.quality);
+  if (!url) return null;
 
   // label — берём готовый от Alloha (напр. "(Russian) Субтитры"), а НЕ через
   // общий subtitleLabel(lang): у одного языка тут бывает НЕСКОЛЬКО разных
@@ -211,25 +218,40 @@ function buildResolvedStream(bnsiData, embedOrigin) {
     .filter((t) => t?.kind === 'captions' && t.src && t.language)
     .map((t) => ({ lang: t.language, label: t.label || subtitleLabel(t.language), url: firstMirror(t.src) }));
 
+  // Остальные записи hlsSource (напр. "(Japanese) Original" рядом с уже
+  // выбранным дублем) — тоже полноценные аудиодорожки той же серии, просто
+  // не основная. КАЖДАЯ — только ОДНА (лучшая) ссылка, БЕЗ карты качеств:
+  // ровно та же причина, по которой основная url тоже не сопровождается
+  // qualities (см. комментарий ниже) — их CDN валидирует подписанный URL
+  // сегмента только под изначально выбранный вариант, переключать нечего.
+  const audioTracks = hlsSource
+    .slice(1)
+    .map((track) => {
+      const trackUrl = bestQualityUrl(track?.quality);
+      return trackUrl && track?.label ? { label: track.label, url: trackUrl } : null;
+    })
+    .filter(Boolean);
+
   return {
-    url: qualities[0].url,
+    url,
     headers: { Referer: `${embedOrigin}/`, Origin: embedOrigin },
     isHls: true,
-    // НЕ отдаём qualities наружу, хотя bnsi даёт их несколько (см. выше).
+    // НЕ отдаём qualities наружу, хотя bnsi даёт их несколько на дорожку.
     // OwnPlayer.tsx (см. её же комментарий у effectiveSource === 'alloha')
     // уже давно и осознанно не даёт hls.js переключать ABR-уровень именно
     // для Alloha — их CDN валидирует подписанный URL сегмента только под
-    // изначально выбранный вариант, переключение его ломает. Раньше это
-    // было мёртвым кодом: старый Puppeteer-путь фактически никогда не
-    // находил qualities для Alloha (probeQualities там заточен под путь
-    // Videoseed вида .../{H}.mp4:..., Alloha так не выглядит) — если тут
-    // всё же отдать qualities>1, proxy.ts синтезирует настоящий
-    // многоуровневый master (см. synthesizeMasterPlaylist), и hls.js
-    // ловит ИМЕННО ту поломку, от которой этот guard должен защищать
-    // (проверено вживую: бесконечный retry-луп/React error #185 у
-    // реального пользователя — см. коммит). Одна ссылка — то поведение,
-    // на которое OwnPlayer и рассчитан.
+    // тот вариант, что был выбран изначально, переключение его ломает.
+    // Раньше это было мёртвым кодом: старый Puppeteer-путь фактически
+    // никогда не находил qualities для Alloha (probeQualities там заточен
+    // под путь Videoseed вида .../{H}.mp4:..., Alloha так не выглядит) —
+    // если тут всё же отдать qualities>1, proxy.ts синтезирует настоящий
+    // многоуровневый master (см. synthesizeMasterPlaylist), и hls.js ловит
+    // ИМЕННО ту поломку, от которой этот guard должен защищать (проверено
+    // вживую: бесконечный retry-луп/React error #185 у реального
+    // пользователя — см. коммит). Одна ссылка — то поведение, на которое
+    // OwnPlayer и рассчитан; то же самое и для audioTracks выше.
     ...(subtitles.length > 0 ? { subtitles } : {}),
+    ...(audioTracks.length > 0 ? { audioTracks } : {}),
   };
 }
 
