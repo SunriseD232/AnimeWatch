@@ -18,8 +18,9 @@ export interface ResolvedStream {
    *  один ABR-манифест сложнее и рискованнее, чем просто перезапросить). `url`
    *  при этом — лучшее качество по умолчанию, для источников без этого поля. */
   qualities?: { height: number; url: string }[];
-  /** Внешние субтитры (сейчас только Videoseed отдаёт реальные .vtt — Alloha/
-   *  Sibnet/Kodik/CVH ничего подобного не предоставляют, см. коммит). */
+  /** Внешние субтитры — Videoseed и Alloha отдают реальные .vtt (см.
+   *  vps-extractor/src/alloha.js — tracks[] в ответе /bnsi/); Sibnet/Kodik/
+   *  CVH/Aksor ничего подобного не предоставляют. */
   subtitles?: Subtitle[];
 }
 

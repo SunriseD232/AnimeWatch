@@ -60,29 +60,9 @@ async function probeQualities(url, referer) {
   return qualities.length > 0 ? qualities : null;
 }
 
-const SUBTITLE_LABELS = {
-  rus: 'Русский',
-  eng: 'English',
-  ukr: 'Українська',
-  ger: 'Deutsch',
-  fre: 'Français',
-  spa: 'Español',
-  ita: 'Italiano',
-  chi: '中文',
-  jpn: '日本語',
-  kor: '한국어',
-  tur: 'Türkçe',
-  pol: 'Polski',
-};
-
-function subtitleLabel(lang) {
-  return SUBTITLE_LABELS[lang.toLowerCase()] || lang.toUpperCase();
-}
-
-function subtitleLangFromUrl(url) {
-  const match = url.match(/\/([a-zA-Z]{2,3})\.vtt(?:[?#]|$)/);
-  return match ? match[1].toLowerCase() : null;
-}
+// Субтитры — общий для Videoseed И Alloha хелпер, см. subtitle-labels.js
+// (переехал туда, когда тем же самым обзавёлся alloha.js).
+const { SUBTITLE_LABELS, subtitleLabel, subtitleLangFromUrl } = require('./subtitle-labels');
 
 module.exports = {
   videoseedHost,

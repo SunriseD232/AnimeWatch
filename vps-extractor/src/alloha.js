@@ -1,25 +1,57 @@
 'use strict';
 
 const { toAbsoluteUrl, getSharedBrowser } = require('./browser');
+const { subtitleLabel } = require('./subtitle-labels');
 
 /**
- * Извлечение прямой видео-ссылки из Alloha — см. README.md и §12.5/§12.6
- * ARCHITECTURE.md основного репозитория для полной истории расследования.
+ * Извлечение прямой видео-ссылки (и субтитров) из Alloha — см. README.md и
+ * §12.5/§12.6 ARCHITECTURE.md основного репозитория за историю расследования
+ * геоблока/антихотлинка, и коммит, добавивший этот файл в его нынешнем виде,
+ * за историю реверс-инжиниринга ниже.
  *
  * 1. YummyAnime API → все iframe_url Alloha-эмбедов серии (разные озвучки).
  * 2. Синтетическая обёртка с <iframe src=embedUrl> — обходит анти-хотлинк
- *    (window !== window.top), не заменяет реальный гео-блок на /bnsi/.
- * 3. RU-прокси на трафик Alloha (не на весь браузер — тот теперь общий с
- *    Videoseed, маршрутизация через PAC, см. browser.js) — без прокси
- *    /bnsi/ отдаёт 404 с любым IP кроме российского.
- * 4. Перехват сетевых запросов, ждём .mp4/.m3u8.
+ *    (window !== window.top).
+ * 3. Их плеер сам, при загрузке (БЕЗ клика — проверено вживую сетевым
+ *    перехватом, см. коммит), делает POST на /bnsi/movies/{internalId} —
+ *    и это САМ ПО СЕБЕ уже исчерпывающий ответ: все аудиодорожки (озвучка +
+ *    оригинал) × все качества (прямые подписанные ссылки на CDN) + субтитры
+ *    (tracks[], тоже готовые подписанные .vtt) одним JSON. Раньше вместо
+ *    этого приходилось: сниффать сетевые запросы видео, кликать по плееру
+ *    дважды (жест автовоспроизведения), крутить их непубличное UI-меню
+ *    качества (см. историю — forceHighestQuality, ~50 строк хрупкого
+ *    DOM-клика) и отличать рекламный decoy-ролик от настоящего. Всё это
+ *    было обходом отсутствия структурированных данных — они, оказывается,
+ *    были всегда, просто в другом ответе, который никто не читал.
+ * 4. Puppeteer тут остаётся ОБЯЗАТЕЛЬНЫМ (в отличие от Videoseed, см.
+ *    videoseed-http.js) — сам POST на /bnsi/ требует заголовок `borth`,
+ *    вычисляемый их клиентским JS при каждом запросе. Найдено вживую (см.
+ *    коммит): строка "borth" не встречается НИ В ОДНОМ из трёх бандлов
+ *    плеера (runtime/401/app.js) как литерал — то есть это не статичный
+ *    ключ и не переиспользуемый cookie/токен со страницы, а что-то,
+ *    вычисляемое динамически (обфусцированно, посимвольно, и/или сторонним
+ *    антибот-SDK — на странице есть сторонние скрипты вроде
+ *    pc.alloviewroll.com/vast2.ufouxbwn.com, любой из которых кандидат).
+ *    Это, по всей видимости, и есть тот самый "четвёртый, неопознанный
+ *    слой защиты" из прошлого расследования (experiment/alloha-tls-
+ *    fingerprint-spoofing, §12.5 ARCHITECTURE.md) — там его тоже не
+ *    удалось обойти ни TLS-имперсонацией (node-wreq/CycleTLS), ни чистым
+ *    RU IP, именно потому что ни один из этих подходов не исполняет их
+ *    JS. Без запуска реального JS (т.е. без headless-браузера) значение
+ *    borth взять неоткуда — воспроизвести с нуля не пытаемся: это as-is
+ *    обфускация конкретно под их антибот, а не общая техника вроде
+ *    TLS-фингерпринта, и её взлом — совсем другой объём работы.
+ * 5. RU-прокси (ALLOHA_PROXY_SERVER) сейчас не задан и не нужен — гео-блок
+ *    по IP, похоже, для IP этого VPS уже не проблема (см. историю его
+ *    отключения). Если это изменится — см. resolveProxy()/PAC в browser.js,
+ *    маршрутизация уже готова, просто добавить сервер обратно в .env.
  */
 
 const YUMMY_BASE = 'https://api.yani.tv';
 const REFERER = 'https://yani.tv/';
 const WRAPPER_URL = 'https://yani.tv/__mediawatch_wrapper__';
 const MAX_CANDIDATES = 4;
-const DECOY_HOSTS = ['cdn.plyr.io'];
+const BNSI_URL_RE = /\/bnsi\/movies\//;
 
 async function getAllohaEmbedUrls(shikimoriId, episode) {
   const listRes = await fetch(`${YUMMY_BASE}/anime?shikimori_ids=${shikimoriId}&limit=1`, {
@@ -52,127 +84,16 @@ async function getAllohaEmbedUrls(shikimoriId, episode) {
   return urls.slice(0, MAX_CANDIDATES);
 }
 
-/** С таймаутом — на этой VPS через RU-прокси evaluate() внутри их плеера
- *  иногда просто зависает (CDP callFunctionOn timeout), лучше отвалиться
- *  быстро, чем повесить всё извлечение. */
-function withTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error('evaluate timeout')), ms)),
-  ]);
-}
-
 /**
- * Опрашивает фрейм, пока evaluateFn (чистая DOM-функция, без внешних
- * замыканий — выполняется В СТРАНИЦЕ) не вернёт истинное значение, или до
- * таймаута. Раньше между шагами клика просто спали фиксированные 500мс
- * "на всякий случай" — теперь ждём ровно того, что реально нужно (элемент
- * появился и кликнут), и не дольше. Ускоряет типичный успешный случай,
- * не меняя поведение в худшем (по-прежнему best-effort с fallback).
+ * Открывает embedUrl в общем браузере через обёртку (обходит анти-хотлинк,
+ * см. комментарий вверху файла) и ждёт JSON-ответ /bnsi/movies/{id} — их
+ * плеер запрашивает его сам при загрузке, клик не нужен (проверено вживую
+ * сетевым перехватом: запрос уходит ещё во время начальной загрузки
+ * страницы). На случай, если это не всегда так (другой тайтл/версия
+ * плеера) — один клик как подстраховка, если к первому таймауту ответа
+ * ещё нет, а не как обязательный шаг.
  */
-async function pollFrame(frame, evaluateFn, timeoutMs, intervalMs = 80) {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    const result = await withTimeout(frame.evaluate(evaluateFn), Math.min(2_000, timeoutMs)).catch(() => undefined);
-    if (result) return result;
-    if (Date.now() >= deadline) return null;
-    await new Promise((r) => setTimeout(r, intervalMs));
-  }
-}
-
-/**
- * Их плеер (CSS-класс "allplay") сам определяет "auto"-качество при
- * подключении — через наш RU-прокси (общий мост, небольшая пропускная
- * способность) это почти всегда занижено (проверено вживую: 480p вместо
- * реально доступных 2160p/4K). Форсируем через их собственное UI меню
- * настроек — сама структура найдена вручную через живое исследование DOM
- * (см. историю расследования), нигде не задокументирована и может
- * сломаться при обновлении их плеера — поэтому best-effort с fallback:
- * при любой ошибке просто оставляем то качество, что плеер и так выбрал
- * сам (не хуже прежнего поведения).
- *
- * Путь клика: шестерёнка настроек → первая строка меню (Качество) →
- * первый вариант в открывшемся подменю (самое высокое качество — список
- * идёт по убыванию: 2160p/4K, 1440p/2K, 1080p, 720p, 480p, 360p).
- */
-async function forceHighestQuality(page, embedOrigin) {
-  try {
-    const frame = page.frames().find((f) => f.url().startsWith(embedOrigin));
-    if (!frame) return;
-
-    const openedSettings = await pollFrame(
-      frame,
-      () => {
-        const btn = document.querySelector('.allplay__menu > button.allplay__control');
-        if (!btn) return false;
-        btn.click();
-        return true;
-      },
-      3_000,
-    );
-    if (!openedSettings) {
-      console.error('[alloha] Кнопка настроек не появилась — оставляем авто-выбор плеера');
-      return;
-    }
-
-    const openedQualitySubmenu = await pollFrame(
-      frame,
-      () => {
-        const pages = document.querySelectorAll('.allplay__menu__container > div > div');
-        const row = pages[0] && pages[0].children[0];
-        if (!row) return false;
-        row.click();
-        return true;
-      },
-      2_000,
-    );
-    if (!openedQualitySubmenu) {
-      console.error('[alloha] Строка "Качество" не появилась — оставляем авто-выбор плеера');
-      return;
-    }
-
-    const clicked = await pollFrame(
-      frame,
-      () => {
-        const pages = document.querySelectorAll('.allplay__menu__container > div > div');
-        const best = pages[1] && pages[1].children[1] && pages[1].children[1].children[0];
-        if (!best) return null;
-        const label = best.textContent.trim();
-        best.click();
-        return label;
-      },
-      2_000,
-    );
-    if (clicked) {
-      console.error(`[alloha] Качество переключено на: ${clicked}`);
-    } else {
-      console.error('[alloha] Меню качества не нашлось — оставляем авто-выбор плеера');
-    }
-  } catch (err) {
-    console.error('[alloha] Не удалось переключить качество (не критично, используем авто):', err.message);
-  }
-}
-
-/**
- * Alloha отдаёт фрагментированный CMAF (master.m3u8 → index-*.m3u8 →
- * init-*.mp4 + seg-*.m4s) — init-сегмент сам по себе крошечный (~1КБ,
- * только moov/ftyp) и НЕ играбелен как самостоятельный файл. Поэтому
- * master.m3u8 всегда в приоритете над любым .mp4-совпадением (иначе find()
- * отдаёт init-сегмент как "видео"). Тот же критерий используется и чтобы
- * решить, можно ли уже прекращать опрос (см. hasUsableVideoUrl ниже).
- */
-function pickVideoUrl(urls) {
-  const master = urls.find((u) => u.includes('master.m3u8'));
-  const anyM3u8 = urls.find((u) => u.includes('.m3u8') || u.includes('playlist'));
-  const mp4 = urls.find((u) => u.includes('.mp4') && !u.includes('init-'));
-  return master || anyM3u8 || mp4 || urls[0] || null;
-}
-
-function hasUsableVideoUrl(urls) {
-  return pickVideoUrl(urls) !== null;
-}
-
-async function interceptVideoUrl(browser, rawEmbedUrl) {
+async function fetchBnsiData(browser, rawEmbedUrl) {
   const embedUrl = toAbsoluteUrl(rawEmbedUrl);
   if (!embedUrl) {
     console.error(`[alloha] Yummy отдал невалидный iframe_url: ${rawEmbedUrl}`);
@@ -181,17 +102,20 @@ async function interceptVideoUrl(browser, rawEmbedUrl) {
 
   const page = await browser.newPage();
   try {
-    const videoUrls = [];
-    const allUrls = [];
-    const bnsiStatuses = [];
-
+    let bnsiData;
+    let bnsiStatus;
     page.on('response', (res) => {
-      if (res.url().includes('/bnsi/')) {
-        res
-          .text()
-          .then((t) => bnsiStatuses.push(`${res.status()} ${res.url()} body=${t.slice(0, 200)}`))
-          .catch(() => {});
-      }
+      if (bnsiData !== undefined || !BNSI_URL_RE.test(res.url())) return;
+      bnsiStatus = res.status();
+      res
+        .json()
+        .then((json) => {
+          bnsiData = json;
+        })
+        .catch((err) => {
+          console.error(`[alloha] /bnsi/ ответ не распарсился как JSON: ${err.message}`);
+          bnsiData = null;
+        });
     });
 
     await page.setRequestInterception(true);
@@ -207,62 +131,78 @@ async function interceptVideoUrl(browser, rawEmbedUrl) {
           .catch(() => {});
         return;
       }
-      allUrls.push(url);
-      if (
-        !DECOY_HOSTS.some((host) => url.includes(host)) &&
-        (url.includes('.mp4') ||
-          url.includes('.m3u8') ||
-          url.includes('.ts?') ||
-          url.includes('playlist.m3u8') ||
-          url.includes('master.m3u8'))
-      ) {
-        videoUrls.push(url);
-      }
       request.continue().catch(() => {});
     });
 
     await page.setExtraHTTPHeaders({ Referer: REFERER });
-    const response = await page.goto(WRAPPER_URL, { waitUntil: 'networkidle2', timeout: 30_000 });
-    if (response && !response.ok()) {
-      console.error(`[alloha] Обёртка вернула HTTP ${response.status()} — не должно происходить`);
+    await page.goto(WRAPPER_URL, { waitUntil: 'networkidle2', timeout: 30_000 });
+
+    const POLL_INTERVAL_MS = 200;
+    let clicked = false;
+    const deadline = Date.now() + 8_000;
+    while (bnsiData === undefined && Date.now() < deadline) {
+      // Подстраховка на середине окна ожидания — если /bnsi/ по какой-то
+      // причине всё же ждёт жеста пользователя, а не срабатывает сам.
+      if (!clicked && Date.now() > deadline - 5_000) {
+        clicked = true;
+        await page.mouse.click(640, 360).catch(() => {});
+      }
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+    }
+
+    if (bnsiData === undefined) {
+      console.error(`[alloha] ${embedUrl}: /bnsi/ не ответил за отведённое время`);
       return null;
     }
+    if (!bnsiData) return null; // ответ пришёл, но не распарсился — см. лог выше
 
-    // Переключаем на максимальное качество ДО старта воспроизведения — их
-    // плеер запрашивает master.m3u8 уже под выбранное качество, так что
-    // после этого шага играть/ждать нужно только один раз (см. комментарий
-    // у forceHighestQuality — почему это best-effort, не гарантия).
-    await forceHighestQuality(page, new URL(embedUrl).origin);
-    videoUrls.length = 0; // сбрасываем то, что плеер успел запросить под старым (авто) качеством
-
-    await page.mouse.click(640, 360).catch(() => {});
-    // Раньше здесь просто спали фиксированные 6с независимо от того, когда
-    // реально пришёл нужный запрос — типичный успешный случай (URL приходит
-    // за секунду-две) платил за это лишним временем. Опрашиваем вместо
-    // этого сам массив videoUrls (его уже пополняет обработчик 'request'
-    // выше) и выходим, как только там появится что-то реально пригодное —
-    // тот же критерий, что и в выборе videoUrl ниже, а не первое попавшееся
-    // совпадение (иначе можно выйти раньше на мусорном decoy-запросе).
-    const deadline = Date.now() + 6_000;
-    while (!hasUsableVideoUrl(videoUrls) && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 150));
-    }
-
-    if (videoUrls.length === 0) {
-      console.error(
-        `[alloha] ${embedUrl}: 0 видео-URL. Запросов всего: ${allUrls.length}. Последние 8: ${JSON.stringify(allUrls.slice(-8))}. /bnsi/: ${JSON.stringify(bnsiStatuses)}`,
-      );
-    }
-
-    const videoUrl = pickVideoUrl(videoUrls);
-    if (!videoUrl) return null;
-    return { videoUrl, embedOrigin: new URL(embedUrl).origin };
+    return { data: bnsiData, embedOrigin: new URL(embedUrl).origin, status: bnsiStatus };
   } catch (err) {
     console.error(`[alloha] Puppeteer упал на ${embedUrl}:`, err);
     return null;
   } finally {
     await page.close().catch(() => {});
   }
+}
+
+/**
+ * /bnsi/movies/{id} → ResolvedStream. hlsSource — по одной записи на
+ * аудиодорожку (озвучка/оригинал), у каждой quality: {высота: URL} с
+ * готовыми подписанными ссылками (проверено вживую: 200 напрямую, только
+ * с Referer/Origin эмбед-страницы, без дополнительных query-параметров).
+ * Первую запись берём как основную (в единственном проверенном вживую
+ * случае это была именно запрошенная озвучка, "оригинал" шёл вторым) —
+ * тот же принцип "одна ссылка по умолчанию", что и у остальных источников.
+ */
+function buildResolvedStream(bnsiData, embedOrigin) {
+  const track = bnsiData?.hlsSource?.[0];
+  const qualityMap = track?.quality;
+  if (!qualityMap || typeof qualityMap !== 'object') return null;
+
+  const qualities = Object.entries(qualityMap)
+    .map(([height, url]) => ({ height: Number(height), url: String(url) }))
+    .filter((q) => Number.isFinite(q.height) && q.url)
+    .sort((a, b) => b.height - a.height);
+  if (qualities.length === 0) return null;
+
+  // label — берём готовый от Alloha (напр. "(Russian) Субтитры"), а НЕ через
+  // общий subtitleLabel(lang): у одного языка тут бывает НЕСКОЛЬКО разных
+  // дорожек одновременно (проверено вживую: отдельно "(Russian) Надписи" —
+  // видимо, надписи/вывески в кадре — и "(Russian) Субтитры" — полный
+  // диалог, обе lang="rus") — subtitleLabel(lang) дал бы им ОДИНАКОВУЮ
+  // подпись "Русский", и пользователь не смог бы отличить один пункт
+  // селектора от другого.
+  const subtitles = (Array.isArray(bnsiData.tracks) ? bnsiData.tracks : [])
+    .filter((t) => t?.kind === 'captions' && t.src && t.language)
+    .map((t) => ({ lang: t.language, label: t.label || subtitleLabel(t.language), url: t.src }));
+
+  return {
+    url: qualities[0].url,
+    headers: { Referer: `${embedOrigin}/`, Origin: embedOrigin },
+    isHls: true,
+    ...(qualities.length > 1 ? { qualities } : {}),
+    ...(subtitles.length > 0 ? { subtitles } : {}),
+  };
 }
 
 async function extractAlloha({ shikimoriId, episode, embedUrl: forcedEmbedUrl }) {
@@ -281,25 +221,16 @@ async function extractAlloha({ shikimoriId, episode, embedUrl: forcedEmbedUrl })
     }
   }
 
-  // Puppeteer-извлечения (Alloha/Videoseed) уже сериализованы на уровне
-  // server.js (см. serialized() там) — здесь просто одно извлечение, без
-  // дополнительной очереди. Браузер общий с Videoseed (см. getSharedBrowser
-  // в browser.js) — не закрываем его тут, только свою страницу (см. finally
-  // в interceptVideoUrl).
+  // Puppeteer-извлечения (Alloha/Videoseed-fallback) сериализуются через
+  // общий браузер — см. serializeBrowserUse в browser.js (вызывается уже в
+  // server.js для alloha, здесь просто одно извлечение без своей очереди).
   const browser = await getSharedBrowser();
   for (const embedUrl of embedUrls) {
-    const result = await interceptVideoUrl(browser, embedUrl);
-    if (result) {
-      const { videoUrl, embedOrigin } = result;
-      // CDN проверяет Origin/Referer именно эмбед-страницы (alloha.yani.tv),
-      // а не внешней обёртки (yani.tv) — иначе отдаёт 403 x-vd:origin_mismatch
-      // при последующем проксировании байт с Vercel. См. ARCHITECTURE.md §12.6.
-      return {
-        url: videoUrl,
-        headers: { Referer: `${embedOrigin}/`, Origin: embedOrigin },
-        isHls: videoUrl.includes('.m3u8'),
-      };
-    }
+    const bnsi = await fetchBnsiData(browser, embedUrl);
+    if (!bnsi) continue;
+    const result = buildResolvedStream(bnsi.data, bnsi.embedOrigin);
+    if (result) return result;
+    console.error(`[alloha] ${embedUrl}: /bnsi/ (${bnsi.status}) ответил, но без пригодного hlsSource`);
   }
   return null;
 }
