@@ -3,10 +3,11 @@ import ChangePasswordButton from '@/components/ChangePasswordButton';
 import ProfileTabs from '@/components/ProfileTabs';
 import VibixTrialStatus from '@/components/VibixTrialStatus';
 import RelayToggle from '@/components/RelayToggle';
+import KodikPlayerToggle from '@/components/KodikPlayerToggle';
 import { isAdminEmail } from '@/lib/admin';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import { getTodaysSignupCode } from '@/lib/signupCode';
-import { getVpsRelayEnabled } from '@/lib/settings';
+import { getVpsRelayEnabled, getKodikPlayerEnabled } from '@/lib/settings';
 import type { UserListItem, WatchedEpisode } from '@/lib/types';
 
 export const metadata = { title: 'Профиль — MediaWatch' };
@@ -36,6 +37,7 @@ export default async function ProfilePage() {
   const historyItems = (history ?? []) as WatchedEpisode[];
   const isAdmin = isAdminEmail(user.email);
   const relayEnabled = isAdmin ? await getVpsRelayEnabled(true) : false;
+  const kodikPlayerEnabled = isAdmin ? await getKodikPlayerEnabled(true) : false;
 
   return (
     <div className="flex flex-col gap-8">
@@ -59,6 +61,7 @@ export default async function ProfilePage() {
 
       {isAdmin && <VibixTrialStatus />}
       {isAdmin && <RelayToggle initialEnabled={relayEnabled} />}
+      {isAdmin && <KodikPlayerToggle initialEnabled={kodikPlayerEnabled} />}
 
       <ProfileTabs
         items={items}

@@ -78,6 +78,13 @@ interface Props {
    *  может отличить «досмотрел до последней вышедшей серии» от «сериал
    *  закончился насовсем» и помечал тайтл completed в обоих случаях. */
   isOngoing: boolean;
+  /** Живой рубильник (см. lib/settings.ts, components/KodikPlayerToggle.tsx
+   *  в профиле) — вкладка «Kodik» в переключателе убрана из выбора по
+   *  умолчанию, но остаётся ЕДИНСТВЕННЫМ гарантированным запасным вариантом,
+   *  если вообще ничего другого не резолвнулось (Vibix/Alloha/Наш плеер) —
+   *  её всё равно показываем и в этом случае, даже когда флаг выключен,
+   *  иначе тайтл без альтернатив остался бы вовсе без плеера. */
+  kodikPlayerEnabled: boolean;
 }
 
 const SAVE_INTERVAL_MS = 10_000;
@@ -174,6 +181,7 @@ export default function Player({
   fallback: initialFallback,
   isAuthed,
   isOngoing,
+  kodikPlayerEnabled,
 }: Props) {
   const router = useRouter();
   const { toast } = useToast();
@@ -229,6 +237,12 @@ export default function Player({
   // по умолчанию открывался на «Наш плеер» с одним нерабочим без доступного
   // торрента Real-Debrid вместо честного фолбэка на Kodik/Videoseed/Alloha.
   const hasRealOwnPlayer = ownPlayerTranslations.some((t) => t.id !== -1);
+  // Вкладка «Kodik» в переключателе — по флагу (см. KodikPlayerToggle в
+  // профиле) ИЛИ когда она и так уже единственный доступный вариант (см.
+  // ту же логику несколькими строками ниже, где 'kodik' — безусловный
+  // последний фолбэк): иначе тайтл без Vibix/Alloha/своего плеера остался
+  // бы с включённым по факту, но НЕВИДИМЫМ в переключателе плеером.
+  const showKodikTab = kodikPlayerEnabled || (!hasVibix && !hasAlloha && !hasRealOwnPlayer);
   const [player, setPlayer] = useState<PlayerKind>(
     hasRealOwnPlayer
       ? 'own'
@@ -339,18 +353,21 @@ export default function Player({
   // переключателя (см. его список ниже), старое сохранённое предпочтение
   // "videoseed" у уже заходивших пользователей просто откатится на
   // дефолтный выбор компонента, а не оставит их на скрытой вкладке без
-  // подсветки в переключателе.
+  // подсветки в переключателе. 'kodik' — аналогично, но только если его
+  // вкладка сейчас реально видна (флаг включён либо это последний фолбэк,
+  // см. showKodikTab) — иначе сохранённое предпочтение "kodik" у старых
+  // пользователей тоже откатится на дефолтный выбор.
   useEffect(() => {
     const pref = window.localStorage.getItem(PLAYER_PREF_KEY);
     if (
-      pref === 'kodik' ||
+      (pref === 'kodik' && showKodikTab) ||
       (pref === 'vibix' && hasVibix) ||
       (pref === 'alloha' && hasAlloha) ||
       (pref === 'own' && hasOwnPlayer)
     ) {
       setPlayer(pref);
     }
-  }, [hasVibix, hasAlloha, hasOwnPlayer]);
+  }, [hasVibix, hasAlloha, hasOwnPlayer, showKodikTab]);
 
   // Переключение плеера с сохранением выбора.
   const switchPlayer = useCallback(
@@ -1095,7 +1112,7 @@ export default function Player({
                 [
                   hasOwnPlayer ? (['own', 'Наш плеер', false] as const) : null,
                   hasVibix ? (['vibix', 'Vibix', false] as const) : null,
-                  ['kodik', 'Kodik', false] as const,
+                  showKodikTab ? (['kodik', 'Kodik', false] as const) : null,
                   hasAlloha ? (['alloha', 'Alloha', true] as const) : null,
                 ].filter(Boolean) as ReadonlyArray<readonly [PlayerKind, string, boolean]>
               ).map(([kind, label, approxTracking]) => (
