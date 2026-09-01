@@ -78,6 +78,17 @@ function isRetryableUpstreamFailure(status: number): boolean {
   return status >= 400;
 }
 
+// Сколько раз пробовать переизвлечь при неуспехе апстрима, прежде чем
+// сдаться — не 1 (было раньше), а до 2-3: найдено вживую, что у Alloha
+// РАЗНЫЕ извлечения одного и того же перевода могут попасть на РАЗНЫЕ
+// edge-сервера её CDN (vkvideo.cloud, по имени хоста в URL — разный при
+// каждом извлечении), и как минимум один такой edge жёстко фингерпринтит
+// клиента: тот же подписанный URL с теми же заголовками — `curl` получает
+// 200, а `fetch()` из Node (то, чем реально пользуется этот прокси) — 403,
+// стабильно и воспроизводимо. Один ретрай мог повторно попасть на тот же
+// проблемный edge; несколько попыток увеличивают шанс попасть на рабочий.
+const MAX_UPSTREAM_ATTEMPTS = 3;
+
 /** Alloha иногда отдаёт рядом с основной озвучкой ещё аудиодорожки (см.
  *  ResolvedStream.audioTracks) — ?audio=<индекс> подставляет её url вместо
  *  основного. Каждая дорожка — ОДНА ссылка без своего набора качеств (см.
@@ -201,46 +212,56 @@ async function handleGet(
     // hls.js-подобное переключение уровня без реолда.
     const qRaw = request.nextUrl.searchParams.get('q');
     const qHeight = qRaw != null && Number.isFinite(Number(qRaw)) ? Number(qRaw) : undefined;
-    const dashUrl = pickDashUrl(resolved, qHeight);
-    const dashProxied = await fetchAndProxy(range, dashUrl, resolved.headers);
-    if (!isRetryableUpstreamFailure(dashProxied.status)) return withDashQualities(dashProxied, resolved.qualities);
+    let currentDash = resolved;
+    let dashProxied = await fetchAndProxy(range, pickDashUrl(currentDash, qHeight), currentDash.headers);
 
     // Та же логика самолечения, что и у остального ниже (см. комментарий у
-    // forceFresh) — раньше эта ветка возвращалась ДО общего ретрая, и
-    // протухший (раньше 15-минутного TTL resolved_streams) подписанный .mpd
-    // Aksor просто падал с 404 без попытки переизвлечь.
-    await dashProxied.body?.cancel().catch(() => {});
-    const freshDash = await resolveStream({ ...resolveArgs, forceFresh: true });
-    if (!freshDash) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-    const freshDashUrl = pickDashUrl(freshDash, qHeight);
-    const retriedDash = await fetchAndProxy(range, freshDashUrl, freshDash.headers);
-    return withDashQualities(retriedDash, freshDash.qualities);
+    // MAX_UPSTREAM_ATTEMPTS) — раньше эта ветка возвращалась ДО ретрая
+    // вообще, протухший подписанный .mpd Aksor просто падал без попытки
+    // переизвлечь.
+    for (
+      let attempt = 1;
+      attempt < MAX_UPSTREAM_ATTEMPTS && isRetryableUpstreamFailure(dashProxied.status);
+      attempt++
+    ) {
+      await dashProxied.body?.cancel().catch(() => {});
+      const freshDash = await resolveStream({ ...resolveArgs, forceFresh: true });
+      if (!freshDash) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+      currentDash = freshDash;
+      dashProxied = await fetchAndProxy(range, pickDashUrl(currentDash, qHeight), currentDash.headers);
+    }
+    return withDashQualities(dashProxied, currentDash.qualities);
   }
 
-  const proxied = await fetchAndProxy(range, pickAudioTrackUrl(resolved, audioIndex), resolved.headers);
-  if (!isRetryableUpstreamFailure(proxied.status)) return proxied;
+  let current = resolved;
+  let proxied = await fetchAndProxy(range, pickAudioTrackUrl(current, audioIndex), current.headers);
 
   // Кэш мог протухнуть раньше своего TTL — подписанные CDN-ссылки живут
   // заметно меньше 15 минут (проверено вживую и у Videoseed — 404 у
-  // апстрима, и у Alloha — 403, см. isRetryableUpstreamFailure выше). Раз
-  // апстрим ответил, а не молчит — пробуем переизвлечь один раз, прежде чем
-  // сдаваться.
-  await proxied.body?.cancel().catch(() => {});
-  const fresh = await resolveStream({ ...resolveArgs, forceFresh: true });
-  if (!fresh) {
-    return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  // апстрима, и у Alloha — 403). Раз апстрим ответил, а не молчит — пробуем
+  // переизвлечь заново, до MAX_UPSTREAM_ATTEMPTS попыток суммарно (см. её
+  // комментарий — у Alloha разные попытки могут попасть на разные edge её
+  // CDN, не все одинаково доступны).
+  for (let attempt = 1; attempt < MAX_UPSTREAM_ATTEMPTS && isRetryableUpstreamFailure(proxied.status); attempt++) {
+    await proxied.body?.cancel().catch(() => {});
+    const fresh = await resolveStream({ ...resolveArgs, forceFresh: true });
+    if (!fresh) {
+      return NextResponse.json({ error: 'not_found' }, { status: 404 });
+    }
+    current = fresh;
+    if (!current.isDash && current.qualities && current.qualities.length > 1) {
+      const text = synthesizeMasterPlaylist(current.qualities, current.headers);
+      return new Response(text, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/vnd.apple.mpegurl',
+          'Cache-Control': 'private, no-store',
+        },
+      });
+    }
+    proxied = await fetchAndProxy(range, pickAudioTrackUrl(current, audioIndex), current.headers);
   }
-  if (fresh.qualities && fresh.qualities.length > 1) {
-    const text = synthesizeMasterPlaylist(fresh.qualities, fresh.headers);
-    return new Response(text, {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/vnd.apple.mpegurl',
-        'Cache-Control': 'private, no-store',
-      },
-    });
-  }
-  return fetchAndProxy(range, pickAudioTrackUrl(fresh, audioIndex), fresh.headers);
+  return proxied;
 }
 
 export async function GET(request: NextRequest, ctx: { params: RouteParams }) {
