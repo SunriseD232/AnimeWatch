@@ -148,20 +148,36 @@ function parseSubtitleUrls(subtitleStr) {
 }
 
 /**
- * Только для случая БЕЗ выбранной пользователем озвучки (embedUrl не задан в
- * extractVideoseed, см. videoseed.js) — тогда, как и в старом Puppeteer-пути,
- * "сайт сам решает" озвучку по умолчанию; мы для простоты берём первую в
- * списке. Если пользователь явно выбрал озвучку (embedUrl с
- * default_audio_id из каталога) — сопоставить её конкретному "{Label}" из
- * этого конфига тут не из чего (нет доступа к человекочитаемому имени
- * озвучки, которое resolve.ts брал из videoseed-catalog.ts) — для этого
- * случая остаётся Puppeteer-путь без изменений.
+ * Ищет среди распарсенных озвучек ту, чей "{Label}" совпадает с
+ * translationLabel (человекочитаемое имя из каталога — short_name/name, см.
+ * ExtractParams.translationLabel в основном приложении). Сравнение мягкое
+ * (без учёта регистра/пробелов по краям) — метки вживую совпадали буквально
+ * (напр. "LostFilm", "Английский"), но лишняя строгость тут не нужна и
+ * только повышает риск ложного промаха на ровном месте.
+ *
+ * null, если translationLabel не задан (сайт сам решает — берём первую) или
+ * если совпадения не нашлось (тогда вызывающий код откатится на Puppeteer,
+ * а не молча покажет случайную озвучку вместо запрошенной).
+ */
+function findTranslationByLabel(translations, translationLabel) {
+  if (!translationLabel) return translations[0] ?? null;
+  const norm = (s) => s.trim().toLowerCase();
+  const want = norm(translationLabel);
+  return translations.find((t) => norm(t.label) === want) ?? null;
+}
+
+/**
+ * Основной путь извлечения Videoseed — БЕЗ Puppeteer/Chromium. Работает и
+ * для дефолтной озвучки (translationLabel не задан — берём первую из
+ * списка, "сайт сам решает"), и для конкретно выбранной пользователем (см.
+ * findTranslationByLabel выше) — конфиг embed_auto содержит ВСЕ озвучки
+ * сразу, отдельный embed с default_audio_id для этого не нужен.
  *
  * Возвращает null при любой аномалии (не 200, конфиг не распарсился, серии
- * нет в конфиге) — вызывающий код откатывается на Puppeteer, так что
- * регрессии не создаёт.
+ * нет в конфиге, запрошенную озвучку не нашли по имени) — вызывающий код
+ * откатывается на Puppeteer, так что регрессии не создаёт.
  */
-async function extractViaHttp({ kinopoiskId, season, episode }) {
+async function extractViaHttp({ kinopoiskId, season, episode, translationLabel }) {
   const embedUrl = buildEmbedUrl(kinopoiskId, season, episode);
   if (!embedUrl) return null;
   const referer = `https://${videoseedHost()}/`;
@@ -203,7 +219,12 @@ async function extractViaHttp({ kinopoiskId, season, episode }) {
 
   const translations = parseTranslations(entry.file);
   if (translations.length === 0) return null;
-  const chosen = translations[0].url;
+  const match = findTranslationByLabel(translations, translationLabel);
+  if (!match) {
+    console.error(`[videoseed-http] Озвучка "${translationLabel}" не найдена среди [${translations.map((t) => t.label).join(', ')}]`);
+    return null;
+  }
+  const chosen = match.url;
 
   const isHls = chosen.includes('.m3u8');
   const qualities = isHls ? await probeQualities(chosen, referer) : null;

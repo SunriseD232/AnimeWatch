@@ -1,6 +1,6 @@
 'use strict';
 
-const { toAbsoluteUrl, getSharedBrowser } = require('./browser');
+const { toAbsoluteUrl, getSharedBrowser, serializeBrowserUse } = require('./browser');
 const { extractViaHttp } = require('./videoseed-http');
 const {
   UA,
@@ -21,11 +21,10 @@ const {
  * interception (реальный сетевой запрос на WRAPPER_URL не уходит).
  *
  * Этот Puppeteer-путь теперь — ЗАПАСНОЙ. Основной (см. extractVideoseed
- * ниже) — videoseed-http.js, без браузера вообще; сюда попадаем только если
- * он не сработал (сменился формат страницы) или запрошена конкретная
- * озвучка пользователем (embedUrl с default_audio_id — HTTP-путь пока не
- * умеет сопоставлять её конкретному "{Label}", см. комментарий в
- * videoseed-http.js).
+ * ниже) — videoseed-http.js, без браузера вообще, включая случай с
+ * конкретно выбранной озвучкой (сопоставляется по translationLabel, см.
+ * videoseed-http.js); сюда попадаем только если HTTP-путь не сработал
+ * (сменился формат страницы, не нашли эту озвучку по имени и т.п.).
  */
 
 /**
@@ -220,23 +219,12 @@ async function interceptVideoUrl(rawEmbedUrl, referer) {
   }
 }
 
-async function extractVideoseed({ shikimoriId, season, episode, embedUrl }) {
-  // embedUrl — конкретная озвучка (embed/embed_serial с default_audio_id),
-  // выбранная на основном сайте, см. getVideoseedOwnPlayerTranslations().
-  // Без него — старое поведение: embed_auto по kinopoisk_id (сайт сам решает
-  // озвучку по умолчанию) — именно этот случай (embedUrl не задан) сначала
-  // пробуем быстрым HTTP-путём без браузера (см. videoseed-http.js). Он
-  // возвращает null при любой аномалии (формат страницы изменился, серии
-  // нет в конфиге и т.п.) — тогда просто продолжаем ниже как раньше, через
-  // Puppeteer. embedUrl (конкретная озвучка) HTTP-путь пока не умеет
-  // сопоставлять — см. комментарий в videoseed-http.js, туда сразу
-  // Puppeteer.
-  if (!embedUrl) {
-    const viaHttp = await extractViaHttp({ kinopoiskId: shikimoriId, season, episode });
-    if (viaHttp) return viaHttp;
-    console.error('[videoseed] HTTP-путь не сработал — откат на Puppeteer...');
-  }
-
+/** Запасной Puppeteer-путь — вызывается только когда HTTP-путь не сработал
+ *  (см. extractVideoseed ниже). Сериализуется через общий с Alloha браузер
+ *  (serializeBrowserUse, browser.js) — только на время ЭТОГО вызова, не на
+ *  весь extractVideoseed целиком, чтобы быстрый HTTP-путь никогда не ждал
+ *  своей очереди за Alloha. */
+async function extractViaPuppeteer({ shikimoriId, season, episode, embedUrl }) {
   const url = embedUrl || buildEmbedUrl(shikimoriId, season, episode);
   if (!url) return null;
 
@@ -276,6 +264,25 @@ async function extractVideoseed({ shikimoriId, season, episode, embedUrl }) {
     ...(qualities ? { qualities } : {}),
     ...(subtitles.length > 0 ? { subtitles } : {}),
   };
+}
+
+async function extractVideoseed({ shikimoriId, season, episode, embedUrl, translationLabel }) {
+  // embedUrl/translationLabel — конкретная озвучка (embed/embed_serial с
+  // default_audio_id + человекочитаемое имя из каталога), выбранная на
+  // основном сайте, см. getVideoseedOwnPlayerTranslations() и resolve.ts.
+  // Без них — старое поведение: сайт сам решает озвучку по умолчанию.
+  //
+  // В ОБОИХ случаях сначала пробуем быстрый HTTP-путь без браузера (см.
+  // videoseed-http.js) — он сам берёт первую озвучку, если translationLabel
+  // не задан, либо ищет совпадение по имени, если задан. Возвращает null при
+  // любой аномалии (формат страницы изменился, эту озвучку не нашли по имени
+  // и т.п.) — тогда откатываемся на Puppeteer с тем же embedUrl, что и
+  // раньше (без изменений в его поведении).
+  const viaHttp = await extractViaHttp({ kinopoiskId: shikimoriId, season, episode, translationLabel });
+  if (viaHttp) return viaHttp;
+  console.error('[videoseed] HTTP-путь не сработал — откат на Puppeteer...');
+
+  return serializeBrowserUse(() => extractViaPuppeteer({ shikimoriId, season, episode, embedUrl }));
 }
 
 module.exports = { extractVideoseed };

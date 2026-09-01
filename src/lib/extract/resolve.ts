@@ -152,6 +152,11 @@ async function resolveStreamUncoalesced({
   // плеера — см. WatchPlayer/OwnPlayer). Источник списка разный: аниме —
   // Yummy, кино — Kodik/Videoseed по kinopoisk_id (у Yummy кино вообще нет).
   let embedUrl: string | undefined;
+  // Только для videoseed: человекочитаемое имя выбранной озвучки — нужно
+  // HTTP-пути извлечения (см. ExtractParams.translationLabel), чтобы
+  // сопоставить её "{Label}" в конфиге плеера, а не только Puppeteer-пути,
+  // который просто открывает embedUrl с default_audio_id как есть.
+  let translationLabel: string | undefined;
   if (translationId != null) {
     if (contentType === 'anime') {
       const yummy = await getYummyEpisode(shikimoriId, episode);
@@ -161,7 +166,12 @@ async function resolveStreamUncoalesced({
       embedUrl = kodik.find((t) => t.id === translationId)?.embedUrl;
     } else if (source === 'videoseed') {
       const videoseed = await getVideoseedOwnPlayerTranslations(shikimoriId, season, episode);
-      embedUrl = videoseed.find((t) => t.id === translationId)?.embedUrl;
+      const translation = videoseed.find((t) => t.id === translationId);
+      embedUrl = translation?.embedUrl;
+      // title строится как `${short_name||name} · Videoseed` (см.
+      // getVideoseedOwnPlayerTranslations) — отрезаем свой же суффикс, а не
+      // парсим что-то стороннее, поэтому не хрупко.
+      translationLabel = translation?.title.replace(/\s*·\s*Videoseed$/, '');
     } else if (source === 'alloha' && contentType === 'cinema') {
       const alloha = await getAllohaSources(shikimoriId);
       embedUrl = alloha.ownPlayerTranslations.find((t) => t.id === translationId)?.embedUrl;
@@ -176,7 +186,7 @@ async function resolveStreamUncoalesced({
   const resolved =
     source === 'realdebrid'
       ? await resolveRealDebridStream({ contentType, shikimoriId, season, episode })
-      : await extractViaVps(source, { shikimoriId, season, episode, embedUrl }, signal);
+      : await extractViaVps(source, { shikimoriId, season, episode, embedUrl, translationLabel }, signal);
   if (!resolved) return null;
 
   await supabase.from('resolved_streams').upsert(

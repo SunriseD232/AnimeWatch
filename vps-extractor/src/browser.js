@@ -197,4 +197,33 @@ async function closeSharedBrowser() {
   }
 }
 
-module.exports = { toAbsoluteUrl, resolveProxy, launchBrowser, getSharedBrowser, closeSharedBrowser };
+/**
+ * VPS на 1 ГБ RAM (см. README.md) — параллельные запуски Chromium могут
+ * упереться в OOM. Сериализуем ЛЮБОЕ обращение к общему браузеру (Alloha —
+ * всегда, Videoseed — только когда его HTTP-путь без браузера не сработал,
+ * см. videoseed.js) через простую очередь: следующий вызов ждёт, пока не
+ * освободится текущий. Раньше жила как локальная переменная в server.js и
+ * оборачивала там весь /extract для alloha/videoseed целиком — переехала
+ * сюда (единственное место, реально владеющее общим браузером), когда
+ * Videoseed обзавёлся путём, вообще не трогающим Chromium: оборачивать в
+ * очередь стоит только то, что действительно его использует, иначе быстрый
+ * HTTP-путь Videoseed без нужды ждал бы своей очереди за Alloha.
+ */
+let queue = Promise.resolve();
+function serializeBrowserUse(fn) {
+  const result = queue.then(fn, fn);
+  queue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
+module.exports = {
+  toAbsoluteUrl,
+  resolveProxy,
+  launchBrowser,
+  getSharedBrowser,
+  closeSharedBrowser,
+  serializeBrowserUse,
+};
