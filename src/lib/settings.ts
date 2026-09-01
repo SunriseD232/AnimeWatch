@@ -76,3 +76,16 @@ export function getVpsRelayEnabled(fresh = false): Promise<boolean> {
 export function setVpsRelayEnabled(enabled: boolean): Promise<void> {
   return setSetting('vps_relay_enabled', enabled);
 }
+
+/** Вкладка «Kodik» в переключателе плеера (см. components/Player.tsx) —
+ *  убрана из выбора по умолчанию (см. components/KodikPlayerToggle.tsx в
+ *  профиле), но остаётся доступной как рубильник без редеплоя, если
+ *  понадобится вернуть. false по умолчанию — именно это и попросили
+ *  выключить сразу. */
+export function getKodikPlayerEnabled(fresh = false): Promise<boolean> {
+  return getSetting('kodik_player_enabled', false, fresh);
+}
+
+export function setKodikPlayerEnabled(enabled: boolean): Promise<void> {
+  return setSetting('kodik_player_enabled', enabled);
+}

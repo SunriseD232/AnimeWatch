@@ -5,6 +5,7 @@ import { createClient, getCachedUser } from '@/lib/supabase/server';
 import { getVibixEmbed } from '@/lib/video/vibix';
 import { getTmdbSeriesOngoing } from '@/lib/tmdb';
 import { resolveCinemaEpisodeSources } from '@/lib/watch/resolveCinemaEpisode';
+import { getKodikPlayerEnabled } from '@/lib/settings';
 import type { WatchProgress } from '@/lib/types';
 
 export const metadata = { title: 'Просмотр — MediaWatch' };
@@ -83,7 +84,7 @@ export default async function CinemaWatchPage({
   // Vibix — заголовок-уровня (один и тот же embed на весь тайтл, серию/сезон
   // передаём прямо в его iframe-SDK, см. VibixPlayer.tsx) — не часть общего
   // резолвера серии (resolveCinemaEpisodeSources), т.к. не завязан на неё.
-  const [vibixEmbed, sources, ongoing] = await Promise.all([
+  const [vibixEmbed, sources, ongoing, kodikPlayerEnabled] = await Promise.all([
     getVibixEmbed(kinopoiskId),
     resolveCinemaEpisodeSources({
       kinopoiskId,
@@ -98,6 +99,10 @@ export default async function CinemaWatchPage({
     // статусе (не скрывать/не завершать), что уже применяется для карточки
     // «Продолжить просмотр» в cinema/page.tsx.
     item.isSerial && item.idImdb ? getTmdbSeriesOngoing(item.idImdb) : Promise.resolve(null),
+    // Живой рубильник (см. lib/settings.ts, KodikPlayerToggle в профиле) —
+    // вкладка «Kodik» в переключателе плеера убрана из выбора по умолчанию,
+    // это его читает.
+    getKodikPlayerEnabled(),
   ]);
 
   // Число серий в текущем сезоне (для «Серия X из Y»).
@@ -132,6 +137,7 @@ export default async function CinemaWatchPage({
       fallback={sources.kodikFallback}
       isAuthed={!!user}
       isOngoing={ongoing === true}
+      kodikPlayerEnabled={kodikPlayerEnabled}
     />
   );
 }
