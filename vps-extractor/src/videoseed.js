@@ -1,6 +1,15 @@
 'use strict';
 
-const { toAbsoluteUrl, getSharedBrowser } = require('./browser');
+const { toAbsoluteUrl, getSharedBrowser, serializeBrowserUse } = require('./browser');
+const { extractViaHttp } = require('./videoseed-http');
+const {
+  UA,
+  videoseedHost,
+  buildEmbedUrl,
+  probeQualities,
+  subtitleLabel,
+  subtitleLangFromUrl,
+} = require('./videoseed-shared');
 
 /**
  * embed_auto/{id} требует Sec-Fetch-Dest: iframe (браузер выставляет это
@@ -10,82 +19,13 @@ const { toAbsoluteUrl, getSharedBrowser } = require('./browser');
  * используем тот же приём обёртки, что и в alloha.js: синтетическая
  * страница с <iframe src=embedUrl>, перехваченная через request
  * interception (реальный сетевой запрос на WRAPPER_URL не уходит).
+ *
+ * Этот Puppeteer-путь теперь — ЗАПАСНОЙ. Основной (см. extractVideoseed
+ * ниже) — videoseed-http.js, без браузера вообще, включая случай с
+ * конкретно выбранной озвучкой (сопоставляется по translationLabel, см.
+ * videoseed-http.js); сюда попадаем только если HTTP-путь не сработал
+ * (сменился формат страницы, не нашли эту озвучку по имени и т.п.).
  */
-function videoseedHost() {
-  return process.env.VIDEOSEED_HOST || 'tv-1-kinoserial.net';
-}
-
-const UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
-
-/**
- * Стандартные битрейт-тиры Videoseed CDN. Найдено вживую: путь извлечённого
- * URL содержит номер качества (.../{H}.mp4:hls:manifest.m3u8) и его можно
- * просто подставлять другими значениями В ТОМ ЖЕ подписанном пути — хэш
- * авторизации НЕ привязан к конкретному качеству (проверено: разные H дают
- * реально разный битрейт по размеру сегмента, а несуществующий тир — честный
- * 404, не молчаливый клэмп на ближайший). Поэтому нужен только один клик
- * Puppeteer + серия дешёвых GET на текстовый манифест (не сам видеопоток),
- * без необходимости лезть в плеер за каждым качеством отдельно.
- */
-const QUALITY_CANDIDATES = [2160, 1440, 1080, 720, 480, 360, 240];
-
-/** Пробует остальные тиры для URL вида .../{H}.mp4:hls:manifest.m3u8. */
-async function probeQualities(url, referer) {
-  const match = url.match(/^(.*\/)(\d{3,4})(\.mp4:hls:manifest\.m3u8)(\?.*)?$/);
-  if (!match) return null;
-  const [, prefix, , suffix, qs = ''] = match;
-
-  const probes = await Promise.all(
-    QUALITY_CANDIDATES.map(async (height) => {
-      const candidateUrl = `${prefix}${height}${suffix}${qs}`;
-      try {
-        const res = await fetch(candidateUrl, {
-          headers: { Referer: referer, 'User-Agent': UA },
-          signal: AbortSignal.timeout(8_000),
-        });
-        return res.ok ? { height, url: candidateUrl } : null;
-      } catch {
-        return null;
-      }
-    }),
-  );
-
-  const qualities = probes.filter(Boolean).sort((a, b) => b.height - a.height);
-  return qualities.length > 0 ? qualities : null;
-}
-
-/**
- * Субтитры — НЕ в самом HLS-манифесте (проверено: там только сегменты, ни
- * одного #EXT-X-MEDIA:TYPE=SUBTITLES) и не в API — плеер сам подгружает
- * готовые .vtt отдельными запросами (найдено сетевым перехватом при
- * извлечении видео, тем же проходом, без лишней загрузки страницы), путь
- * вида /contents/videos_sources/{bucket}/{id}/{lang}.vtt. Код языка — из
- * имени файла (rus/eng/...), человекочитаемая подпись — из таблицы ниже.
- */
-const SUBTITLE_LABELS = {
-  rus: 'Русский',
-  eng: 'English',
-  ukr: 'Українська',
-  ger: 'Deutsch',
-  fre: 'Français',
-  spa: 'Español',
-  ita: 'Italiano',
-  chi: '中文',
-  jpn: '日本語',
-  kor: '한국어',
-  tur: 'Türkçe',
-  pol: 'Polski',
-};
-
-function subtitleLabel(lang) {
-  return SUBTITLE_LABELS[lang.toLowerCase()] || lang.toUpperCase();
-}
-
-function subtitleLangFromUrl(url) {
-  const match = url.match(/\/([a-zA-Z]{2,3})\.vtt(?:[?#]|$)/);
-  return match ? match[1].toLowerCase() : null;
-}
 
 /**
  * Рекламная сеть на embed-странице (preroll) иногда крутит СВОЙ видеоролик,
@@ -130,15 +70,6 @@ function isAdRequest(url) {
   } catch {
     return false;
   }
-}
-
-function buildEmbedUrl(kinopoiskId, season, episode) {
-  const token = process.env.VIDEOSEED_TOKEN;
-  if (!token) return null;
-  const url = new URL(`https://${videoseedHost()}/embed_auto/${kinopoiskId}/`);
-  url.searchParams.set('token', token);
-  url.searchParams.set('video', `s${season || 1}v${episode}`);
-  return url.toString();
 }
 
 async function interceptVideoUrl(rawEmbedUrl, referer) {
@@ -288,11 +219,12 @@ async function interceptVideoUrl(rawEmbedUrl, referer) {
   }
 }
 
-async function extractVideoseed({ shikimoriId, season, episode, embedUrl }) {
-  // embedUrl — конкретная озвучка (embed/embed_serial с default_audio_id),
-  // выбранная на основном сайте, см. getVideoseedOwnPlayerTranslations().
-  // Без него — старое поведение: embed_auto по kinopoisk_id (сайт сам решает
-  // озвучку по умолчанию).
+/** Запасной Puppeteer-путь — вызывается только когда HTTP-путь не сработал
+ *  (см. extractVideoseed ниже). Сериализуется через общий с Alloha браузер
+ *  (serializeBrowserUse, browser.js) — только на время ЭТОГО вызова, не на
+ *  весь extractVideoseed целиком, чтобы быстрый HTTP-путь никогда не ждал
+ *  своей очереди за Alloha. */
+async function extractViaPuppeteer({ shikimoriId, season, episode, embedUrl }) {
   const url = embedUrl || buildEmbedUrl(shikimoriId, season, episode);
   if (!url) return null;
 
@@ -332,6 +264,25 @@ async function extractVideoseed({ shikimoriId, season, episode, embedUrl }) {
     ...(qualities ? { qualities } : {}),
     ...(subtitles.length > 0 ? { subtitles } : {}),
   };
+}
+
+async function extractVideoseed({ shikimoriId, season, episode, embedUrl, translationLabel }) {
+  // embedUrl/translationLabel — конкретная озвучка (embed/embed_serial с
+  // default_audio_id + человекочитаемое имя из каталога), выбранная на
+  // основном сайте, см. getVideoseedOwnPlayerTranslations() и resolve.ts.
+  // Без них — старое поведение: сайт сам решает озвучку по умолчанию.
+  //
+  // В ОБОИХ случаях сначала пробуем быстрый HTTP-путь без браузера (см.
+  // videoseed-http.js) — он сам берёт первую озвучку, если translationLabel
+  // не задан, либо ищет совпадение по имени, если задан. Возвращает null при
+  // любой аномалии (формат страницы изменился, эту озвучку не нашли по имени
+  // и т.п.) — тогда откатываемся на Puppeteer с тем же embedUrl, что и
+  // раньше (без изменений в его поведении).
+  const viaHttp = await extractViaHttp({ kinopoiskId: shikimoriId, season, episode, translationLabel });
+  if (viaHttp) return viaHttp;
+  console.error('[videoseed] HTTP-путь не сработал — откат на Puppeteer...');
+
+  return serializeBrowserUse(() => extractViaPuppeteer({ shikimoriId, season, episode, embedUrl }));
 }
 
 module.exports = { extractVideoseed };

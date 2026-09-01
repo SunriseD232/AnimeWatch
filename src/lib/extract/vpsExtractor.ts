@@ -9,7 +9,7 @@ import type { ExtractParams, ExtractSource, ResolvedStream } from './types';
  */
 export async function extractViaVps(
   source: ExtractSource,
-  { shikimoriId, season, episode, embedUrl }: ExtractParams,
+  { shikimoriId, season, episode, embedUrl, translationLabel }: ExtractParams,
   /** Сигнал отмены исходного запроса клиента (см. request.signal в
    *  /api/proxy/.../route.ts) — если пользователь ушёл со страницы/сменил
    *  серию, пока это ещё выполняется, не смысла продолжать тяжёлое
@@ -37,7 +37,7 @@ export async function extractViaVps(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ source, shikimoriId, season, episode, embedUrl }),
+      body: JSON.stringify({ source, shikimoriId, season, episode, embedUrl, translationLabel }),
       signal: combinedSignal,
     });
   } catch (err) {
