@@ -212,3 +212,107 @@ async function resolveStreamUncoalesced({
 
   return resolved;
 }
+
+/** Источники, реально отдающие свои субтитры при извлечении (см.
+ *  ResolvedStream.subtitles) — единственные, где кросс-источниковый поиск
+ *  ниже и фоновый прогрев вообще имеют смысл спрашивать. */
+const SUBTITLE_CAPABLE_SOURCES: ExtractSource[] = ['alloha', 'videoseed'];
+
+/**
+ * Кросс-источниковые субтитры: если у ЗАПРОШЕННОГО источника+перевода нет
+ * какого-то языка, но он уже ЕСТЬ в кэше resolved_streams у ДРУГОГО
+ * источника/перевода той же серии (любой недавно просмотренный пользователем
+ * вариант) — отдаём его. Синхронизация с чужим видеорядом НЕ гарантирована
+ * (разные апстримы — разный монтаж/хронометраж опенинга и т.п.) — сознательно
+ * принятый риск, обсуждали с пользователем: лучше субтитры не в идеальный
+ * такт, чем совсем без них.
+ *
+ * Только чтение уже тёплого кэша (никакого нового извлечения) — дешёвый
+ * SELECT, безопасно звать синхронно на каждый запрос субтитров. Прогрев
+ * кэша для источников, которых тут ещё не оказалось — см.
+ * warmSubtitleSources ниже, отдельно и в фоне.
+ */
+// Коды языка у источников — ISO 639-2 (3 буквы: 'rus'/'eng', см.
+// vps-extractor/src/{videoseed,alloha}.js) — та же таблица, что и
+// NATIVE_LANG_TO_ISO2 в /api/proxy/subtitles/route.ts (не общий импорт: по
+// смыслу это две отдельные, самодостаточные 4-строчные таблицы, не общая
+// логика с общим местом эволюции).
+const NATIVE_LANG_TO_ISO2: Record<string, 'ru' | 'en'> = { rus: 'ru', ru: 'ru', eng: 'en', en: 'en' };
+
+export async function findCrossSourceSubtitles(
+  args: {
+    contentType: 'anime' | 'cinema';
+    shikimoriId: number;
+    season: number;
+    episode: number;
+  },
+  excludeSource: ExtractSource,
+  wantLangsIso2: Set<'ru' | 'en'>,
+): Promise<{ lang: string; label: string; url: string; headers: Record<string, string> }[]> {
+  if (wantLangsIso2.size === 0) return [];
+  const supabase = createServiceClient();
+  const { data } = await supabase
+    .from('resolved_streams')
+    .select('source, headers, subtitles')
+    .eq('content_type', args.contentType)
+    .eq('shikimori_id', args.shikimoriId)
+    .eq('season', args.season)
+    .eq('episode', args.episode)
+    .in('source', SUBTITLE_CAPABLE_SOURCES)
+    .neq('source', excludeSource)
+    .not('subtitles', 'is', null)
+    .gt('expires_at', new Date().toISOString());
+  if (!data) return [];
+
+  const found: { lang: string; label: string; url: string; headers: Record<string, string> }[] = [];
+  const stillWanted = new Set(wantLangsIso2);
+  for (const row of data) {
+    const headers = (row.headers as Record<string, string>) ?? {};
+    const subs = (row.subtitles as { lang: string; label: string; url: string }[] | null) ?? [];
+    for (const s of subs) {
+      const iso2 = NATIVE_LANG_TO_ISO2[s.lang.toLowerCase()];
+      if (!iso2 || !stillWanted.has(iso2)) continue;
+      found.push({ lang: s.lang, label: s.label, url: s.url, headers });
+      stillWanted.delete(iso2);
+    }
+    if (stillWanted.size === 0) break;
+  }
+  return found;
+}
+
+/**
+ * Фоновый прогрев кэша субтитро-способных источников (см.
+ * SUBTITLE_CAPABLE_SOURCES) — вызывается БЕЗ await (fire-and-forget) из
+ * /api/proxy/subtitles, когда после (1) нативных субтитров запрошенного
+ * источника и (2) кросс-источникового кэша (см. findCrossSourceSubtitles
+ * выше) какой-то язык всё ещё не найден. Не резолвит конкретный перевод —
+ * дефолтный кандидат каждого источника (translationId не задан, тот же
+ * смысл, что и "сайт сам решает" у Videoseed/Alloha), этого достаточно:
+ * цель — просто ЗАПОЛНИТЬ resolved_streams чем-то для (1) следующего запроса
+ * этой же ручки, если плеер перезапросит субтитры чуть позже.
+ *
+ * resolveStream() сам проверяет кэш и коалесцирует параллельные вызовы (см.
+ * её комментарий) — звать её тут безусловно безопасно и дёшево, если для
+ * источника уже есть тёплая запись (типичный случай при параллельных
+ * запросах многих пользователей одной серии).
+ */
+export function warmSubtitleSources(args: {
+  contentType: 'anime' | 'cinema';
+  shikimoriId: number;
+  season: number;
+  episode: number;
+  excludeSource: ExtractSource;
+}): void {
+  const candidates = SUBTITLE_CAPABLE_SOURCES.filter(
+    (s) => s !== args.excludeSource && !(s === 'alloha' && args.contentType === 'cinema'), // Alloha берёт кандидатов из Yummy — аниме-only каталог, для кино гарантированный промах.
+  );
+  for (const source of candidates) {
+    resolveStream({
+      contentType: args.contentType,
+      shikimoriId: args.shikimoriId,
+      season: args.season,
+      episode: args.episode,
+      source,
+    }).catch(() => {});
+  }
+}

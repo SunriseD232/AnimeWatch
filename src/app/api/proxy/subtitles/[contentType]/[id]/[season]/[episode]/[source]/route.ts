@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { resolveStream } from '@/lib/extract/resolve';
+import { resolveStream, findCrossSourceSubtitles, warmSubtitleSources } from '@/lib/extract/resolve';
 import { signRawUrl } from '@/lib/extract/proxy';
 import { getCachedSubtitle } from '@/lib/subtitles/opensubtitles';
 import { getCinemaById } from '@/lib/videoseed-catalog';
@@ -13,19 +13,32 @@ import type { ExtractSource } from '@/lib/extract/types';
  * субтитры — не часть m3u8/mp4-потока, а самостоятельные .vtt-файлы.
  * OwnPlayer запрашивает их отдельно и добавляет <track> в <video>.
  *
- * Два независимых источника субтитров, объединяются ПОЭЗЫЧНО (не
+ * Три независимых источника субтитров, объединяются ПОЯЗЫЧНО (не
  * all-or-nothing, как раньше — это и была причина «где-то только русский,
  * где-то только английский»: если Videoseed отдавал хоть одну дорожку,
  * OpenSubtitles для недостающего языка вообще не спрашивали):
- *  1. Videoseed отдаёт реальные .vtt при извлечении видео (см.
- *     vps-extractor/src/videoseed.js, коды языка там ISO 639-2, 'rus'/'eng')
- *     — используем resolveStream() (кэш-first, попадёт в уже тёплый кэш
- *     видео без повторного извлечения).
- *  2. OpenSubtitles (см. lib/subtitles/opensubtitles.ts) — не привязан к
+ *  1. Нативные субтитры ЗАПРОШЕННОГО источника+перевода — сейчас реально
+ *     отдают Videoseed и Alloha (коды языка ISO 639-2, 'rus'/'eng', см.
+ *     vps-extractor/src/{videoseed,alloha}.js) — используем resolveStream()
+ *     (кэш-first, попадёт в уже тёплый кэш видео без повторного извлечения).
+ *  2. Кросс-источниковые — если для какого-то языка родных субтитров нет
+ *     у ЭТОГО перевода, но он уже есть в кэше resolved_streams у ДРУГОГО
+ *     источника/перевода ТОЙ ЖЕ серии (см. findCrossSourceSubtitles в
+ *     resolve.ts) — берём их. Синхронизация с чужим видеорядом НЕ
+ *     гарантирована (разный монтаж/хронометраж у разных апстримов) —
+ *     сознательно принятый риск: лучше не в идеальный такт, чем совсем без
+ *     перевода. Чистое чтение кэша, ничего нового не извлекает.
+ *  3. OpenSubtitles (см. lib/subtitles/opensubtitles.ts) — не привязан к
  *     видео-извлечению вообще, матчится по imdb_id (кино) или названию
- *     (аниме). Спрашиваем ТОЛЬКО про языки, которых нет среди (1) — так и
- *     квота (100/сутки) не тратится впустую на уже закрытый Videoseed язык,
- *     и недостающий не остаётся без попытки.
+ *     (аниме). Спрашиваем ТОЛЬКО про языки, не закрытые (1) и (2) — так и
+ *     квота (100/сутки) не тратится впустую, и недостающий язык не остаётся
+ *     без попытки.
+ *
+ * Если после всех трёх какой-то язык всё ещё не нашёлся — в фоне (БЕЗ
+ * ожидания ответа клиенту, см. warmSubtitleSources) прогреваем кэш других
+ * субтитро-способных источников на дефолтный перевод, чтобы СЛЕДУЮЩИЙ запрос
+ * этой же ручки (повторный опрос плеера или другой пользователь той же
+ * серии) уже нашёл их через (2), без своего собственного извлечения.
  *
  * Заодно (не по чистоте имени ручки, а по экономии round-trip'а — resolved
  * уже под рукой) отдаём audioTracks: список ДОП. аудиодорожек (см.
@@ -119,7 +132,25 @@ export async function GET(request: NextRequest, { params }: { params: RouteParam
         .map((s) => NATIVE_LANG_TO_ISO2[s.lang.toLowerCase()])
         .filter((l): l is 'ru' | 'en' => l != null),
     );
-    const missingLangs = TARGET_LANGS.filter((l) => !coveredIso2.has(l.lang));
+    let missingLangs = TARGET_LANGS.filter((l) => !coveredIso2.has(l.lang));
+
+    // Кросс-источниковые — уже тёплый кэш ДРУГОГО источника/перевода этой же
+    // серии (см. findCrossSourceSubtitles в resolve.ts). Работает и для
+    // Real-Debrid тоже (своих субтитров у него нет, но чужие ему не помеха) —
+    // excludeSource=source тут просто не с чем совпасть, т.к. 'realdebrid' и
+    // так не входит в SUBTITLE_CAPABLE_SOURCES. Синхронизация не
+    // гарантирована — сознательно принятый риск, см. комментарий там же.
+    const crossSourceSubs = await findCrossSourceSubtitles(
+      { contentType, shikimoriId, season, episode },
+      source,
+      new Set(missingLangs.map((l) => l.lang)),
+    ).catch(() => []);
+    const crossSourceIso2 = new Set(
+      crossSourceSubs
+        .map((s) => NATIVE_LANG_TO_ISO2[s.lang.toLowerCase()])
+        .filter((l): l is 'ru' | 'en' => l != null),
+    );
+    missingLangs = missingLangs.filter((l) => !crossSourceIso2.has(l.lang));
 
     // Спрашиваем OpenSubtitles только про недостающие языки — subtitle_cache
     // кэширует НАВСЕГДА (в т.ч. промахи, см. getCachedSubtitle), так что
@@ -183,9 +214,26 @@ export async function GET(request: NextRequest, { params }: { params: RouteParam
         .filter((s): s is { lang: 'ru' | 'en'; label: string; url: string } => s !== null);
     }
 
+    // Всё ещё не хватает какого-то языка после всех трёх уровней — в фоне
+    // (БЕЗ await, ответ клиенту не ждёт) прогреваем кэш других субтитро-
+    // способных источников, чтобы следующий запрос этой же ручки уже нашёл
+    // их через кросс-источниковый кэш выше.
+    if (missingLangs.length > 0) {
+      warmSubtitleSources({ contentType, shikimoriId, season, episode, excludeSource: source });
+    }
+
+    const crossSourceSignedSubs = crossSourceSubs.map((s) => ({
+      lang: s.lang,
+      label: s.label,
+      url: signRawUrl(s.url, s.headers),
+    }));
+
     const audioTracks = (resolved?.audioTracks ?? []).map((t) => ({ label: t.label }));
 
-    return NextResponse.json({ subtitles: [...nativeSubs, ...fallbackSubs], audioTracks });
+    return NextResponse.json({
+      subtitles: [...nativeSubs, ...crossSourceSignedSubs, ...fallbackSubs],
+      audioTracks,
+    });
   } catch (err) {
     console.error('[proxy/subtitles] Упало:', err);
     return NextResponse.json({ subtitles: [], audioTracks: [] });
