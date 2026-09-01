@@ -266,6 +266,16 @@ async function extractViaPuppeteer({ shikimoriId, season, episode, embedUrl }) {
   };
 }
 
+// Сколько раз пробовать быстрый HTTP-путь, прежде чем откатываться на
+// Puppeteer ("старый способ") — большинство реальных сбоев HTTP-пути,
+// найденных вживую по логам (см. коммит), похожи на транзиентные: "operation
+// timed out" на запросе к embed_auto, случайный 404 у апстрима — повторный
+// запрос через мгновение обычно проходит нормально, а откат на Puppeteer
+// заметно дороже (секунды вместо десятков секунд). Одна неудача — ещё не
+// повод сразу платить эту цену.
+const HTTP_PATH_ATTEMPTS = 3;
+const HTTP_PATH_RETRY_DELAY_MS = 500;
+
 async function extractVideoseed({ shikimoriId, season, episode, embedUrl, translationLabel }) {
   // embedUrl/translationLabel — конкретная озвучка (embed/embed_serial с
   // default_audio_id + человекочитаемое имя из каталога), выбранная на
@@ -275,12 +285,19 @@ async function extractVideoseed({ shikimoriId, season, episode, embedUrl, transl
   // В ОБОИХ случаях сначала пробуем быстрый HTTP-путь без браузера (см.
   // videoseed-http.js) — он сам берёт первую озвучку, если translationLabel
   // не задан, либо ищет совпадение по имени, если задан. Возвращает null при
-  // любой аномалии (формат страницы изменился, эту озвучку не нашли по имени
-  // и т.п.) — тогда откатываемся на Puppeteer с тем же embedUrl, что и
-  // раньше (без изменений в его поведении).
-  const viaHttp = await extractViaHttp({ kinopoiskId: shikimoriId, season, episode, translationLabel });
-  if (viaHttp) return viaHttp;
-  console.error('[videoseed] HTTP-путь не сработал — откат на Puppeteer...');
+  // любой аномалии (формат страницы изменился, эту озвучку не нашли по имени,
+  // таймаут и т.п.) — несколько попыток подряд (см. HTTP_PATH_ATTEMPTS), и
+  // только если ВСЕ провалились — откатываемся на Puppeteer с тем же
+  // embedUrl, что и раньше (без изменений в его поведении).
+  for (let attempt = 1; attempt <= HTTP_PATH_ATTEMPTS; attempt++) {
+    const viaHttp = await extractViaHttp({ kinopoiskId: shikimoriId, season, episode, translationLabel });
+    if (viaHttp) return viaHttp;
+    if (attempt < HTTP_PATH_ATTEMPTS) {
+      console.error(`[videoseed] HTTP-путь не сработал (попытка ${attempt}/${HTTP_PATH_ATTEMPTS}) — повтор...`);
+      await new Promise((r) => setTimeout(r, HTTP_PATH_RETRY_DELAY_MS));
+    }
+  }
+  console.error(`[videoseed] HTTP-путь не сработал за ${HTTP_PATH_ATTEMPTS} попыток(и) — откат на Puppeteer...`);
 
   return serializeBrowserUse(() => extractViaPuppeteer({ shikimoriId, season, episode, embedUrl }));
 }
