@@ -117,11 +117,12 @@ const SOURCE_LABELS: Record<ExtractSource, string> = {
 type LoadState = 'probing' | 'ready' | 'unavailable' | 'failed';
 // Меню настроек — корневой список категорий или подменю выбора значения для
 // одной из них (см. рендер в конце компонента).
-type SettingsView = 'root' | 'quality' | 'audio' | 'subtitles' | 'speed';
+type SettingsView = 'root' | 'quality' | 'audio' | 'audioTrack' | 'subtitles' | 'speed';
 
 const SETTINGS_VIEW_TITLES: Record<Exclude<SettingsView, 'root'>, string> = {
   quality: 'Качество',
   audio: 'Озвучка',
+  audioTrack: 'Аудиодорожка',
   subtitles: 'Субтитры',
   speed: 'Скорость',
 };
@@ -278,10 +279,17 @@ export default function OwnPlayer({
   // источник (как смена озвучки), а не через currentLevel без перезагрузки.
   const isDashSource = effectiveSource === 'aksor';
   const [dashQualityHeight, setDashQualityHeight] = useState<number | null>(null);
+  // Доп. аудиодорожка (см. ResolvedStream.audioTracks — сейчас Alloha, напр.
+  // оригинал без перевода) — null = основная. Влияет на src так же, как
+  // dashQualityHeight: полная замена (?audio=), а не hls.js currentLevel на
+  // лету (см. pickAudioTrackUrl в /api/proxy/.../route.ts — их CDN не даёт
+  // переключать варианты постфактум).
+  const [audioTrackIndex, setAudioTrackIndex] = useState<number | null>(null);
 
   const query = new URLSearchParams();
   if (translationId != null) query.set('t', String(translationId));
   if (dashQualityHeight != null) query.set('q', String(dashQualityHeight));
+  if (audioTrackIndex != null) query.set('audio', String(audioTrackIndex));
   const queryStr = query.toString();
   const src = `/api/proxy/${contentType}/${shikimoriId}/${season}/${episode}/${effectiveSource}${
     queryStr ? `?${queryStr}` : ''
@@ -402,6 +410,13 @@ export default function OwnPlayer({
   // всегда пуст, и селектор просто не рендерится.
   const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
   const [activeSubtitleIndex, setActiveSubtitleIndex] = useState<number | null>(null); // null = выкл
+  // Доп. аудиодорожки той же серии+перевода (см. ResolvedStream.audioTracks
+  // — сейчас реально отдаёт только Alloha, напр. оригинал без перевода).
+  // Та же ручка /api/proxy/subtitles, что и для subtitles выше (см. её
+  // комментарий) — только label, переключение идёт query-параметром ?audio=
+  // на самом src (см. audioTrackIndex у dashQualityHeight выше), не
+  // отдельным полем состояния с сырым URL.
+  const [audioTracks, setAudioTracks] = useState<{ label: string }[]>([]);
   // Меню качества/субтитров — внутри контейнера фуллскрина (см. containerRef
   // ниже), а не отдельным блоком под видео: снаружи он был недоступен в
   // полноэкранном режиме (фуллскрин берётся на containerRef, а не на всю
@@ -522,11 +537,14 @@ export default function OwnPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [episode, season, resumeFrom]);
 
-  // Явно выбранное DASH-качество (Aksor) не переносится между сериями и
-  // сменой озвучки — новый эпизод/дорожка снова стартует с лучшего качества
-  // по умолчанию (см. src выше — dashQualityHeight===null означает "без ?q=").
+  // Явно выбранное DASH-качество (Aksor) и доп. аудиодорожка (Alloha) не
+  // переносятся между сериями и сменой озвучки — новый эпизод/дорожка снова
+  // стартует с основного варианта (см. src выше — null означает "без ?q="/
+  // "без ?audio="). Список самих audioTracks НЕ трогаем тут — его обновит
+  // отдельный эффект резолва субтитров/дорожек ниже, когда придёт новый.
   useEffect(() => {
     setDashQualityHeight(null);
+    setAudioTrackIndex(null);
   }, [episode, translationId]);
 
   // Закрываем меню настроек при смене серии/сезона — иначе может остаться
@@ -803,6 +821,7 @@ export default function OwnPlayer({
     if (loadState !== 'ready' || readySrcRef.current !== src) {
       setSubtitles([]);
       setActiveSubtitleIndex(null);
+      setAudioTracks([]);
       return;
     }
     let cancelled = false;
@@ -811,8 +830,10 @@ export default function OwnPlayer({
     }`;
     fetch(subsUrl)
       .then((r) => (r.ok ? r.json() : { subtitles: [] }))
-      .then((data: { subtitles?: Subtitle[] }) => {
-        if (!cancelled) setSubtitles(Array.isArray(data.subtitles) ? data.subtitles : []);
+      .then((data: { subtitles?: Subtitle[]; audioTracks?: { label: string }[] }) => {
+        if (cancelled) return;
+        setSubtitles(Array.isArray(data.subtitles) ? data.subtitles : []);
+        setAudioTracks(Array.isArray(data.audioTracks) ? data.audioTracks : []);
       })
       .catch(() => {});
     return () => {
@@ -1415,6 +1436,19 @@ export default function OwnPlayer({
     [qualityLevels, currentTime, resumeFrom, effectiveSource, shikimoriId, season, episode],
   );
 
+  // Смена доп. аудиодорожки (Alloha) — как DASH-качество выше: полная
+  // замена src через ?audio=, не hls.js currentLevel (их CDN не даёт
+  // переключать варианты постфактум, см. pickAudioTrackUrl в route.ts).
+  // null — вернуться на основную дорожку.
+  const changeAudioTrack = useCallback(
+    (index: number | null) => {
+      logEvent('player.change_audio_track', { source: effectiveSource, shikimoriId, season, episode, index });
+      seekTargetRef.current = currentTime > 1 ? currentTime : resumeFrom;
+      setAudioTrackIndex(index);
+    },
+    [currentTime, resumeFrom, effectiveSource, shikimoriId, season, episode],
+  );
+
   const changeSpeed = useCallback((rate: number) => {
     setPlaybackRate(rate);
     const v = videoRef.current;
@@ -1814,11 +1848,22 @@ export default function OwnPlayer({
                           onClick={() => setSettingsView('quality')}
                         />
                       )}
-                      {translations.length > 1 && (
+                      {(translations.length > 1 || audioTracks.length > 0) && (
                         <SettingsRow
                           label="Озвучка"
-                          value={activeTranslation?.title ?? '—'}
+                          value={
+                            audioTrackIndex != null
+                              ? (audioTracks[audioTrackIndex]?.label ?? '—')
+                              : (activeTranslation?.title ?? '—')
+                          }
                           onClick={() => setSettingsView('audio')}
+                        />
+                      )}
+                      {audioTracks.length > 0 && (
+                        <SettingsRow
+                          label="Аудиодорожка"
+                          value={audioTrackIndex === null ? 'Основная' : (audioTracks[audioTrackIndex]?.label ?? '—')}
+                          onClick={() => setSettingsView('audioTrack')}
                         />
                       )}
                       {subtitles.length > 0 && (
@@ -1877,18 +1922,60 @@ export default function OwnPlayer({
                         </>
                       )}
 
-                      {settingsView === 'audio' &&
-                        translations.map((t) => (
+                      {settingsView === 'audio' && (
+                        <>
+                          {translations.map((t) => (
+                            <RadioOption
+                              key={t.id}
+                              label={t.title}
+                              active={t.id === translationId && audioTrackIndex === null}
+                              onClick={() => {
+                                changeTranslation(t.id);
+                                setSettingsOpen(false);
+                              }}
+                            />
+                          ))}
+                          {/* Доп. аудиодорожки ТЕКУЩЕГО перевода (см. Аудиодорожка
+                              ниже — тот же выбор, доступный и отсюда: аудиодорожка
+                              концептуально тоже "что я слышу", как и озвучка выше,
+                              просто без повторного извлечения по сети). */}
+                          {audioTracks.map((t, i) => (
+                            <RadioOption
+                              key={`audio-${i}`}
+                              label={t.label}
+                              active={audioTrackIndex === i}
+                              onClick={() => {
+                                changeAudioTrack(i);
+                                setSettingsOpen(false);
+                              }}
+                            />
+                          ))}
+                        </>
+                      )}
+
+                      {settingsView === 'audioTrack' && (
+                        <>
                           <RadioOption
-                            key={t.id}
-                            label={t.title}
-                            active={t.id === translationId}
+                            label="Основная"
+                            active={audioTrackIndex === null}
                             onClick={() => {
-                              changeTranslation(t.id);
+                              changeAudioTrack(null);
                               setSettingsOpen(false);
                             }}
                           />
-                        ))}
+                          {audioTracks.map((t, i) => (
+                            <RadioOption
+                              key={i}
+                              label={t.label}
+                              active={audioTrackIndex === i}
+                              onClick={() => {
+                                changeAudioTrack(i);
+                                setSettingsOpen(false);
+                              }}
+                            />
+                          ))}
+                        </>
+                      )}
 
                       {settingsView === 'subtitles' && (
                         <>
