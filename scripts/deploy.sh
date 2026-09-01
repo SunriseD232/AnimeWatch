@@ -31,6 +31,20 @@ rm -rf .next/standalone/public .next/standalone/.next/static
 cp -r public .next/standalone/public
 cp -r .next/static .next/standalone/.next/static
 
+# node-wreq (см. lib/extract/proxy.ts — обходит фингерпринт-блокировку
+# vkvideo.cloud/Alloha) — та же беда, что у public/.next/static выше:
+# next.config.js держит его вне webpack-бандла (serverComponentsExternalPackages),
+# чтобы нативный бинарник не сломался при бандлинге, но трассировщик
+# standalone-сборки видит только саму JS-обёртку node-wreq — платформенный
+# суб-пакет (@node-wreq/linux-x64-gnu) node-wreq выбирает ДИНАМИЧЕСКИ в
+# рантайме по process.platform/arch, статический анализ его в принципе не
+# найдёт. Без этого шага раздача байт с vkvideo.cloud падает (нативный
+# модуль не грузится), хотя всё остальное деплоится и работает как ни в чём
+# не бывало — маскирует проблему точно так же, как пропуск static выше.
+echo "==> copying node-wreq native binary into .next/standalone"
+mkdir -p .next/standalone/node_modules/@node-wreq
+cp -r node_modules/@node-wreq/linux-x64-gnu .next/standalone/node_modules/@node-wreq/
+
 echo "==> pm2 restart mediawatch-web"
 pm2 restart mediawatch-web
 
