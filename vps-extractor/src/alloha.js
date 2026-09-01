@@ -166,6 +166,21 @@ async function fetchBnsiData(browser, rawEmbedUrl) {
 }
 
 /**
+ * Значение quality[высота] не всегда одна ссылка — у части тайтлов (найдено
+ * вживую после жалобы пользователя, см. коммит) это ДВЕ ссылки на разные
+ * CDN-зеркала одной строкой через литеральное " or ": "url1 or url2". Без
+ * разбора это уходило как есть — ни один плеер такую "ссылку" открыть не
+ * может (не URI вообще), отсюда и «не работает». Берём первое зеркало —
+ * оба в проверенном случае вели на тот же vkvideo.cloud, просто разные
+ * edge-хосты ("ce-..." / "ec-..."), полностью взаимозаменяемые.
+ */
+function firstMirror(value) {
+  const str = String(value);
+  const idx = str.indexOf(' or ');
+  return idx === -1 ? str : str.slice(0, idx);
+}
+
+/**
  * /bnsi/movies/{id} → ResolvedStream. hlsSource — по одной записи на
  * аудиодорожку (озвучка/оригинал), у каждой quality: {высота: URL} с
  * готовыми подписанными ссылками (проверено вживую: 200 напрямую, только
@@ -180,7 +195,7 @@ function buildResolvedStream(bnsiData, embedOrigin) {
   if (!qualityMap || typeof qualityMap !== 'object') return null;
 
   const qualities = Object.entries(qualityMap)
-    .map(([height, url]) => ({ height: Number(height), url: String(url) }))
+    .map(([height, url]) => ({ height: Number(height), url: firstMirror(url) }))
     .filter((q) => Number.isFinite(q.height) && q.url)
     .sort((a, b) => b.height - a.height);
   if (qualities.length === 0) return null;
@@ -194,7 +209,7 @@ function buildResolvedStream(bnsiData, embedOrigin) {
   // селектора от другого.
   const subtitles = (Array.isArray(bnsiData.tracks) ? bnsiData.tracks : [])
     .filter((t) => t?.kind === 'captions' && t.src && t.language)
-    .map((t) => ({ lang: t.language, label: t.label || subtitleLabel(t.language), url: t.src }));
+    .map((t) => ({ lang: t.language, label: t.label || subtitleLabel(t.language), url: firstMirror(t.src) }));
 
   return {
     url: qualities[0].url,
