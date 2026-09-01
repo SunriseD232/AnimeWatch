@@ -61,6 +61,23 @@ function pickDashUrl(
   return resolved.url;
 }
 
+/**
+ * Стоит ли переизвлечь заново (см. forceFresh-ретраи ниже) вместо того,
+ * чтобы сразу отдать клиенту ошибку. Раньше проверялось только `=== 404`
+ * (комментарий "у Videoseed подписанные CDN-ссылки живут заметно меньше 15
+ * минут") — но у Alloha протухшая подписанная ссылка отдаёт **403**, не 404
+ * (проверено вживую: реальный закэшированный URL, ещё "живой" по нашему
+ * expires_at, у самого апстрима уже 403) — с проверкой только на 404 это
+ * НИКОГДА не ретраилось, протухшая ссылка была мертва до истечения всего
+ * 15-минутного кэша resolved_streams, хотя апстрим явно и быстро сигналил
+ * об этом. Ретраим на любой неуспех (не только 404/403) — переизвлечение
+ * само по себе дешёвая операция при живом апстриме, а хуже, чем отдать ту
+ * же ошибку клиенту после неудачной попытки, не станет.
+ */
+function isRetryableUpstreamFailure(status: number): boolean {
+  return status >= 400;
+}
+
 /** Alloha иногда отдаёт рядом с основной озвучкой ещё аудиодорожки (см.
  *  ResolvedStream.audioTracks) — ?audio=<индекс> подставляет её url вместо
  *  основного. Каждая дорожка — ОДНА ссылка без своего набора качеств (см.
@@ -186,7 +203,7 @@ async function handleGet(
     const qHeight = qRaw != null && Number.isFinite(Number(qRaw)) ? Number(qRaw) : undefined;
     const dashUrl = pickDashUrl(resolved, qHeight);
     const dashProxied = await fetchAndProxy(range, dashUrl, resolved.headers);
-    if (dashProxied.status !== 404) return withDashQualities(dashProxied, resolved.qualities);
+    if (!isRetryableUpstreamFailure(dashProxied.status)) return withDashQualities(dashProxied, resolved.qualities);
 
     // Та же логика самолечения, что и у остального ниже (см. комментарий у
     // forceFresh) — раньше эта ветка возвращалась ДО общего ретрая, и
@@ -201,13 +218,13 @@ async function handleGet(
   }
 
   const proxied = await fetchAndProxy(range, pickAudioTrackUrl(resolved, audioIndex), resolved.headers);
-  if (proxied.status !== 404) return proxied;
+  if (!isRetryableUpstreamFailure(proxied.status)) return proxied;
 
-  // Кэш мог протухнуть раньше своего TTL — у Videoseed подписанные CDN-
-  // ссылки живут заметно меньше 15 минут (проверено вживую: закэшированная
-  // ссылка 404'ит у апстрима, при этом свежее извлечение того же тайтла
-  // проходит нормально). Раз апстрим ответил, а не молчит — пробуем
-  // переизвлечь один раз, прежде чем сдаваться.
+  // Кэш мог протухнуть раньше своего TTL — подписанные CDN-ссылки живут
+  // заметно меньше 15 минут (проверено вживую и у Videoseed — 404 у
+  // апстрима, и у Alloha — 403, см. isRetryableUpstreamFailure выше). Раз
+  // апстрим ответил, а не молчит — пробуем переизвлечь один раз, прежде чем
+  // сдаваться.
   await proxied.body?.cancel().catch(() => {});
   const fresh = await resolveStream({ ...resolveArgs, forceFresh: true });
   if (!fresh) {
