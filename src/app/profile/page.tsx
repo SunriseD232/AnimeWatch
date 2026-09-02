@@ -1,10 +1,5 @@
 import { redirect } from 'next/navigation';
-import ChangePasswordButton from '@/components/ChangePasswordButton';
 import ProfileTabs from '@/components/ProfileTabs';
-import VibixTrialStatus from '@/components/VibixTrialStatus';
-import RelayToggle from '@/components/RelayToggle';
-import KodikPlayerToggle from '@/components/KodikPlayerToggle';
-import ThemeSettings from '@/components/ThemeSettings';
 import { isAdminEmail } from '@/lib/admin';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import { getTodaysSignupCode } from '@/lib/signupCode';
@@ -51,29 +46,23 @@ export default async function ProfilePage() {
           <h1 className="text-xl font-bold">Профиль</h1>
           <p className="text-sm text-gray-400">{user.email}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <ChangePasswordButton />
-          <form action="/auth/signout" method="post">
-            <button
-              type="submit"
-              className="rounded-lg border border-white/10 bg-bg-card px-4 py-2 text-sm font-medium text-gray-200 transition hover:bg-red-950/60 hover:text-red-200"
-            >
-              Выйти
-            </button>
-          </form>
-        </div>
+        <form action="/auth/signout" method="post">
+          <button
+            type="submit"
+            className="rounded-lg border border-white/10 bg-bg-card px-4 py-2 text-sm font-medium text-gray-200 transition hover:bg-red-950/60 hover:text-red-200"
+          >
+            Выйти
+          </button>
+        </form>
       </section>
-
-      {isAdmin && <VibixTrialStatus />}
-      <ThemeSettings initialTheme={normalizeTheme(themeRow)} />
-
-      {isAdmin && <RelayToggle initialEnabled={relayEnabled} />}
-      {isAdmin && <KodikPlayerToggle initialEnabled={kodikPlayerEnabled} />}
 
       <ProfileTabs
         items={items}
         history={historyItems}
-        showCodeTab={isAdmin}
+        initialTheme={normalizeTheme(themeRow)}
+        isAdmin={isAdmin}
+        relayEnabled={relayEnabled}
+        kodikPlayerEnabled={kodikPlayerEnabled}
         code={isAdmin ? getTodaysSignupCode() : null}
       />
     </div>
