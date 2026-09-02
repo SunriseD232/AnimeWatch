@@ -291,13 +291,22 @@ async function extractVideoseed({ shikimoriId, season, episode, embedUrl, transl
   // embedUrl, что и раньше (без изменений в его поведении).
   for (let attempt = 1; attempt <= HTTP_PATH_ATTEMPTS; attempt++) {
     const viaHttp = await extractViaHttp({ kinopoiskId: shikimoriId, season, episode, translationLabel });
-    if (viaHttp) return viaHttp;
+    if (viaHttp && viaHttp !== 'translation_not_found') return viaHttp;
+    if (viaHttp === 'translation_not_found') {
+      // Не транзиентный сбой — статическая страница embed_auto просто не
+      // перечисляет эту озвучку в своей разметке (см. комментарий в
+      // videoseed-http.js). Повтор с тем же translationLabel гарантированно
+      // получит тот же список — сразу откатываемся на Puppeteer вместо
+      // того, чтобы жечь оставшиеся попытки и паузы между ними впустую.
+      console.error(`[videoseed] Озвучка "${translationLabel}" не найдена на HTTP-пути — сразу откат на Puppeteer (повтор не поможет)...`);
+      break;
+    }
     if (attempt < HTTP_PATH_ATTEMPTS) {
       console.error(`[videoseed] HTTP-путь не сработал (попытка ${attempt}/${HTTP_PATH_ATTEMPTS}) — повтор...`);
       await new Promise((r) => setTimeout(r, HTTP_PATH_RETRY_DELAY_MS));
     }
   }
-  console.error(`[videoseed] HTTP-путь не сработал за ${HTTP_PATH_ATTEMPTS} попыток(и) — откат на Puppeteer...`);
+  console.error(`[videoseed] HTTP-путь не сработал — откат на Puppeteer...`);
 
   return serializeBrowserUse(() => extractViaPuppeteer({ shikimoriId, season, episode, embedUrl }), {
     priority: background ? 'low' : 'high',

@@ -229,7 +229,18 @@ async function extractViaHttp({ kinopoiskId, season, episode, translationLabel }
   const match = findTranslationByLabel(translations, translationLabel);
   if (!match) {
     console.error(`[videoseed-http] Озвучка "${translationLabel}" не найдена среди [${translations.map((t) => t.label).join(', ')}]`);
-    return null;
+    // Строка-сентинел, не null — эту конкретную неудачу НЕ имеет смысла
+    // повторять (см. HTTP_PATH_ATTEMPTS в videoseed.js): список озвучек на
+    // статической странице embed_auto не изменится между попытками с
+    // интервалом в 500мс, а искомого имени там просто нет. Разбор жалобы
+    // «HEAD 9.48с» — воспроизведено вживую (kp=1240162, s1e6, translationLabel
+    // "Английский"): 3 попытки подряд получали ОДИН И ТОТ ЖЕ список
+    // ["HDrezka Studio", "KosharaSerials", "Sound Film", "WestFilm"], 2 из
+    // них — чистая трата ~1с на лишний запрос+задержку перед откатом на
+    // Puppeteer, который эту озвучку в итоге нашёл (там доступен другой,
+    // более полный список — реального клика по интерфейсу, а не то, что
+    // видно в разметке страницы по умолчанию).
+    return 'translation_not_found';
   }
   const chosen = match.url;
 
