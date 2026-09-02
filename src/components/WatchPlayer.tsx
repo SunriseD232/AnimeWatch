@@ -613,8 +613,16 @@ export default function WatchPlayer({
           const extractable = data.yummyTranslations.filter((tr) => tr.source != null);
           const t = (wantTitle && extractable.find((tr) => tr.title === wantTitle)) || extractable[0];
           if (!t?.source) return;
+          // warm=1 — тот же смысл, что background у warmSubtitleSources (см.
+          // lib/extract/resolve.ts): это прогрев СЛЕДУЮЩЕЙ серии, ещё не
+          // запрошенной пользователем, а не видео, которое сейчас реально
+          // грузится (тот же HEAD-роут дёргает и OwnPlayer.tsx для пробы
+          // качества АКТИВНОГО видео — тот случай остаётся высоким
+          // приоритетом, без этого параметра). Без разметки такой прогрев
+          // вставал бы в общую очередь браузера на VPS наравне с чужим
+          // настоящим запросом видео и мог бы задержать его старт.
           return fetch(
-            `/api/proxy/anime/${shikimoriId}/1/${nextEp}/${t.source}?t=${t.id}`,
+            `/api/proxy/anime/${shikimoriId}/1/${nextEp}/${t.source}?t=${t.id}&warm=1`,
             { method: 'HEAD' },
           );
         })

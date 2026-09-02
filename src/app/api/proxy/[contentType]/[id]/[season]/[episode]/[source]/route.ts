@@ -159,6 +159,14 @@ async function handleGet(
   // Alloha (напр. "(Japanese) Original" рядом с дублем).
   const audioRaw = request.nextUrl.searchParams.get('audio');
   const audioIndex = audioRaw != null && Number.isFinite(Number(audioRaw)) ? Number(audioRaw) : undefined;
+  // ?warm=1 — прогрев СЛЕДУЮЩЕЙ серии заранее (см. WatchPlayer.tsx/
+  // Player.tsx, ищет "warm=1" в комментарии), а не видео, которое сейчас
+  // реально грузится (тот же роут HEAD-пробуется и OwnPlayer.tsx для
+  // качества АКТИВНОГО видео — без этого параметра, остаётся высоким
+  // приоритетом). Понижает приоритет в очереди браузера на VPS (см.
+  // Args.background в resolve.ts) — прогрев не должен задерживать чей-то
+  // настоящий запрос видео.
+  const isWarm = request.nextUrl.searchParams.get('warm') === '1';
 
   // request.signal — отражает реальное отключение клиента (Node.js runtime,
   // см. export const runtime='nodejs' выше). Пробрасываем до extractViaVps
@@ -173,6 +181,7 @@ async function handleGet(
     source,
     translationId,
     signal: request.signal,
+    background: isWarm,
   };
   const resolved = await resolveStream({ ...resolveArgs, forceFresh });
   if (!resolved) {
