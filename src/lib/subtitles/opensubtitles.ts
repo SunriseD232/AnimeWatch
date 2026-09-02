@@ -49,7 +49,14 @@ interface OsSearchResponse {
 
 async function osFetch<T>(path: string, init?: RequestInit): Promise<T | null> {
   const key = apiKey();
-  if (!key) return null;
+  if (!key) {
+    // Раньше падало молча — снаружи выглядело неотличимо от «искали, не
+    // нашли» (см. getCachedSubtitle: и то, и это кэшируется как vtt=null
+    // навсегда). Один явный лог на весь процесс жизни ключа стоит того,
+    // чтобы больше не гадать вслепую при разборе таких жалоб.
+    console.error('[opensubtitles] OPENSUBTITLES_API_KEY не задан в окружении');
+    return null;
+  }
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       ...init,
@@ -61,9 +68,18 @@ async function osFetch<T>(path: string, init?: RequestInit): Promise<T | null> {
       },
       signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      console.error(
+        `[opensubtitles] ${path} status=${res.status} body=${body.slice(0, 300)}`,
+      );
+      return null;
+    }
     return (await res.json()) as T;
-  } catch {
+  } catch (err) {
+    console.error(
+      `[opensubtitles] ${path} fetch failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
     return null;
   }
 }
@@ -108,10 +124,16 @@ async function downloadAsVtt(fileId: number): Promise<string | null> {
   if (!data?.link) return null;
   try {
     const res = await fetch(data.link, { signal: AbortSignal.timeout(15_000) });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error(`[opensubtitles] download file_id=${fileId} status=${res.status}`);
+      return null;
+    }
     const srt = await res.text();
     return srtToVtt(srt);
-  } catch {
+  } catch (err) {
+    console.error(
+      `[opensubtitles] download file_id=${fileId} failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
     return null;
   }
 }
@@ -150,7 +172,10 @@ async function findSubtitle({ lang, episode, season, imdbId, title }: FindArgs):
 
   const search = await osFetch<OsSearchResponse>(`/subtitles?${params.toString()}`);
   const candidates = search?.data ?? [];
-  if (candidates.length === 0) return null;
+  if (candidates.length === 0) {
+    console.log(`[opensubtitles] 0 кандидатов: ${params.toString()}`);
+    return null;
+  }
 
   const sorted = [...candidates].sort(
     (a, b) => b.attributes.download_count - a.attributes.download_count,
