@@ -63,6 +63,11 @@ export async function POST(request: NextRequest) {
     dataJson = `${dataJson.slice(0, MAX_DATA_JSON_LENGTH)}...(truncated)`;
   }
 
-  console.log(`[client] user=${user?.id ?? 'anon'} event=${event} data=${dataJson}`);
+  // User-Agent — раньше такие жалобы («на телефоне в Safari...») нельзя
+  // было подтвердить по логам вообще, только гадать по косвенным признакам
+  // (источник, частота вотчдогов и т.п.) — теперь платформа видна прямо в
+  // строке лога.
+  const ua = request.headers.get('user-agent') ?? '';
+  console.log(`[client] user=${user?.id ?? 'anon'} event=${event} ua="${ua}" data=${dataJson}`);
   return NextResponse.json({ ok: true });
 }
