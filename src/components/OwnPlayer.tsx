@@ -303,6 +303,16 @@ export default function OwnPlayer({
   // подключения — см. Hls.Events.ERROR ниже. Сбрасывается на каждый новый
   // коннект (новый src/reloadKey) и на успешный MANIFEST_PARSED.
   const hlsErrorRecoveryRef = useRef(0);
+  // Отдельный счётчик для MEDIA_ERROR (см. тот же Hls.Events.ERROR ниже) —
+  // сознательно НЕ тот же hlsErrorRecoveryRef и НЕ сбрасывается на
+  // MANIFEST_PARSED. Разбор жалобы «ресюм-сик виснет на Videoseed»:
+  // воспроизведено вживую («Мятеж», kp=5582050) — recoverMediaError() сам
+  // по себе, похоже, вызывает у hls.js что-то вроде повторного разбора
+  // манифеста (в логах recoveryAttempt был ВСЕГДА 0, никогда не доходя до
+  // порога) — общий счётчик с network-ошибками обнулялся на каждый такой
+  // внутренний реparse, и эскалация на retryRef() ниже никогда не наступала,
+  // сколько бы раз подряд ни повторялся bufferAppendError.
+  const mediaErrorRecoveryRef = useRef(0);
   // Content-Type из проверочного HEAD (см. эффект резолва ниже) — переносится
   // во второй эффект (подключение к <video>), чтобы не запрашивать HEAD дважды.
   const upstreamContentTypeRef = useRef<string | null>(null);
@@ -708,6 +718,7 @@ export default function OwnPlayer({
           });
           hlsRef.current = hls;
           hlsErrorRecoveryRef.current = 0;
+          mediaErrorRecoveryRef.current = 0;
           // master.m3u8 может содержать несколько ABR-вариантов (см. §12
           // ARCHITECTURE.md) — показываем выбор только когда их больше одного.
           hls.on(Hls.Events.MANIFEST_PARSED, (_evt, data) => {
@@ -772,7 +783,10 @@ export default function OwnPlayer({
               episode,
               errorType: data.type,
               details: data.details,
-              recoveryAttempt: hlsErrorRecoveryRef.current,
+              recoveryAttempt:
+                data.type === Hls.ErrorTypes.MEDIA_ERROR
+                  ? mediaErrorRecoveryRef.current
+                  : hlsErrorRecoveryRef.current,
             });
             switch (data.type) {
               case Hls.ErrorTypes.NETWORK_ERROR:
@@ -785,18 +799,18 @@ export default function OwnPlayer({
                 break;
               case Hls.ErrorTypes.MEDIA_ERROR:
                 // Разбор жалобы «ресюм-сик виснет на Videoseed» — recoverMediaError()
-                // тут раньше звался БЕЗ ограничения попыток, в отличие от ветки
-                // NETWORK_ERROR выше (там эскалация на retryRef() после 2 неудач).
-                // Воспроизведено вживую («Мятеж», kp=5582050): bufferAppendError
-                // повторялся раз за разом подряд, recoverMediaError() ни разу
-                // реально не восстанавливал буфер — видео молча стояло на границе
-                // первого сегмента бесконечно, а этот обработчик просто продолжал
-                // звать recoverMediaError() на каждый повтор без какого-либо
-                // предела. Тот же счётчик и тот же порог, что и у NETWORK_ERROR —
-                // общий смысл ("сколько раз подряд пытались вылечить ЭТОТ
-                // экземпляр hls.js") не зависит от типа ошибки.
-                hlsErrorRecoveryRef.current += 1;
-                if (hlsErrorRecoveryRef.current <= 2) {
+                // тут раньше звался БЕЗ ограничения попыток. Первая версия этого
+                // фикса делила счётчик с NETWORK_ERROR (hlsErrorRecoveryRef) — не
+                // сработало: воспроизведено вживую («Мятеж», kp=5582050) —
+                // recoveryAttempt в логах был ВСЕГДА 0, эскалация не наступала
+                // никогда. Причина — recoverMediaError() сам по себе, похоже,
+                // провоцирует у hls.js повторный MANIFEST_PARSED (или что-то
+                // похожее), а ИМЕННО там hlsErrorRecoveryRef обнуляется — общий
+                // счётчик обнулялся на каждый такой внутренний реparse быстрее,
+                // чем успевал дойти до порога. mediaErrorRecoveryRef —
+                // отдельный, MANIFEST_PARSED его не трогает.
+                mediaErrorRecoveryRef.current += 1;
+                if (mediaErrorRecoveryRef.current <= 2) {
                   hls.recoverMediaError();
                 } else {
                   retryRef.current();
