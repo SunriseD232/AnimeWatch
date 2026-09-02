@@ -201,22 +201,52 @@ async function closeSharedBrowser() {
  * VPS на 1 ГБ RAM (см. README.md) — параллельные запуски Chromium могут
  * упереться в OOM. Сериализуем ЛЮБОЕ обращение к общему браузеру (Alloha —
  * всегда, Videoseed — только когда его HTTP-путь без браузера не сработал,
- * см. videoseed.js) через простую очередь: следующий вызов ждёт, пока не
- * освободится текущий. Раньше жила как локальная переменная в server.js и
- * оборачивала там весь /extract для alloha/videoseed целиком — переехала
- * сюда (единственное место, реально владеющее общим браузером), когда
- * Videoseed обзавёлся путём, вообще не трогающим Chromium: оборачивать в
- * очередь стоит только то, что действительно его использует, иначе быстрый
- * HTTP-путь Videoseed без нужды ждал бы своей очереди за Alloha.
+ * см. videoseed.js) через очередь: следующий вызов ждёт, пока не освободится
+ * текущий. Раньше жила как локальная переменная в server.js и оборачивала
+ * там весь /extract для alloha/videoseed целиком — переехала сюда
+ * (единственное место, реально владеющее общим браузером), когда Videoseed
+ * обзавёлся путём, вообще не трогающим Chromium: оборачивать в очередь стоит
+ * только то, что действительно его использует, иначе быстрый HTTP-путь
+ * Videoseed без нужды ждал бы своей очереди за Alloha.
+ *
+ * Два приоритета, не просто FIFO — воспроизведено (по коду, не по факту
+ * инцидента) вживую разбором /api/proxy/subtitles: фоновый прогрев кэша
+ * субтитров других источников (warmSubtitleSources, см. lib/extract/
+ * resolve.ts на основном сайте) точно так же уходит сюда через /extract с
+ * source=alloha — а Alloha ВСЕГДА идёт через браузер. Без приоритета один
+ * такой фоновый прогрев, вставший в очередь ПЕРЕД настоящим запросом видео
+ * другого пользователя, реально задержал бы старт ЕГО воспроизведения —
+ * то, чего явно быть не должно (загрузка видео важнее субтитров). "low"
+ * (background:true в теле /extract, см. server.js) всегда встаёт ПОСЛЕ уже
+ * ожидающих "high" — но уже НАЧАВшийся низкоприоритетный запуск браузера
+ * прервать нельзя (никакой soft-fix не остановит уже идущую навигацию
+ * Chromium), так что гарантия именно "не встанет ВПЕРЕДИ", а не "не
+ * задержит вообще ни на секунду".
  */
-let queue = Promise.resolve();
-function serializeBrowserUse(fn) {
-  const result = queue.then(fn, fn);
-  queue = result.then(
-    () => undefined,
-    () => undefined,
-  );
-  return result;
+const pendingHigh = [];
+const pendingLow = [];
+let running = false;
+
+function runNext() {
+  if (running) return;
+  const next = pendingHigh.shift() || pendingLow.shift();
+  if (!next) return;
+  running = true;
+  Promise.resolve()
+    .then(next.fn)
+    .then(next.resolve, next.reject)
+    .finally(() => {
+      running = false;
+      runNext();
+    });
+}
+
+function serializeBrowserUse(fn, options) {
+  const priority = options && options.priority === 'low' ? 'low' : 'high';
+  return new Promise((resolve, reject) => {
+    (priority === 'low' ? pendingLow : pendingHigh).push({ fn, resolve, reject });
+    runNext();
+  });
 }
 
 module.exports = {

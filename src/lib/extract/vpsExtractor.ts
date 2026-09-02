@@ -16,6 +16,12 @@ export async function extractViaVps(
    *  извлечение (headless Chromium на VPS) впустую. Объединяется с
    *  собственным таймаутом, а не заменяет его. */
   signal?: AbortSignal,
+  /** true — фоновый прогрев (см. warmSubtitleSources в resolve.ts), не
+   *  настоящий запрос видео, за которым кто-то живо ждёт. VPS ставит такое
+   *  извлечение В ОЧЕРЕДЬ БРАУЗЕРА ПОСЛЕ обычных (см. приоритеты в
+   *  vps-extractor/src/browser.js) — загрузка видео не должна ждать чужой
+   *  прогрев субтитров. */
+  background?: boolean,
 ): Promise<ResolvedStream | null> {
   const baseUrl = process.env.VPS_EXTRACTOR_URL;
   const token = process.env.VPS_EXTRACTOR_TOKEN;
@@ -37,7 +43,15 @@ export async function extractViaVps(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ source, shikimoriId, season, episode, embedUrl, translationLabel }),
+      body: JSON.stringify({
+        source,
+        shikimoriId,
+        season,
+        episode,
+        embedUrl,
+        translationLabel,
+        ...(background ? { background: true } : {}),
+      }),
       signal: combinedSignal,
     });
   } catch (err) {
