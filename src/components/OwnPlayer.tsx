@@ -891,10 +891,16 @@ export default function OwnPlayer({
         seekWatchdogTimer = null;
       }
     };
-    const applyResumeSeek = () => {
+    // Бюджет ретраев на ТЕКУЩИЙ сик — сбрасывается на каждый НОВЫЙ вызов
+    // applyResumeSeek() извне (loadedmetadata/canplay), но не на собственный
+    // внутренний повтор (см. isRetry ниже) — иначе один и тот же сик мог бы
+    // повторяться бесконечно вместо ровно одного лишнего захода.
+    let seekRetried = false;
+    const applyResumeSeek = (isRetry = false) => {
       const target = seekTargetRef.current;
       if (target == null || target <= 1) return;
       seekTargetRef.current = null;
+      if (!isRetry) seekRetried = false;
       // Клампим к чуть меньше длительности, а не ОТБРАСЫВАЕМ цель совсем,
       // как было раньше (target >= video.duration → return без сика). Это
       // било ИМЕННО по самому частому сбойному сценарию: retry() (см. ниже)
@@ -914,6 +920,31 @@ export default function OwnPlayer({
         seekWatchdogTimer = setTimeout(() => {
           seekWatchdogTimer = null;
           if (!seekPending) return;
+          // Один повтор перед тем, как сдаться — разбор жалобы «ресюм-сик
+          // виснет на Videoseed через наш плеер на телефоне в Safari»: по
+          // логам 27 из 31 недавних срабатываний этого вотчдога — именно
+          // Videoseed. У Safari нет своего hls.js/MSE — за перемотку в
+          // небуферизованное место целиком отвечает нативный HLS-движок, и
+          // холодный сик туда (особенно на мобильной сети) объективно может
+          // не уложиться в первые 4с чаще, чем у hls.js на десктопе; реже
+          // сам вызов currentTime где-то теряется без видимой причины —
+          // повтор в обоих случаях либо реально доезжает быстрее вторым
+          // заходом, либо хотя бы сбрасывает зависшее состояние. Не второй
+          // независимый цикл — просто один retry ПЕРЕД тем как окончательно
+          // сдаться и продолжить с текущей позиции.
+          if (!seekRetried) {
+            seekRetried = true;
+            logEvent('player.seek_watchdog_retry', {
+              source: effectiveSource,
+              shikimoriId,
+              season,
+              episode,
+              target: clamped,
+            });
+            seekTargetRef.current = clamped;
+            applyResumeSeek(true);
+            return;
+          }
           logEvent('player.seek_watchdog_fired', {
             source: effectiveSource,
             shikimoriId,
