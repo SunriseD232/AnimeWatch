@@ -276,7 +276,7 @@ async function extractViaPuppeteer({ shikimoriId, season, episode, embedUrl }) {
 const HTTP_PATH_ATTEMPTS = 3;
 const HTTP_PATH_RETRY_DELAY_MS = 500;
 
-async function extractVideoseed({ shikimoriId, season, episode, embedUrl, translationLabel }) {
+async function extractVideoseed({ shikimoriId, season, episode, embedUrl, translationLabel, background }) {
   // embedUrl/translationLabel — конкретная озвучка (embed/embed_serial с
   // default_audio_id + человекочитаемое имя из каталога), выбранная на
   // основном сайте, см. getVideoseedOwnPlayerTranslations() и resolve.ts.
@@ -299,7 +299,9 @@ async function extractVideoseed({ shikimoriId, season, episode, embedUrl, transl
   }
   console.error(`[videoseed] HTTP-путь не сработал за ${HTTP_PATH_ATTEMPTS} попыток(и) — откат на Puppeteer...`);
 
-  return serializeBrowserUse(() => extractViaPuppeteer({ shikimoriId, season, episode, embedUrl }));
+  return serializeBrowserUse(() => extractViaPuppeteer({ shikimoriId, season, episode, embedUrl }), {
+    priority: background ? 'low' : 'high',
+  });
 }
 
 module.exports = { extractVideoseed };

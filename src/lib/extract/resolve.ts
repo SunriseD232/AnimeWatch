@@ -35,6 +35,12 @@ interface Args {
    *  комментарий там. Кэш-хит игнорирует его (быстрый путь, отменять
    *  нечего), важен только на пути реального извлечения. */
   signal?: AbortSignal;
+  /** true — фоновый прогрев чужого кэша (см. warmSubtitleSources ниже), не
+   *  запрос видео, которого кто-то живо ждёт. Прокидывается до extractViaVps
+   *  как низкий приоритет в очереди браузера на VPS — загрузка видео
+   *  ВАЖНЕЕ и не должна ждать чужой прогрев субтитров (см. её комментарий и
+   *  vps-extractor/src/browser.js). */
+  background?: boolean;
 }
 
 /**
@@ -118,6 +124,7 @@ async function resolveStreamUncoalesced({
   translationId,
   forceFresh,
   signal,
+  background,
 }: Args): Promise<ResolvedStream | null> {
   const supabase = createServiceClient();
   // 0 — слот "без явного выбора озвучки" (старое поведение, VPS сам перебирает).
@@ -187,7 +194,12 @@ async function resolveStreamUncoalesced({
   const resolved =
     source === 'realdebrid'
       ? await resolveRealDebridStream({ contentType, shikimoriId, season, episode })
-      : await extractViaVps(source, { shikimoriId, season, episode, embedUrl, translationLabel }, signal);
+      : await extractViaVps(
+          source,
+          { shikimoriId, season, episode, embedUrl, translationLabel },
+          signal,
+          background,
+        );
   if (!resolved) return null;
 
   await supabase.from('resolved_streams').upsert(
@@ -313,6 +325,11 @@ export function warmSubtitleSources(args: {
       season: args.season,
       episode: args.episode,
       source,
+      // Низкий приоритет в очереди браузера на VPS (см. Args.background и
+      // vps-extractor/src/browser.js) — это прогрев кэша субтитров, не
+      // видео, которого кто-то живо ждёт; не должен вставать впереди чужого
+      // реального запроса видео.
+      background: true,
     }).catch(() => {});
   }
 }

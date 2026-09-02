@@ -119,7 +119,12 @@ app.get('/relay', requireAuth, async (req, res) => {
 });
 
 app.post('/extract', requireAuth, async (req, res) => {
-  const { source, shikimoriId, season, episode, embedUrl, translationLabel } = req.body || {};
+  // background:true — фоновый прогрев кэша субтитров других источников (см.
+  // warmSubtitleSources в lib/extract/resolve.ts основного сайта), не
+  // настоящий запрос видео, за которым кто-то живо ждёт — низкий приоритет
+  // в общей очереди браузера (см. serializeBrowserUse в browser.js), чтобы
+  // не задержать реальное видео другого пользователя.
+  const { source, shikimoriId, season, episode, embedUrl, translationLabel, background } = req.body || {};
   const id = Number(shikimoriId);
   const ep = Number(episode);
   const se = Number(season) || 1;
@@ -159,7 +164,9 @@ app.post('/extract', requireAuth, async (req, res) => {
     safeTranslationLabel = translationLabel;
   }
 
-  console.error(`[server] Извлечение: source=${source} shikimoriId=${id} season=${se} episode=${ep}`);
+  console.error(
+    `[server] Извлечение: source=${source} shikimoriId=${id} season=${se} episode=${ep}${background ? ' background=true' : ''}`,
+  );
 
   try {
     // Sibnet/Kodik/CVH — обычный fetch(), не Puppeteer: не занимают очередь
@@ -175,7 +182,10 @@ app.post('/extract', requireAuth, async (req, res) => {
     } else if (source === 'aksor') {
       result = await extractAksor({ embedUrl: safeEmbedUrl });
     } else if (source === 'alloha') {
-      result = await serializeBrowserUse(() => extractAlloha({ shikimoriId: id, episode: ep, embedUrl: safeEmbedUrl }));
+      result = await serializeBrowserUse(
+        () => extractAlloha({ shikimoriId: id, episode: ep, embedUrl: safeEmbedUrl }),
+        { priority: background ? 'low' : 'high' },
+      );
     } else {
       // videoseed сериализуется САМ, только если его собственный HTTP-путь
       // не сработал и понадобился общий браузер — см. extractVideoseed.
@@ -185,6 +195,7 @@ app.post('/extract', requireAuth, async (req, res) => {
         episode: ep,
         embedUrl: safeEmbedUrl,
         translationLabel: safeTranslationLabel,
+        background: !!background,
       });
     }
     if (!result) {
