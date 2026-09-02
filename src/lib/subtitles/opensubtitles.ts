@@ -269,7 +269,14 @@ async function findSubtitle({ lang, episode, season, imdbId, title }: FindArgs):
   const fileId = best?.files?.[0]?.file_id;
   if (!fileId) return { vtt: null, confirmed: true }; // кандидаты были, ни один не прошёл валидацию — честный промах
 
-  const vtt = await downloadAsVtt(fileId);
+  // До 2 попыток — воспроизведено вживую: файл-сервер OpenSubtitles иногда
+  // не отвечает на established-соединение по 10+ секунд (отдельный случай от
+  // зависающего-после-передачи потока выше, см. readBodyWithIdleTimeout) —
+  // с одного и того же fileId повторный заход обычно проходит нормально.
+  let vtt: string | null = null;
+  for (let attempt = 0; attempt < 2 && vtt === null; attempt++) {
+    vtt = await downloadAsVtt(fileId);
+  }
   // Кандидат найден и провалидирован — если сам файл не скачался, это
   // техническая неудача (см. readBodyWithIdleTimeout), а не «субтитра нет».
   return { vtt, confirmed: vtt !== null };
