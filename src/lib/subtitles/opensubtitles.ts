@@ -159,10 +159,21 @@ async function downloadAsVtt(fileId: number): Promise<string | null> {
   });
   if (!data?.link) return null;
   try {
-    // Таймаут тут — только на получение ЗАГОЛОВКОВ ответа (это быстро, см.
-    // тесты выше); само тело читаем отдельно через readBodyWithIdleTimeout,
-    // у него своя логика на зависающий без EOF поток.
-    const res = await fetch(data.link, { signal: AbortSignal.timeout(15_000) });
+    // ВАЖНО: AbortSignal живёт весь запрос целиком (в т.ч. чтение тела через
+    // res.body), а не только до заголовков — так и родилась первая версия
+    // этого фикса, которая на деплое продолжала падать с тем же "aborted due
+    // to timeout": 15-секундный таймаут срабатывал ПОВЕРХ уже идущего
+    // idle-чтения ниже и обрывал его раньше времени. Поэтому свой контроллер
+    // и таймер СНИМАЕМ сразу, как только пришли заголовки — дальше телом
+    // целиком владеет readBodyWithIdleTimeout со своей логикой простоя.
+    const connectController = new AbortController();
+    const connectTimer = setTimeout(() => connectController.abort(), 10_000);
+    let res: Response;
+    try {
+      res = await fetch(data.link, { signal: connectController.signal });
+    } finally {
+      clearTimeout(connectTimer);
+    }
     if (!res.ok) {
       console.error(`[opensubtitles] download file_id=${fileId} status=${res.status}`);
       return null;
