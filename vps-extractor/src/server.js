@@ -4,6 +4,7 @@ require('dotenv').config();
 const express = require('express');
 const { extractAlloha } = require('./alloha');
 const { extractVideoseed } = require('./videoseed');
+const { listAvailableTranslations } = require('./videoseed-http');
 const { extractSibnet } = require('./sibnet');
 const { extractKodik } = require('./kodik');
 const { extractCVH } = require('./cvh');
@@ -115,6 +116,33 @@ app.get('/relay', requireAuth, async (req, res) => {
     console.error('[relay] Обрыв при чтении апстрима:', err);
   } finally {
     res.end();
+  }
+});
+
+/**
+ * Список РЕАЛЬНО доступных озвучек Videoseed для конкретной серии — тем же
+ * быстрым HTTP-путём, что и /extract (без Puppeteer). Нужен основному сайту
+ * ДО того, как пользователь вообще открыл плеер — чтобы не показывать в
+ * селекторе озвучки, которые каталог Videoseed заявляет, но реально не
+ * закодировал для этой серии (см. listAvailableTranslations в
+ * videoseed-http.js и getVideoseedOwnPlayerTranslations в videoseed-catalog.ts
+ * основного приложения — там же объяснение и investigation).
+ */
+app.post('/videoseed-translations', requireAuth, async (req, res) => {
+  const { shikimoriId, season, episode } = req.body || {};
+  const id = Number(shikimoriId);
+  const ep = Number(episode);
+  const se = Number(season) || 1;
+  if (!Number.isFinite(id) || !Number.isFinite(ep)) {
+    return res.status(400).json({ error: 'bad params' });
+  }
+  try {
+    const labels = await listAvailableTranslations({ kinopoiskId: id, season: se, episode: ep });
+    if (!labels) return res.status(404).json({ error: 'not_found' });
+    return res.json({ labels });
+  } catch (err) {
+    console.error('[server] /videoseed-translations упал:', err);
+    return res.status(502).json({ error: 'failed', message: String(err && err.message) });
   }
 });
 

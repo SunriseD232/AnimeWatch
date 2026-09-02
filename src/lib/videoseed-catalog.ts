@@ -610,6 +610,72 @@ export async function getCinemaEpisodesTotalMap(
  * пути embed (embed_serial/{id}/ у сериала, embed/{id}/ у фильма), это же
  * значение приходит и из resolve.ts, где нет доступа к CinemaFull.isSerial.
  */
+// vps-extractor быстрым HTTP-путём (без Puppeteer) отдаёт РЕАЛЬНО доступные
+// озвучки конкретной серии — см. listAvailableTranslations в
+// vps-extractor/src/videoseed-http.js. Кэшируем ответ отдельно от самого
+// каталога (getCachedJson, тот же механизм, что и vsFetch выше) — 30 минут:
+// доступность дорожек меняется редко, а запрос идёт к тому же квотируемому
+// апстриму Videoseed, что и сам каталог.
+const REAL_TRANSLATIONS_CACHE_TTL_S = 1800;
+const REAL_TRANSLATIONS_TIMEOUT_MS = 8_000;
+
+/**
+ * Множество реально доступных названий озвучек для (kp, season, episode),
+ * нормализованных (trim+lowercase) под сравнение с short_name/name каталога.
+ * null — не удалось узнать (extractor недоступен, таймаут, серия не нашлась
+ * в его конфиге) — вызывающий код НЕ должен фильтровать этим null (fail-open:
+ * лучше показать лишнюю озвучку, чем ошибочно спрятать все).
+ */
+async function getRealTranslationLabels(
+  kinopoiskId: number,
+  season: number,
+  episode: number,
+): Promise<Set<string> | null> {
+  const baseUrl = process.env.VPS_EXTRACTOR_URL;
+  const token = process.env.VPS_EXTRACTOR_TOKEN;
+  if (!baseUrl || !token) return null;
+  try {
+    const labels = await getCachedJson<string[] | null>(
+      `videoseed-real-translations:${kinopoiskId}:${season}:${episode}`,
+      REAL_TRANSLATIONS_CACHE_TTL_S,
+      async () => {
+        const res = await fetch(new URL('/videoseed-translations', baseUrl), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ shikimoriId: kinopoiskId, season, episode }),
+          signal: AbortSignal.timeout(REAL_TRANSLATIONS_TIMEOUT_MS),
+        });
+        if (res.status === 404) return null;
+        if (!res.ok) throw new Error(`vps-extractor /videoseed-translations ${res.status}`);
+        const data = (await res.json()) as { labels?: string[] };
+        return Array.isArray(data.labels) ? data.labels : null;
+      },
+    );
+    return labels ? new Set(labels.map((l) => l.trim().toLowerCase())) : null;
+  } catch (err) {
+    // Сетевая ошибка/таймаут — не кэшируется (см. getCachedJson: ошибки
+    // fetcher'а не пишутся в базу), просто не фильтруем в этот раз.
+    console.error(
+      `[videoseed] getRealTranslationLabels kp=${kinopoiskId} s${season}e${episode} упал (фильтрация озвучек пропущена):`,
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+}
+
+/**
+ * Все альтернативные озвучки тайтла ИЗ ТЕХ, ЧТО РЕАЛЬНО ДОСТУПНЫ для этой
+ * серии (см. getRealTranslationLabels) — иначе пользователь мог выбрать
+ * озвучку, которую каталог Videoseed заявляет, но не закодировал для этой
+ * серии: HTTP-путь извлечения такую честно не находит (~1-2с), после чего
+ * идёт откат на Puppeteer (~9с) ради ТАКОГО ЖЕ честного отказа — пользователь
+ * просто зря ждал лишние секунды ради кнопки, которая заведомо не сработает.
+ * Проверено вживую 2026-09-02: на части тайтлов ("Мятеж" kp=1240162) 6 из 10
+ * заявленных в каталоге озвучек отсутствовали во всех проверенных сериях —
+ * это разные списки по смыслу (translation_iframe — кто озвучивал тайтл
+ * ХОТЬ КОГДА-ТО, а не что закодировано именно для этой серии сейчас), а не
+ * баг конкретной ссылки.
+ */
 export async function getVideoseedOwnPlayerTranslations(
   kinopoiskId: number,
   season: number,
@@ -636,7 +702,7 @@ export async function getVideoseedOwnPlayerTranslations(
 
   const defaultId = Number(base.translations_id);
   const seen = new Set<number>();
-  const out: OwnPlayerTranslation[] = [];
+  const built: { id: number; rawLabel: string; embedUrl: string }[] = [];
   for (const t of Object.values(base.translation_iframe)) {
     const id = Number(t.translations_id);
     if (!Number.isFinite(id) || !t.iframe || seen.has(id)) continue;
@@ -648,13 +714,23 @@ export async function getVideoseedOwnPlayerTranslations(
       embedUrl += `${embedUrl.includes('?') ? '&' : '?'}video=s${s}v${episode}`;
     }
 
-    out.push({
-      id,
-      title: `${t.short_name || t.name || 'Озвучка'} · Videoseed`,
-      embedUrl,
-      source: 'videoseed',
-    });
+    built.push({ id, rawLabel: t.short_name || t.name || 'Озвучка', embedUrl });
   }
+
+  const realLabels = await getRealTranslationLabels(kinopoiskId, season, episode);
+  const filtered = realLabels ? built.filter((t) => realLabels.has(t.rawLabel.trim().toLowerCase())) : built;
+  // Пустое пересечение при непустом каталожном списке говорит скорее о
+  // рассинхроне форматов имён (сайт Videoseed поменял разметку и т.п.), чем
+  // о том, что ВСЕ озвучки разом пропали — безопаснее откатиться к
+  // нефильтрованному списку, чем спрятать все вкладки сразу.
+  const finalList = filtered.length > 0 ? filtered : built;
+
+  const out: OwnPlayerTranslation[] = finalList.map((t) => ({
+    id: t.id,
+    title: `${t.rawLabel} · Videoseed`,
+    embedUrl: t.embedUrl,
+    source: 'videoseed',
+  }));
 
   // Озвучка по умолчанию (та же, что раньше открывалась без явного выбора) —
   // первой в списке, она же станет выбором по умолчанию в OwnPlayer.

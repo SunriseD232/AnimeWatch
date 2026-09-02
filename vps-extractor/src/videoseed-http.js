@@ -174,17 +174,14 @@ function findTranslationByLabel(translations, translationLabel) {
 }
 
 /**
- * Основной путь извлечения Videoseed — БЕЗ Puppeteer/Chromium. Работает и
- * для дефолтной озвучки (translationLabel не задан — берём первую из
- * списка, "сайт сам решает"), и для конкретно выбранной пользователем (см.
- * findTranslationByLabel выше) — конфиг embed_auto содержит ВСЕ озвучки
- * сразу, отдельный embed с default_audio_id для этого не нужен.
- *
- * Возвращает null при любой аномалии (не 200, конфиг не распарсился, серии
- * нет в конфиге, запрошенную озвучку не нашли по имени) — вызывающий код
- * откатывается на Puppeteer, так что регрессии не создаёт.
+ * Общая первая половина обоих путей ниже: запросить embed_auto и добраться
+ * до записи конкретной серии в конфиге Playerjs. Возвращает null при любой
+ * аномалии (нет токена, не 200, конфиг не распарсился, серии нет в
+ * конфиге) — вызывающий код откатывается на Puppeteer (extractViaHttp) или
+ * просто ничего не фильтрует (listAvailableTranslations), регрессии не
+ * создаёт ни там, ни там.
  */
-async function extractViaHttp({ kinopoiskId, season, episode, translationLabel }) {
+async function fetchEpisodeEntry(kinopoiskId, season, episode) {
   const embedUrl = buildEmbedUrl(kinopoiskId, season, episode);
   if (!embedUrl) return null;
   const referer = `https://${videoseedHost()}/`;
@@ -223,6 +220,54 @@ async function extractViaHttp({ kinopoiskId, season, episode, translationLabel }
     console.error(`[videoseed-http] Серия s${season || 1}v${episode} не найдена в конфиге`);
     return null;
   }
+  return { entry, referer };
+}
+
+/**
+ * Список РЕАЛЬНО доступных озвучек для конкретной серии — те же имена, что
+ * показывает нативный `<select id="audio-track-select">` на embed-странице
+ * после рендера (проверено вживую 2026-09-02 на "Мандалорце", kp=1118138:
+ * список из этого же конфига совпал 1-в-1 со списком реального select'а),
+ * но получаем их тем же быстрым HTTP-путём, без Puppeteer/клика.
+ *
+ * Нужен, чтобы НЕ предлагать пользователю на сайте озвучки, которых на самом
+ * деле нет: `translation_iframe` в ответе каталога Videoseed (item=search) —
+ * это список студий, которые ХОТЬ КОГДА-ТО озвучивали тайтл ЦЕЛИКОМ, а не
+ * список того, что реально закодировано именно для ЭТОЙ серии на ЭТОМ
+ * ресурсе — на части тайтлов эти списки расходятся (см. investigation
+ * "Мятеж" kp=1240162 — 6 из 10 заявленных озвучек отсутствовали во ВСЕХ 8
+ * проверенных сериях подряд). Раньше клик по такой в интерфейсе стоил
+ * пользователю HTTP-неудачу + откат на Puppeteer (~9с) ради честной ошибки
+ * "не найдено" — теперь основной сайт просто не показывает саму кнопку, см.
+ * getVideoseedOwnPlayerTranslations в videoseed-catalog.ts.
+ *
+ * null — не удалось получить список (см. fetchEpisodeEntry) — вызывающий
+ * код НЕ должен фильтровать список этим null (fail-open: лучше лишняя
+ * кнопка, чем спрятанные все).
+ */
+async function listAvailableTranslations({ kinopoiskId, season, episode }) {
+  const fetched = await fetchEpisodeEntry(kinopoiskId, season, episode);
+  if (!fetched) return null;
+  const translations = parseTranslations(fetched.entry.file);
+  if (translations.length === 0) return null;
+  return translations.map((t) => t.label);
+}
+
+/**
+ * Основной путь извлечения Videoseed — БЕЗ Puppeteer/Chromium. Работает и
+ * для дефолтной озвучки (translationLabel не задан — берём первую из
+ * списка, "сайт сам решает"), и для конкретно выбранной пользователем (см.
+ * findTranslationByLabel выше) — конфиг embed_auto содержит ВСЕ озвучки
+ * сразу, отдельный embed с default_audio_id для этого не нужен.
+ *
+ * Возвращает null при любой аномалии (не 200, конфиг не распарсился, серии
+ * нет в конфиге, запрошенную озвучку не нашли по имени) — вызывающий код
+ * откатывается на Puppeteer, так что регрессии не создаёт.
+ */
+async function extractViaHttp({ kinopoiskId, season, episode, translationLabel }) {
+  const fetched = await fetchEpisodeEntry(kinopoiskId, season, episode);
+  if (!fetched) return null;
+  const { entry, referer } = fetched;
 
   const translations = parseTranslations(entry.file);
   if (translations.length === 0) return null;
@@ -237,9 +282,11 @@ async function extractViaHttp({ kinopoiskId, season, episode, translationLabel }
     // "Английский"): 3 попытки подряд получали ОДИН И ТОТ ЖЕ список
     // ["HDrezka Studio", "KosharaSerials", "Sound Film", "WestFilm"], 2 из
     // них — чистая трата ~1с на лишний запрос+задержку перед откатом на
-    // Puppeteer, который эту озвучку в итоге нашёл (там доступен другой,
-    // более полный список — реального клика по интерфейсу, а не то, что
-    // видно в разметке страницы по умолчанию).
+    // Puppeteer — тот на этот конкретный тайтл её тоже не находил (список из
+    // этого же embed_auto конфига 1-в-1 совпадает с тем, что реально видно в
+    // audio-track-select после рендера, см. listAvailableTranslations выше и
+    // getVideoseedOwnPlayerTranslations в videoseed-catalog.ts, который
+    // теперь вообще не предлагает такую озвучку пользователю).
     return 'translation_not_found';
   }
   const chosen = match.url;
@@ -263,4 +310,4 @@ async function extractViaHttp({ kinopoiskId, season, episode, translationLabel }
   };
 }
 
-module.exports = { extractViaHttp };
+module.exports = { extractViaHttp, listAvailableTranslations };
