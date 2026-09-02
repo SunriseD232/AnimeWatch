@@ -784,7 +784,23 @@ export default function OwnPlayer({
                 }
                 break;
               case Hls.ErrorTypes.MEDIA_ERROR:
-                hls.recoverMediaError();
+                // Разбор жалобы «ресюм-сик виснет на Videoseed» — recoverMediaError()
+                // тут раньше звался БЕЗ ограничения попыток, в отличие от ветки
+                // NETWORK_ERROR выше (там эскалация на retryRef() после 2 неудач).
+                // Воспроизведено вживую («Мятеж», kp=5582050): bufferAppendError
+                // повторялся раз за разом подряд, recoverMediaError() ни разу
+                // реально не восстанавливал буфер — видео молча стояло на границе
+                // первого сегмента бесконечно, а этот обработчик просто продолжал
+                // звать recoverMediaError() на каждый повтор без какого-либо
+                // предела. Тот же счётчик и тот же порог, что и у NETWORK_ERROR —
+                // общий смысл ("сколько раз подряд пытались вылечить ЭТОТ
+                // экземпляр hls.js") не зависит от типа ошибки.
+                hlsErrorRecoveryRef.current += 1;
+                if (hlsErrorRecoveryRef.current <= 2) {
+                  hls.recoverMediaError();
+                } else {
+                  retryRef.current();
+                }
                 break;
               default:
                 setLoadState('failed');
