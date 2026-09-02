@@ -94,7 +94,15 @@ function decodePlayerConfig(html) {
     if (cleaned == null) continue;
     try {
       const obj = JSON.parse(Buffer.from(cleaned, 'base64').toString('utf8'));
-      if (obj && Array.isArray(obj.file)) return obj;
+      // Сериал: obj.file — массив групп/сезонов (см. findEpisodeEntry).
+      // Фильм: obj.file — СТРОКА "{Озвучка1} url1;{Озвучка2} url2;..." прямо
+      // на верхнем уровне конфига, без вложенных сезонов/серий вообще —
+      // найдено и проверено вживую 2026-09-02 на "Дьявол носит Prada 2"
+      // (kp=6373982): ЭТА проверка (раньше — только Array.isArray) отбрасывала
+      // валидный конфиг фильма как "не распарсился", и извлечение КАЖДОГО
+      // фильма (не сериала) на сайте безусловно откатывалось на Puppeteer —
+      // самый частый источник "HTTP-путь не сработал" в логах.
+      if (obj && (Array.isArray(obj.file) || typeof obj.file === 'string')) return obj;
     } catch {
       // пробуем второй вариант skip, прежде чем сдаться
     }
@@ -102,23 +110,22 @@ function decodePlayerConfig(html) {
   return null;
 }
 
-/** Ищет запись конкретной серии среди всех сезонов конфига. */
+/** Ищет запись конкретной серии среди всех сезонов конфига — либо, для
+ *  фильма, саму плоскую структуру верхнего уровня (см. decodePlayerConfig
+ *  выше про оба формата obj.file). */
 function findEpisodeEntry(config, season, episode) {
-  const wantId = `s${season || 1}v${episode}`;
-  for (const group of config.file) {
-    if (Array.isArray(group.folder)) {
-      const found = group.folder.find((e) => e.id === wantId);
-      if (found) return found;
+  if (Array.isArray(config.file)) {
+    const wantId = `s${season || 1}v${episode}`;
+    for (const group of config.file) {
+      if (Array.isArray(group.folder)) {
+        const found = group.folder.find((e) => e.id === wantId);
+        if (found) return found;
+      }
     }
+    return null;
   }
-  // Фильм (не сериал) — плоская структура без вложенных сезонов/серий, файл
-  // лежит прямо в первой (единственной) группе. Не проверено вживую на
-  // реальном фильме (тестировали только на сериале) — при несовпадении
-  // формата findEpisodeEntry просто вернёт null и вызывающий код откатится
-  // на Puppeteer, так что риска нет, только неиспользуемый быстрый путь для
-  // фильмов до отдельной проверки.
-  if (config.file.length > 0 && typeof config.file[0].file === 'string') {
-    return config.file[0];
+  if (typeof config.file === 'string') {
+    return { file: config.file, subtitle: config.subtitle };
   }
   return null;
 }
