@@ -684,9 +684,27 @@ export default function OwnPlayer({
           // поэтому возобновление с середины ощутимо дольше. startPosition
           // сразу нацеливает hls.js на нужный сегмент с первого запроса.
           const target = seekTargetRef.current;
+          const usesStartPosition = target != null && target > 1;
+          if (usesStartPosition) {
+            // hls.js УЖЕ получил цель через startPosition ниже — отдельный
+            // applyResumeSeek() (см. эффект событий <video>) больше не
+            // нужен ДЛЯ ЭТОГО резюма и теперь конфликтовал бы с ним: два
+            // независимых механизма одновременно пытались добраться до
+            // одной и той же позиции — hls.js через startPosition, наш код
+            // через video.currentTime сразу после loadedmetadata — гоняясь
+            // друг за другом за один и тот же сик. Разбор жалобы «ресюм-сик
+            // виснет на Videoseed» (в т.ч. на Safari): воспроизведено вживую
+            // именно на резюме — bufferAppendError сразу за сиком на
+            // сохранённую позицию, повторяющийся в цикле. seekTargetRef уже
+            // не понадобится другим эффектам ДО следующего реального сика
+            // (смена озвучки/качества/серии — они сами перезаписывают его
+            // заново, см. остальные места), так что обнулить его тут
+            // безопасно.
+            seekTargetRef.current = null;
+          }
           const hls = new Hls({
             enableWorker: true,
-            startPosition: target && target > 1 ? target : -1,
+            startPosition: usesStartPosition ? target : -1,
           });
           hlsRef.current = hls;
           hlsErrorRecoveryRef.current = 0;
