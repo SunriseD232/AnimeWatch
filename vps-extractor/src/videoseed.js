@@ -72,7 +72,11 @@ function isAdRequest(url) {
   }
 }
 
-async function interceptVideoUrl(rawEmbedUrl, referer) {
+function normalizeLabel(s) {
+  return s.trim().toLowerCase();
+}
+
+async function interceptVideoUrl(rawEmbedUrl, referer, translationLabel) {
   const embedUrl = toAbsoluteUrl(rawEmbedUrl);
   if (!embedUrl) {
     console.error(`[videoseed] Собранный embed URL невалиден: ${rawEmbedUrl}`);
@@ -140,6 +144,67 @@ async function interceptVideoUrl(rawEmbedUrl, referer) {
     await page.mouse.click(640, 360).catch(() => {});
     await new Promise((r) => setTimeout(r, 1_000));
     await page.mouse.click(640, 360).catch(() => {});
+
+    // Реальный выбор нужной озвучки — вместо того чтобы доверять
+    // default_audio_id в URL или просто ловить, что заиграло по умолчанию.
+    // Найдено и проверено вживую (разбор жалобы «озвучка молча не та»):
+    // страница отдаёт настоящий нативный <select id="audio-track-select"> со
+    // списком РЕАЛЬНО доступных на ЭТОМ КОНКРЕТНОМ embed-ресурсе озвучек — он
+    // не обязательно совпадает с полным списком из каталога Videoseed (там
+    // бывают переводы, физически живущие на ДРУГОМ embed-ресурсе, до
+    // которого этот URL не достаёт вообще, ни через default_audio_id, ни
+    // через что-либо ещё — проверено и у нас, и в настоящем браузере).
+    // Раньше Puppeteer это никак не учитывал: просто ловил то, что играло по
+    // умолчанию, и МОЛЧА кэшировал его под именем ЗАПРОШЕННОЙ озвучки — если
+    // default_audio_id не сработал, пользователь получал совсем другой
+    // перевод без единой ошибки. embedFrame.select() реально переключает
+    // поток (проверено вживую: после смены опции по сети идёт совсем другой
+    // URL) — используем его, а если запрошенной озвучки в списке ВООБЩЕ нет
+    // (она на другом ресурсе), честно отказываемся вместо угадывания.
+    if (translationLabel) {
+      const embedFrame = page.frames().find((f) => f.parentFrame() === page.mainFrame());
+      const state = embedFrame
+        ? await embedFrame
+            .evaluate(() => {
+              const sel = document.getElementById('audio-track-select');
+              if (!sel) return null;
+              return {
+                selectedValue: sel.value,
+                options: Array.from(sel.options).map((o) => ({ value: o.value, text: o.textContent || '' })),
+              };
+            })
+            .catch(() => null)
+        : null;
+      // state === null — на этом embed-ресурсе вообще нет переключателя
+      // озвучек (контент с единственной дорожкой) — подменять нечем, доверяем
+      // тому, что уже играет по умолчанию, как и раньше.
+      if (state) {
+        const want = normalizeLabel(translationLabel);
+        const match = state.options.find((o) => normalizeLabel(o.text) === want);
+        if (!match) {
+          console.error(
+            `[videoseed] Озвучка "${translationLabel}" не найдена в audio-track-select среди [${state.options
+              .map((o) => o.text.trim())
+              .filter(Boolean)
+              .join(', ')}] — отказ вместо подмены чужой озвучкой`,
+          );
+          await page.close();
+          return null;
+        }
+        // Уже выбрана — то, что уже поймано, и так от правильной озвучки, не
+        // трогаем (и не рискуем остаться без данных, если смена значения на
+        // то же самое не переспросит поток заново).
+        if (match.value !== state.selectedValue) {
+          // Сбрасываем уже пойманные URL — они от НЕ той озвучки, что играла
+          // до переключения, полагаться на них дальше нельзя.
+          videoUrls.length = 0;
+          allUrls.length = 0;
+          subtitleUrls.length = 0;
+          await embedFrame.select('#audio-track-select', match.value);
+          await new Promise((r) => setTimeout(r, 2_500));
+        }
+      }
+    }
 
     // Ждём появления НАСТОЯЩЕГО видео, а не просто фиксированную паузу:
     // реклама сама по себе иногда тоже видеоролик (см. коммент ниже), и если
@@ -224,7 +289,7 @@ async function interceptVideoUrl(rawEmbedUrl, referer) {
  *  (serializeBrowserUse, browser.js) — только на время ЭТОГО вызова, не на
  *  весь extractVideoseed целиком, чтобы быстрый HTTP-путь никогда не ждал
  *  своей очереди за Alloha. */
-async function extractViaPuppeteer({ shikimoriId, season, episode, embedUrl }) {
+async function extractViaPuppeteer({ shikimoriId, season, episode, embedUrl, translationLabel }) {
   const url = embedUrl || buildEmbedUrl(shikimoriId, season, episode);
   if (!url) return null;
 
@@ -236,10 +301,16 @@ async function extractViaPuppeteer({ shikimoriId, season, episode, embedUrl }) {
   // свежий браузер/страница — обычно решает: суммарно два прохода укладываются
   // в районе 30-35с, с запасом от 55с/60с таймаутов по цепочке (vpsExtractor
   // → /api/proxy).
-  let intercepted = await interceptVideoUrl(url, referer);
+  //
+  // translationLabel — см. подробный комментарий внутри interceptVideoUrl:
+  // без него Puppeteer раньше просто ловил то, что играло по умолчанию и
+  // МОЛЧА кэшировал под чужим именем; теперь либо реально переключает
+  // <select id="audio-track-select"> на нужную, либо честно возвращает null,
+  // если её там вообще нет (другой embed-ресурс, до которого мы не достаём).
+  let intercepted = await interceptVideoUrl(url, referer, translationLabel);
   if (!intercepted?.videoUrl) {
     console.error('[videoseed] Первая попытка не нашла видео — повтор с нуля...');
-    intercepted = await interceptVideoUrl(url, referer);
+    intercepted = await interceptVideoUrl(url, referer, translationLabel);
   }
   if (!intercepted?.videoUrl) return null;
   const { videoUrl: resultUrl, subtitleUrls } = intercepted;
@@ -308,9 +379,10 @@ async function extractVideoseed({ shikimoriId, season, episode, embedUrl, transl
   }
   console.error(`[videoseed] HTTP-путь не сработал — откат на Puppeteer...`);
 
-  return serializeBrowserUse(() => extractViaPuppeteer({ shikimoriId, season, episode, embedUrl }), {
-    priority: background ? 'low' : 'high',
-  });
+  return serializeBrowserUse(
+    () => extractViaPuppeteer({ shikimoriId, season, episode, embedUrl, translationLabel }),
+    { priority: background ? 'low' : 'high' },
+  );
 }
 
 module.exports = { extractVideoseed };
