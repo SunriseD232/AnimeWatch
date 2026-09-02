@@ -459,6 +459,38 @@ export default function WatchPlayer({
         fromEpisode: activeEpisodeRef.current,
         toEpisode: targetEpisode,
       });
+
+      // Досмотренность серии в watched_episodes раньше писал ТОЛЬКО настоящий
+      // 'ended' у <video> (см. onEnded выше) — а любое ручное переключение
+      // (кнопка «Следующая серия» в самом плеере, «След. →» здесь, свайп по
+      // сетке серий) идёт через switchEpisode и этот момент полностью
+      // пропускало. Со стороны выглядело как «сохраняем не всегда»:
+      // воспроизведено вживую на «Неумелый сэмпай» — подряд просмотренные
+      // 1..12 серий попали в историю только на 3/6/9/12, ровно те редкие
+      // случаи, когда видео реально доиграло до конца, не будучи прерванным
+      // переключением раньше. Порог 90% — тот же, что и nearEnd на сервере
+      // при восстановлении позиции (см. watch/[shikimoriId]/[episode]/page.tsx).
+      if (isAuthed) {
+        const dur = durationRef.current;
+        const pos = livePositionRef.current;
+        if (dur && pos / dur > 0.9) {
+          fetch('/api/progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              content_type: contentType,
+              shikimori_id: shikimoriId,
+              anime_title: animeTitle,
+              poster_url: posterUrl,
+              season: 1,
+              episode: activeEpisodeRef.current,
+              watched_episode: true,
+            }),
+            keepalive: true,
+          }).catch(() => {});
+        }
+      }
+
       setSwitchingEpisode(true);
       setShowOtherBanner(false);
       setEnded(false);
@@ -513,7 +545,17 @@ export default function WatchPlayer({
         if (switchSeqRef.current === seq) setSwitchingEpisode(false);
       }
     },
-    [shikimoriId, kodikInitialTranslationId, watchBase, animeTitle, toast, router],
+    [
+      shikimoriId,
+      kodikInitialTranslationId,
+      watchBase,
+      animeTitle,
+      toast,
+      router,
+      isAuthed,
+      contentType,
+      posterUrl,
+    ],
   );
   // Всегда-свежая ссылка на switchEpisode — для замыканий, живущих дольше её
   // собственной идентичности (автопереход в onEnded, объявленный выше).

@@ -826,6 +826,37 @@ export default function Player({
         toEpisode: target.episode,
       });
 
+      // Досмотренность серии в watched_episodes раньше писал ТОЛЬКО настоящий
+      // 'ended' у видео (см. onEpisodeEnded выше) — а любое ручное
+      // переключение (кнопка «Следующая серия» в самом плеере, «След. →»
+      // здесь, сетка серий) идёт через switchEpisode и этот момент полностью
+      // пропускало. Со стороны выглядело как «сохраняем не всегда» (см. тот
+      // же фикс и разбор в WatchPlayer.tsx для аниме — воспроизведено там
+      // вживую: подряд просмотренные серии попадали в историю через одну-две
+      // на три, ровно те редкие случаи, когда видео реально доигрывало до
+      // конца). Порог 90% — тот же, что и nearEnd на сервере при
+      // восстановлении позиции (см. cinema/watch/.../page.tsx).
+      if (isAuthed) {
+        const dur = durationRef.current;
+        const pos = currentTimeRef.current;
+        if (dur && pos / dur > 0.9) {
+          fetch('/api/progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              content_type: contentType,
+              shikimori_id: shikimoriId,
+              anime_title: animeTitle,
+              poster_url: posterUrl,
+              season: activeSeasonRef.current,
+              episode: activeEpisodeRef.current,
+              watched_episode: true,
+            }),
+            keepalive: true,
+          }).catch(() => {});
+        }
+      }
+
       setSwitchingEpisode(true);
       setShowOtherBanner(false);
       setEnded(false);
@@ -883,7 +914,18 @@ export default function Player({
         if (switchSeqRef.current === seq) setSwitchingEpisode(false);
       }
     },
-    [saveProgress, isSerial, shikimoriId, watchBase, animeTitle, toast, router],
+    [
+      saveProgress,
+      isSerial,
+      shikimoriId,
+      watchBase,
+      animeTitle,
+      toast,
+      router,
+      isAuthed,
+      contentType,
+      posterUrl,
+    ],
   );
   // Всегда-свежая ссылка на switchEpisode — для замыканий, живущих дольше её
   // собственной идентичности (автопереход в onEpisodeEnded, объявленный выше).
