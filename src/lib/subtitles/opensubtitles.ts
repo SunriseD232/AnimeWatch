@@ -116,6 +116,42 @@ function normalizeImdbId(id: string): string {
   return id.replace(/^tt/i, '');
 }
 
+/** Читает тело ответа чанками со своим таймаутом ПРОСТОЯ (а не одним общим
+ *  на весь запрос) — воспроизведено вживую: файл-сервер OpenSubtitles
+ *  (www.opensubtitles.com/download/...) отдаёт весь .srt за доли секунды, но
+ *  саму TCP-сессию после этого не закрывает (ни финального чанка, ни FIN) —
+ *  ни curl, ни Node fetch НИКОГДА не дожидаются res.text()/конца потока сами,
+ *  виснут до внешнего таймаута. Раз данные пришли, а новых больше не
+ *  появляется — считаем поток завершённым. hardCapMs — на случай, если файл
+ *  реально идёт медленной, но непрерывной трусцой (каждый чанк сбрасывает
+ *  таймер простоя, иначе такой случай никогда бы не досчитался до конца).
+ */
+async function readBodyWithIdleTimeout(
+  body: ReadableStream<Uint8Array>,
+  idleMs = 3_000,
+  hardCapMs = 20_000,
+): Promise<string> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  const deadline = Date.now() + hardCapMs;
+  try {
+    while (Date.now() < deadline) {
+      let timer!: ReturnType<typeof setTimeout>;
+      const idle = new Promise<'idle'>((resolve) => {
+        timer = setTimeout(() => resolve('idle'), idleMs);
+      });
+      const result = await Promise.race([reader.read(), idle]);
+      clearTimeout(timer);
+      if (result === 'idle' || result.done) break;
+      text += decoder.decode(result.value, { stream: true });
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+  return text;
+}
+
 async function downloadAsVtt(fileId: number): Promise<string | null> {
   const data = await osFetch<{ link?: string }>('/download', {
     method: 'POST',
@@ -123,12 +159,21 @@ async function downloadAsVtt(fileId: number): Promise<string | null> {
   });
   if (!data?.link) return null;
   try {
+    // Таймаут тут — только на получение ЗАГОЛОВКОВ ответа (это быстро, см.
+    // тесты выше); само тело читаем отдельно через readBodyWithIdleTimeout,
+    // у него своя логика на зависающий без EOF поток.
     const res = await fetch(data.link, { signal: AbortSignal.timeout(15_000) });
     if (!res.ok) {
       console.error(`[opensubtitles] download file_id=${fileId} status=${res.status}`);
       return null;
     }
-    const srt = await res.text();
+    const srt = res.body
+      ? await readBodyWithIdleTimeout(res.body)
+      : await res.text();
+    if (!srt.trim()) {
+      console.error(`[opensubtitles] download file_id=${fileId} — пустое тело`);
+      return null;
+    }
     return srtToVtt(srt);
   } catch (err) {
     console.error(
@@ -151,10 +196,25 @@ interface FindArgs {
   title?: string;
 }
 
+/** Результат поиска — раздельно от того, ЗНАЕМ ли мы уже точно, что субтитра
+ *  нет (можно смело кэшировать null навсегда), или просто не смогли сейчас
+ *  получить ответ (сеть/квота/зависший download — см. getCachedSubtitle:
+ *  такое кэшировать НЕЛЬЗЯ, иначе один временный сбой навсегда прячет
+ *  реально существующий субтитр — именно это произошло с «Пацаны», где
+ *  зависание TCP-сессии на файл-сервере OpenSubtitles молча кэшировалось
+ *  как «искали, не нашли»). */
+interface FindResult {
+  vtt: string | null;
+  /** true — точно знаем результат (нашли, либо честно не нашли/не прошло
+   *  валидацию); false — не смогли выяснить (ключ/сеть/квота/зависший
+   *  download) и результат кэшировать нельзя. */
+  confirmed: boolean;
+}
+
 /** Ищет и скачивает лучший субтитр под критерии — БЕЗ кэширования (кэш см.
- *  getCachedSubtitle ниже). null — не нашли или не прошло валидацию. */
-async function findSubtitle({ lang, episode, season, imdbId, title }: FindArgs): Promise<string | null> {
-  if (!apiKey()) return null;
+ *  getCachedSubtitle ниже). */
+async function findSubtitle({ lang, episode, season, imdbId, title }: FindArgs): Promise<FindResult> {
+  if (!apiKey()) return { vtt: null, confirmed: false };
 
   const params = new URLSearchParams({ languages: lang });
   if (imdbId) {
@@ -167,14 +227,15 @@ async function findSubtitle({ lang, episode, season, imdbId, title }: FindArgs):
     params.set('query', title);
     params.set('episode_number', String(episode));
   } else {
-    return null;
+    return { vtt: null, confirmed: false };
   }
 
   const search = await osFetch<OsSearchResponse>(`/subtitles?${params.toString()}`);
-  const candidates = search?.data ?? [];
+  if (search == null) return { vtt: null, confirmed: false }; // сам поиск не выполнился — не факт, что субтитра нет
+  const candidates = search.data ?? [];
   if (candidates.length === 0) {
     console.log(`[opensubtitles] 0 кандидатов: ${params.toString()}`);
-    return null;
+    return { vtt: null, confirmed: true }; // поиск реально прошёл — кандидатов действительно нет
   }
 
   const sorted = [...candidates].sort(
@@ -195,9 +256,12 @@ async function findSubtitle({ lang, episode, season, imdbId, title }: FindArgs):
       })?.attributes;
 
   const fileId = best?.files?.[0]?.file_id;
-  if (!fileId) return null;
+  if (!fileId) return { vtt: null, confirmed: true }; // кандидаты были, ни один не прошёл валидацию — честный промах
 
-  return downloadAsVtt(fileId);
+  const vtt = await downloadAsVtt(fileId);
+  // Кандидат найден и провалидирован — если сам файл не скачался, это
+  // техническая неудача (см. readBodyWithIdleTimeout), а не «субтитра нет».
+  return { vtt, confirmed: vtt !== null };
 }
 
 interface CachedArgs {
@@ -253,18 +317,30 @@ export async function getCachedSubtitle({
   // сезону в каталоге OpenSubtitles (абсолютная vs относительная нумерация
   // серий по кура́м). Кино — по season/episode только для сериалов.
   const searchSeason = contentType === 'cinema' && isSeries ? season : undefined;
-  let vtt = await findSubtitle({ lang, episode, season: searchSeason, imdbId, title });
+  let result = await findSubtitle({ lang, episode, season: searchSeason, imdbId, title });
 
   // Вторая попытка по altTitle — только для title-based поиска (imdb_id уже
   // однозначно определяет тайтл, второе название тут не нужно и не поможет).
-  if (!vtt && !imdbId && altTitle && altTitle !== title) {
-    vtt = await findSubtitle({ lang, episode, season: searchSeason, imdbId, title: altTitle });
+  if (!result.vtt && !imdbId && altTitle && altTitle !== title) {
+    const second = await findSubtitle({ lang, episode, season: searchSeason, imdbId, title: altTitle });
+    // confirmed навсегда — только если ОБЕ попытки честно не нашли: если
+    // вторая не смогла выполниться технически, весь итог всё равно
+    // неопределённый, даже если первая была confirmed.
+    result = { vtt: second.vtt, confirmed: result.confirmed && second.confirmed };
   }
 
-  await supabase.from('subtitle_cache').upsert(
-    { content_type: contentType, shikimori_id: shikimoriId, season, episode, lang, vtt },
-    { onConflict: 'content_type,shikimori_id,season,episode,lang' },
-  );
+  // Кэшируем НАВСЕГДА только то, что реально знаем — либо нашли субтитр,
+  // либо честно убедились, что его нет. Технический сбой (нет ключа, не
+  // выполнился поиск, завис download — см. FindResult) кэшу не отдаём: он
+  // останется незакэшированным и попробуется заново на следующий визит этой
+  // же серии, вместо того чтобы навсегда прикинуться «искали, не нашли»
+  // (воспроизведено вживую на «Пацаны»/S01E01 — зависший download.срт).
+  if (result.vtt !== null || result.confirmed) {
+    await supabase.from('subtitle_cache').upsert(
+      { content_type: contentType, shikimori_id: shikimoriId, season, episode, lang, vtt: result.vtt },
+      { onConflict: 'content_type,shikimori_id,season,episode,lang' },
+    );
+  }
 
-  return vtt;
+  return result.vtt;
 }
