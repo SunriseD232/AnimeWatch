@@ -1323,6 +1323,23 @@ export default function OwnPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [save, onEnded, loadState]);
 
+  // --- Клавиатура: фокус на контейнер -----------------------------------------
+  // onKeyDown ниже висит на containerRef (tabIndex=0) — сработает только пока
+  // ФОКУС реально на этом div'е. Ничто раньше не ставило фокус явно: жалоба
+  // «стрелки не перематывают, как в других плеерах» — пользователь открывает
+  // страницу, видео стартует само (autoPlay через attemptPlay), фокус так и
+  // остаётся на document.body (или где он был до захода на страницу) — жмёт
+  // ArrowLeft/ArrowRight, а событие никогда не долетает до onKeyDown вообще
+  // (в лучшем случае браузер сам прокручивает СТРАНИЦУ стрелками вверх/вниз).
+  // Ставим фокус на контейнер, как только плеер готов — как это делают
+  // большинство видео-сайтов (YouTube и т.п.), не дожидаясь клика.
+  // preventScroll — иначе .focus() на элементе ниже текущей прокрутки мог бы
+  // сам её сдвинуть, что здесь совсем не нужно (плеер и так уже виден, раз
+  // дошло до этого эффекта).
+  useEffect(() => {
+    if (loadState === 'ready') containerRef.current?.focus({ preventScroll: true });
+  }, [loadState]);
+
   // --- Фуллскрин --------------------------------------------------------------
   useEffect(() => {
     const onFsChange = () =>
@@ -1802,9 +1819,18 @@ export default function OwnPlayer({
         onKeyDown={onKeyDown}
         onMouseMove={showControls}
         onTouchStart={showControls}
-        onClick={() => {
+        onClick={(e) => {
           setSettingsOpen(false);
           setSettingsView('root');
+          // Возвращаем фокус контейнеру после клика по чему угодно внутри
+          // плеера (кнопке, ползунку) — иначе после, например, паузы/смены
+          // громкости мышью фокус остаётся на самой кнопке/инпуте, и
+          // следующая стрелка на клавиатуре либо не долетает до onKeyDown
+          // вовсе (INPUT — см. guard там же), либо просто листает фокус
+          // между кнопками панели, а не перематывает видео.
+          if (!(e.target as HTMLElement).closest('input, select')) {
+            containerRef.current?.focus({ preventScroll: true });
+          }
         }}
         className={[
           'group relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10 outline-none focus:ring-accent/40',
