@@ -235,7 +235,11 @@ export default async function CinemaPage({
               >
                 {progress
                   ? item.isSerial
-                    ? `Продолжить: серия ${resumeEpisode} (${formatTime(resumePos)})`
+                    ? // Сезон в подписи — только когда у тайтла их реально
+                      // больше одного (item.seasons.length > 1): для
+                      // однoсезонных сериалов «сезон 1» — бесполезный шум,
+                      // сама серия уже однозначна и без него.
+                      `Продолжить: ${item.seasons.length > 1 ? `сезон ${resumeSeason}, ` : ''}серия ${resumeEpisode} (${formatTime(resumePos)})`
                     : `Продолжить (${formatTime(resumePos)})`
                   : item.isSerial
                     ? 'Начать просмотр'

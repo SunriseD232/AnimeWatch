@@ -12,8 +12,22 @@ import { fixPosterUrl, formatTime, watchPercent } from '@/lib/format';
 /** Карточка блока «Продолжить просмотр» с кнопкой убрать из списка. */
 export default function ContinueCard({
   progress,
+  isMultiSeason = false,
+  readOnly = false,
 }: {
   progress: WatchProgress;
+  /** true — у тайтла больше одного сезона (см. getCinemaSeasonCountMap),
+   *  тогда подпись включает номер сезона. Не задано/false — сезон не
+   *  пишем: он либо всегда 1 (аниме — там сезонов в этом смысле нет
+   *  вовсе), либо у тайтла он и так единственный, писать нечего. */
+  isMultiSeason?: boolean;
+  /** true — карточка чужого прогресса глазами админа (см.
+   *  app/admin/users/[id]/page.tsx) — прячет кнопку «Убрать»: RLS и так не
+   *  дал бы DELETE чужой строки уйти (delete() там без user_id, только
+   *  auth.uid() через RLS), но кнопка, которая молча ничего не делает —
+   *  хуже, чем её отсутствие. Явно read-only, а не полагаемся на то, что
+   *  сработает RLS. */
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -78,7 +92,8 @@ export default function ContinueCard({
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
           <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-2 py-0.5 text-xs font-medium text-white">
-            Серия {progress.episode} · {formatTime(progress.position_seconds)}
+            {isMultiSeason ? `С${progress.season ?? 1} · Серия ${progress.episode}` : `Серия ${progress.episode}`} ·{' '}
+            {formatTime(progress.position_seconds)}
           </span>
           {percent !== null && (
             <div className="absolute inset-x-0 bottom-0 h-1 bg-white/10">
@@ -109,8 +124,9 @@ export default function ContinueCard({
       />
 
       {/* Убрать из «Продолжить просмотр» — с подтверждением. Кнопка всегда
-          видима (не по hover): на тач-устройствах hover не срабатывает. */}
-      {confirming ? (
+          видима (не по hover): на тач-устройствах hover не срабатывает.
+          Скрыта целиком в readOnly (см. Props.readOnly выше). */}
+      {readOnly ? null : confirming ? (
         <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-black/85 p-1 backdrop-blur">
           <button
             type="button"

@@ -855,6 +855,35 @@ export default function Player({
             keepalive: true,
           }).catch(() => {});
         }
+
+        // Отмечаем НОВУЮ серию как начатую СИНХРОННО, здесь же — а не
+        // полагаемся на отдельный эффект «Отметка открытой серии» выше (он
+        // держится на activeSeason/activeEpisode, но это useEffect, и React
+        // откладывает такие эффекты до после коммита/пейнта). Разбор жалобы
+        // «после перехода на новую серию в "Продолжить просмотр" всё ещё
+        // старая»: пользователь кликает «Следующая серия» (или по сетке
+        // серий) и сразу закрывает вкладку — переход (setActiveEpisode ниже)
+        // происходит СИНХРОННО, а вот отложенный эффект мог не успеть
+        // отправить fetch до выгрузки страницы вовсе. onEpisodeEnded (для
+        // автоперехода по таймеру) уже делает такую же запись — здесь тот же
+        // приём, но на ВСЕ пути смены серии (кнопка, сетка, ←/→, автопереход),
+        // единообразно и без зависимости от таймингов React.
+        fetch('/api/progress', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content_type: contentType,
+            shikimori_id: shikimoriId,
+            anime_title: animeTitle,
+            poster_url: posterUrl,
+            season: target.season,
+            episode: target.episode,
+            position_seconds: 5, // > 5, чтобы запись прошла порог
+            duration_seconds: null,
+            translation_id: translationRef.current,
+          }),
+          keepalive: true,
+        }).catch(() => {});
       }
 
       setSwitchingEpisode(true);

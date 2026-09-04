@@ -489,6 +489,34 @@ export default function WatchPlayer({
             keepalive: true,
           }).catch(() => {});
         }
+
+        // Отмечаем НОВУЮ серию как начатую СИНХРОННО, здесь же — а не
+        // полагаемся на отложенный useEffect (тот же класс проблемы, что и в
+        // Player.tsx switchEpisode: React откладывает такие эффекты до после
+        // коммита/пейнта, а у WatchPlayer подобного эффекта-подстраховки для
+        // аниме вообще нет). Разбор жалобы «после перехода на новую серию в
+        // "Продолжить просмотр" всё ещё старая»: пользователь кликает
+        // «Следующая серия» (или по сетке серий) и сразу закрывает вкладку —
+        // переход (setActiveEpisode ниже) происходит СИНХРОННО, а без этой
+        // записи вообще ничего не отправлялось на сервер про новую серию.
+        // onEnded (для автоперехода по таймеру) уже делает такую же запись —
+        // здесь тот же приём, но на ВСЕ пути смены серии.
+        fetch('/api/progress', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content_type: contentType,
+            shikimori_id: shikimoriId,
+            anime_title: animeTitle,
+            poster_url: posterUrl,
+            season: 1,
+            episode: targetEpisode,
+            position_seconds: 5, // > 5, чтобы запись прошла порог
+            duration_seconds: null,
+            translation_id: null,
+          }),
+          keepalive: true,
+        }).catch(() => {});
       }
 
       setSwitchingEpisode(true);

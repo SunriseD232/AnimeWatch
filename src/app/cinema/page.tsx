@@ -11,6 +11,7 @@ import { CardGridSkeleton } from '@/components/Skeletons';
 import {
   getCinemaById,
   getCinemaEpisodesTotalMap,
+  getCinemaSeasonCountMap,
   getNewCinema,
   getPopularCinemaRanked,
 } from '@/lib/videoseed-catalog';
@@ -94,13 +95,17 @@ async function ContinueWatching() {
     );
   }
 
+  // Число сезонов на карточку — только тайтлы с БОЛЬШЕ чем одним сезоном
+  // получают «Сезон N ·» в подписи (см. ContinueCard.isMultiSeason).
+  const seasonCountMap = await getCinemaSeasonCountMap(progress.map((p) => p.shikimori_id));
+
   // Горизонтальная карусель: последние просмотренные листаются вбок.
   // Помимо родной полосы прокрутки — колесо мыши и драг (см. ScrollCarousel).
   return (
     <ScrollCarousel className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2">
       {progress.map((p) => (
         <div key={p.id} className="w-56 shrink-0 snap-start sm:w-72">
-          <ContinueCard progress={p} />
+          <ContinueCard progress={p} isMultiSeason={(seasonCountMap.get(p.shikimori_id) ?? 0) > 1} />
         </div>
       ))}
     </ScrollCarousel>

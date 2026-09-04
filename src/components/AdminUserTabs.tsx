@@ -3,30 +3,36 @@
 import { useState } from 'react';
 import UserListView from '@/components/UserListView';
 import HistoryView from '@/components/HistoryView';
-import type { UserListItem, WatchedEpisode } from '@/lib/types';
+import ContinueCard from '@/components/ContinueCard';
+import type { UserListItem, WatchedEpisode, WatchProgress } from '@/lib/types';
 
 interface Props {
   items: UserListItem[];
   history: WatchedEpisode[];
+  /** «Продолжить просмотр» целевого пользователя — только у админа (см.
+   *  app/admin/users/[id]/page.tsx), в собственном профиле такой вкладки нет
+   *  вовсе (см. ProfileTabs.tsx). */
+  continueWatching: { progress: WatchProgress; isMultiSeason: boolean }[];
 }
 
-type Tab = 'list' | 'history';
+type Tab = 'list' | 'history' | 'continue';
 
 /**
  * Вкладки на странице чужого профиля глазами админа (см.
- * app/admin/users/[id]/page.tsx) — «Список» и «История», тот же паттерн, что
- * ProfileTabs.tsx в собственном профиле. Раньше здесь был только список по
- * тегам (UserListView) — историю просмотра можно было увидеть только у себя,
- * что мешало админу разобраться в жалобе вида «у меня ничего не сохраняется».
- * Оба вида — read-only (см. readOnly у UserListView и то, что HistoryView и
- * так ничего не мутирует).
+ * app/admin/users/[id]/page.tsx) — «Список», «История» и «Продолжить
+ * просмотр», тот же паттерн, что ProfileTabs.tsx в собственном профиле (но
+ * без вкладки «Продолжить просмотр» там — это чисто админский, диагностический
+ * взгляд на чужие данные, не общая функция профиля). Все три вида — read-only
+ * (см. readOnly у UserListView/ContinueCard и то, что HistoryView и так
+ * ничего не мутирует).
  */
-export default function AdminUserTabs({ items, history }: Props) {
+export default function AdminUserTabs({ items, history, continueWatching }: Props) {
   const [tab, setTab] = useState<Tab>('list');
 
   const tabs: { value: Tab; label: string }[] = [
     { value: 'list', label: 'Список' },
     { value: 'history', label: 'История' },
+    { value: 'continue', label: 'Продолжить просмотр' },
   ];
 
   return (
@@ -51,6 +57,21 @@ export default function AdminUserTabs({ items, history }: Props) {
 
       {tab === 'list' && <UserListView items={items} readOnly />}
       {tab === 'history' && <HistoryView items={history} />}
+      {tab === 'continue' &&
+        (continueWatching.length === 0 ? (
+          <p className="text-sm text-gray-400">Пользователь ничего не смотрит.</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {continueWatching.map(({ progress, isMultiSeason }) => (
+              <ContinueCard
+                key={progress.id}
+                progress={progress}
+                isMultiSeason={isMultiSeason}
+                readOnly
+              />
+            ))}
+          </div>
+        ))}
     </section>
   );
 }

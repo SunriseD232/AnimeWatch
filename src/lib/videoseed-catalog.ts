@@ -594,6 +594,30 @@ export async function getCinemaEpisodesTotalMap(
 }
 
 /**
+ * Число сезонов для НЕБОЛЬШОГО набора id — нужно карусели «Продолжить
+ * просмотр» (см. ContinueCard), чтобы решить, писать ли сезон в подписи:
+ * «Сезон 2, серия 5» для многосезонных тайтлов, просто «Серия 5» — для
+ * односезонных (сезон и так всегда 1, писать нечего). Тот же приём, что и
+ * getCinemaEpisodesTotalMap чуть выше (кэшированный getCinemaById,
+ * ограниченная параллельность) — отдельная функция, а не переиспользование
+ * той же карты: у неё другой смысл поля (эпизоды, не сезоны) и другой набор
+ * вызывающих (везде, где есть watch_progress, а не только на карусели).
+ */
+export async function getCinemaSeasonCountMap(
+  kinopoiskIds: number[],
+): Promise<Map<number, number>> {
+  if (kinopoiskIds.length === 0) return new Map();
+  const results = await mapWithConcurrency(kinopoiskIds, 4, (id) =>
+    getCinemaById(id).catch(() => null),
+  );
+  const map = new Map<number, number>();
+  results.forEach((full, i) => {
+    if (full) map.set(kinopoiskIds[i], full.seasons.length);
+  });
+  return map;
+}
+
+/**
  * Все альтернативные озвучки тайтла из Videoseed (item=search отдаёт
  * translation_iframe — на каждую озвучку готовый embed с default_audio_id,
  * найдено при разборе сырого ответа каталога, в отличие от embed-страницы
