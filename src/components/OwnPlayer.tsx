@@ -313,6 +313,23 @@ export default function OwnPlayer({
   // внутренний реparse, и эскалация на retryRef() ниже никогда не наступала,
   // сколько бы раз подряд ни повторялся bufferAppendError.
   const mediaErrorRecoveryRef = useRef(0);
+  // Стрик подряд идущих ПОЛНЫХ переподключений (retryRef ниже), на которые
+  // эскалировали hlsErrorRecoveryRef/mediaErrorRecoveryRef/сик-вотчдог — в
+  // ОТЛИЧИЕ от них НЕ сбрасывается на каждый reconnect (сбрасывается только
+  // при смене src и на реальный прогресс воспроизведения, см. onTime ниже),
+  // а переживает их все подряд. Без него источник, который
+  // мёртв НАВСЕГДА (протухший на весь TTL кэша токен, выключенный CDN и
+  // т.п.), ретраился бы бесконечно — обнаружено по продовым логам: 1225
+  // fatal-ошибок Alloha levelParsingError подряд на одном тайтле за 12
+  // часов, recoveryAttempt ровно по кругу 0→1→2 — то есть чистый бесконечный
+  // цикл эскалация→reconnect→эскалация, а не постепенно затухающий
+  // транзиентный сбой. RECONNECT_FAILURE_LIMIT подряд неудачных
+  // переподключений — и вместо ещё одного retryRef() показываем обычный
+  // экран «Не удалось загрузить видео» с ручной кнопкой «Повторить» (она
+  // сама сбрасывает стрик — см. её onClick ниже), вместо бесконечной тихой
+  // долбёжки сервера и клиента.
+  const reconnectFailureStreakRef = useRef(0);
+  const RECONNECT_FAILURE_LIMIT = 3;
   // Content-Type из проверочного HEAD (см. эффект резолва ниже) — переносится
   // во второй эффект (подключение к <video>), чтобы не запрашивать HEAD дважды.
   const upstreamContentTypeRef = useRef<string | null>(null);
@@ -571,6 +588,16 @@ export default function OwnPlayer({
     setSettingsView('root');
   }, [episode, season]);
 
+  // Сбрасываем стрик подряд неудачных переподключений (см.
+  // reconnectFailureStreakRef выше) на КАЖДУЮ реальную смену источника —
+  // серия/сезон/озвучка/качество (DASH)/аудиодорожка, всё то, что меняет src.
+  // Специально НЕ в зависимостях от reloadKey — иначе сам retryRef() (то,
+  // что мы считаем) сбрасывал бы свой же счётчик перед каждой попыткой,
+  // и лимит никогда бы не достигался.
+  useEffect(() => {
+    reconnectFailureStreakRef.current = 0;
+  }, [src]);
+
   // --- Определение типа потока (HLS/mp4) и подключение источника -----------
   useEffect(() => {
     let cancelled = false;
@@ -788,6 +815,19 @@ export default function OwnPlayer({
           // и не менялось, обычный reload не помогал (сервер отдавал тот же
           // закэшированный URL), помогала только полная пересборка через
           // смену серии и возврат обратно — то же самое делает retry() ниже.
+          // Эскалация до ПОЛНОГО переподключения (retryRef) — но только пока
+          // не выбран стрик-лимит (см. reconnectFailureStreakRef выше);
+          // иначе — сдаёмся: обычный экран ошибки вместо ещё одной попытки.
+          // Без этого источник, который мёртв НАВСЕГДА, ретраился бы вечно.
+          const escalateOrGiveUp = () => {
+            if (reconnectFailureStreakRef.current < RECONNECT_FAILURE_LIMIT) {
+              reconnectFailureStreakRef.current += 1;
+              retryRef.current();
+            } else {
+              logEvent('player.give_up', { source: effectiveSource, shikimoriId, season, episode });
+              setLoadState('failed');
+            }
+          };
           hls.on(Hls.Events.ERROR, (_evt, data) => {
             if (cancelled || !data.fatal) return;
             logEvent('player.hls_fatal_error', {
@@ -801,6 +841,7 @@ export default function OwnPlayer({
                 data.type === Hls.ErrorTypes.MEDIA_ERROR
                   ? mediaErrorRecoveryRef.current
                   : hlsErrorRecoveryRef.current,
+              reconnectStreak: reconnectFailureStreakRef.current,
             });
             switch (data.type) {
               case Hls.ErrorTypes.NETWORK_ERROR:
@@ -808,7 +849,7 @@ export default function OwnPlayer({
                 if (hlsErrorRecoveryRef.current <= 2) {
                   hls.startLoad();
                 } else {
-                  retryRef.current();
+                  escalateOrGiveUp();
                 }
                 break;
               case Hls.ErrorTypes.MEDIA_ERROR:
@@ -827,7 +868,7 @@ export default function OwnPlayer({
                 if (mediaErrorRecoveryRef.current <= 2) {
                   hls.recoverMediaError();
                 } else {
-                  retryRef.current();
+                  escalateOrGiveUp();
                 }
                 break;
               default:
@@ -1054,7 +1095,16 @@ export default function OwnPlayer({
           // ошибках (см. Hls.Events.ERROR ниже по файлу) — новый экземпляр
           // получает startPosition на ту же цель с чистого листа, вместо
           // попытки реанимировать зависший.
-          retryRef.current();
+          //
+          // Тот же стрик-лимит, что и у Hls.Events.ERROR — постоянно зависающий
+          // сик (а не разовый сбой сети) иначе тоже ретраился бы бесконечно.
+          if (reconnectFailureStreakRef.current < RECONNECT_FAILURE_LIMIT) {
+            reconnectFailureStreakRef.current += 1;
+            retryRef.current();
+          } else {
+            logEvent('player.give_up', { source: effectiveSource, shikimoriId, season, episode });
+            setLoadState('failed');
+          }
         }, 4_000);
       }
     };
@@ -1132,6 +1182,12 @@ export default function OwnPlayer({
       const t = video.currentTime;
       setCurrentTime(t);
       onTimeUpdateRef.current?.(t, Number.isFinite(video.duration) ? video.duration : null);
+      // Реальный прогресс воспроизведения — сильнее, чем событие 'play' (то
+      // срабатывает уже на вызов .play(), необязательно на то, что видео
+      // ДЕЙСТВИТЕЛЬНО потекло) — сбрасываем стрик неудачных переподключений
+      // (см. reconnectFailureStreakRef выше): переподключение реально
+      // помогло, у следующего сбоя снова полный бюджет попыток.
+      reconnectFailureStreakRef.current = 0;
     };
     const onProgress = () => {
       try {
@@ -1693,7 +1749,14 @@ export default function OwnPlayer({
         <p className="text-sm text-gray-200">Не удалось загрузить видео.</p>
         <button
           type="button"
-          onClick={retry}
+          onClick={() => {
+            // Ручной клик — свежий бюджет попыток (см.
+            // reconnectFailureStreakRef/RECONNECT_FAILURE_LIMIT выше):
+            // пользователь сам решил попробовать ещё раз, это не тот же
+            // автоматический цикл, который уже исчерпал себя молча.
+            reconnectFailureStreakRef.current = 0;
+            retry();
+          }}
           className="press rounded-full bg-accent px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
         >
           Повторить
