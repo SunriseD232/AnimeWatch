@@ -406,10 +406,13 @@ export async function searchAnime(
     300,
   );
 
-  const words = q
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
+  // titleWords (не split(/\s+/)) — иначе знаки препинания в САМОМ запросе
+  // («человек-паук», «гарри поттер: философский камень») склеивались бы в
+  // одно "слово" с дефисом/двоеточием внутри и никогда не совпадали бы ни с
+  // одним словом названия (там-то titleWords их уже режет). Раньше только
+  // название очищалось от знаков, а запрос — нет, хотя оба должны сравниваться
+  // в одной и той же нормализации.
+  const words = titleWords(q);
 
   const matches = raw.filter((anime) => {
     if (anime.status === 'anons') return false;
