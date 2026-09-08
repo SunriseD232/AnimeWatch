@@ -45,6 +45,11 @@ interface CatalogFilterValue {
    *  чтобы не терять его молча. */
   apply: (override?: { sort?: string; showAnons?: boolean }) => void;
   reset: () => void;
+  /** Мобильная панель фильтров (CatalogMobileDrawer). Состояние здесь, а не
+   *  в самой панели: открывает её кнопка-гамбургер из шапки — отдельный
+   *  компонент, соседний, а не родительский. */
+  drawerOpen: boolean;
+  setDrawerOpen: (open: boolean) => void;
 }
 
 export type TriGroup = 'genres' | 'ratings' | 'kinds' | 'statuses';
@@ -77,6 +82,7 @@ export default function CatalogFilterProvider({
   const showAnons = searchParams.get('anons') === '1';
 
   const [pending, setPending] = useState<AnimeCatalogFilters>(applied);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Подхватываем применённое состояние, когда URL изменился не нашей же
   // apply(): назад/вперёд в браузере, заход по ссылке с параметрами. После
@@ -139,8 +145,10 @@ export default function CatalogFilterProvider({
       setRange,
       apply,
       reset,
+      drawerOpen,
+      setDrawerOpen,
     }),
-    [pending, applied, sort, showAnons, toggle, setRange, apply, reset],
+    [pending, applied, sort, showAnons, toggle, setRange, apply, reset, drawerOpen],
   );
 
   return (
@@ -153,13 +161,17 @@ export default function CatalogFilterProvider({
 
 /** Одна кнопка «Применить» на все группы фильтров сразу. Липкая снизу —
  *  список фильтров в сайдбаре длинный, и кнопка у его конца была бы за
- *  пределами экрана в момент, когда пользователь закончил выбирать. */
+ *  пределами экрана в момент, когда пользователь закончил выбирать.
+ *
+ *  Только для десктопа (lg:). На телефоне все контролы живут в выезжающей
+ *  панели, и своя кнопка «Применить» есть у неё — две сразу спорили бы за
+ *  один и тот же низ экрана. */
 function ApplyBar() {
   const { dirty, apply } = useCatalogFilters();
   if (!dirty) return null;
 
   return (
-    <div className="pointer-events-none sticky bottom-4 z-10 flex items-center justify-center">
+    <div className="pointer-events-none sticky bottom-4 z-10 hidden items-center justify-center lg:flex">
       <button
         type="button"
         onClick={() => apply()}
