@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 import ModeSwitch from '@/components/ModeSwitch';
 import CatalogFilterProvider from '@/components/catalog/CatalogFilterProvider';
-import AnimeCatalogSidebar from '@/components/catalog/AnimeCatalogSidebar';
+import CatalogDesktopFilters from '@/components/catalog/CatalogDesktopFilters';
 import AnimeGenrePanel from '@/components/catalog/AnimeGenrePanel';
 import CatalogMobileDrawer from '@/components/catalog/CatalogMobileDrawer';
 import CatalogMobileTrigger from '@/components/catalog/CatalogMobileTrigger';
@@ -30,6 +30,9 @@ async function CatalogFilters({ children }: { children: React.ReactNode }) {
 
   return (
     <CatalogFilterProvider defaultSort={DEFAULT_SORT}>
+      {/* Одна колонка: фильтры больше не отдельный рельс слева, а
+          раскрывающийся блок над выдачей (десктоп) либо шторка по кнопке
+          (телефон). Сетке карточек это заодно вернуло полную ширину. */}
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -46,19 +49,10 @@ async function CatalogFilters({ children }: { children: React.ReactNode }) {
           <CatalogMobileTrigger />
         </div>
 
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-          {/* На телефоне колонка не сворачивается, а исчезает совсем: те же
-              группы там показывает шторка, и две копии разом спорили бы за
-              один черновик визуально. */}
-          <aside className="hidden lg:sticky lg:top-4 lg:block lg:w-60 lg:shrink-0">
-            <AnimeCatalogSidebar />
-          </aside>
+        <CatalogDesktopFilters />
+        <AnimeGenrePanel genres={options} sorts={ANIME_CATALOG_SORTS} />
 
-          <div className="flex min-w-0 flex-1 flex-col gap-6">
-            <AnimeGenrePanel genres={options} sorts={ANIME_CATALOG_SORTS} />
-            {children}
-          </div>
-        </div>
+        {children}
       </div>
 
       <CatalogMobileDrawer genres={options} sorts={ANIME_CATALOG_SORTS} />

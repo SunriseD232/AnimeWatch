@@ -18,17 +18,20 @@ import {
 } from '@/components/catalog/CatalogFilterProvider';
 
 /**
- * Кирпичики панели фильтров, общие для десктопного сайдбара
- * (AnimeCatalogSidebar) и мобильной выезжающей панели (CatalogMobileDrawer).
+ * Кирпичики панели фильтров, общие для десктопной раскрывающейся панели
+ * (CatalogDesktopFilters) и мобильной выезжающей шторки (CatalogMobileDrawer).
  *
  * Вынесены отдельно именно потому, что мест теперь два: раскладка у них
- * разная (колонка слева против шторки поверх выдачи), а сами группы и их
- * поведение обязаны совпадать до мелочей — иначе фильтр «Тип» на телефоне и
- * на компьютере со временем разъедутся.
+ * разная (колонки под кнопкой «Фильтры» против шторки поверх выдачи), а сами
+ * группы и их поведение обязаны совпадать до мелочей — иначе фильтр «Тип» на
+ * телефоне и на компьютере со временем разъедутся.
  */
 
+// Без рамки: поле различимо заливкой (bg-soft темнее карточки, читается как
+// углубление), а фокус показывает кольцо — рамка поверх этого была лишней
+// серой линией.
 const INPUT_CLS =
-  'w-full min-w-0 rounded-lg border border-white/10 bg-bg-soft px-2 py-1.5 text-sm text-gray-100 outline-none transition focus:border-accent [appearance:textfield] [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none';
+  'w-full min-w-0 rounded-lg bg-bg-soft px-2 py-1.5 text-sm text-gray-100 outline-none transition focus:ring-1 focus:ring-accent [appearance:textfield] [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none';
 
 export function RangeGroup({
   title,
@@ -201,7 +204,7 @@ export function SortSelect({ sorts }: { sorts: readonly FilterOptionDef[] }) {
       <select
         value={sort}
         onChange={(e) => apply({ sort: e.target.value })}
-        className="rounded-lg border border-white/10 bg-bg-card px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none"
+        className="rounded-lg bg-bg-soft px-3 py-1.5 text-sm text-gray-100 outline-none focus:ring-1 focus:ring-accent"
       >
         {sorts.map((s) => (
           <option key={s.value} value={s.value}>

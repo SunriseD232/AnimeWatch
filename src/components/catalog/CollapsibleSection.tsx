@@ -32,7 +32,7 @@ export default function CollapsibleSection({
   const panelId = useId();
 
   return (
-    <div className="border-b border-white/5 last:border-b-0">
+    <div>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

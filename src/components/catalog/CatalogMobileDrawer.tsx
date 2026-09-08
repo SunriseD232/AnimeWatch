@@ -100,7 +100,7 @@ export default function CatalogMobileDrawer({
           drawerOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
-        <div className="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
+        <div className="flex items-center justify-between gap-2 px-4 py-3">
           <p className="text-base font-semibold text-gray-100">Жанры и фильтры</p>
           <button
             type="button"
@@ -134,10 +134,6 @@ export default function CatalogMobileDrawer({
             <YearRange />
           </CollapsibleSection>
 
-          <CollapsibleSection title="Возрастной рейтинг" count={ratingsCount}>
-            <RatingGroup />
-          </CollapsibleSection>
-
           <CollapsibleSection title="Тип" count={kindsCount}>
             <KindGroup />
           </CollapsibleSection>
@@ -146,12 +142,18 @@ export default function CatalogMobileDrawer({
             <StatusGroup />
           </CollapsibleSection>
 
+          {/* Возрастной рейтинг — последним, тот же порядок и на десктопе
+              (см. CatalogDesktopFilters). */}
+          <CollapsibleSection title="Возрастной рейтинг" count={ratingsCount}>
+            <RatingGroup />
+          </CollapsibleSection>
+
           <p className="py-3 text-xs leading-snug text-gray-500">
             Первое нажатие включает пункт, второе — исключает (крестик), третье снимает.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 border-t border-white/10 bg-bg-card px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <div className="flex items-center gap-2 bg-bg-card px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <button
             type="button"
             onClick={applyAndClose}
@@ -164,7 +166,7 @@ export default function CatalogMobileDrawer({
             <button
               type="button"
               onClick={reset}
-              className="press rounded-full border border-white/10 px-4 py-2.5 text-sm font-medium text-gray-300 transition hover:border-white/25"
+              className="press rounded-full bg-white/5 px-4 py-2.5 text-sm font-medium text-gray-300 transition hover:bg-white/10"
             >
               Сбросить
             </button>
