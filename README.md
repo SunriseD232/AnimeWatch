@@ -51,7 +51,7 @@ npm run dev                  # http://localhost:3000
 
 Откройте **SQL Editor** в Supabase и выполните файлы из
 [`supabase/migrations/`](supabase/migrations/) **по порядку номеров**
-(`0001_init.sql` … `0024_user_theme.sql`) — одной первой миграции
+(`0001_init.sql` … `0025_anime_index.sql`) — одной первой миграции
 недостаточно, схема набиралась инкрементально.
 
 `0001_init.sql` создаёт таблицы `watch_progress` и `user_list`, включает RLS с
@@ -59,7 +59,7 @@ npm run dev                  # http://localhost:3000
 `watch_progress` в публикацию Realtime. Дальше добавляются
 `watched_episodes`, `episode_notifications`, `title_episode_baseline`,
 `system_notifications`, `resolved_streams`, `subtitle_cache`, `app_settings`,
-`api_response_cache`, `user_presence`, `user_theme` и правки к ним.
+`api_response_cache`, `user_presence`, `user_theme`, `anime_index` и правки к ним.
 
 > Через Supabase CLI: `supabase db push` (после `supabase link`).
 
@@ -170,6 +170,34 @@ bash scripts/deploy.sh
    публичная регистрация Supabase всё ещё доступна напрямую через anon key
    в обход кода приглашения — подробности в `ARCHITECTURE.md` §14.2.
 
+## Локальный индекс каталога аниме
+
+Каталог фильтрует не через Shikimori, а по своей копии — таблицы
+`anime_index` и `anime_genres` (миграция 0025, чтение —
+[`src/lib/animeIndexQuery.ts`](src/lib/animeIndexQuery.ts)). Так фильтр по
+жанрам, числу серий, году, рейтингу, типу и статусу становится одним
+SQL-запросом.
+
+Зачем: у Shikimori жанров нет в списочном ответе, поэтому AND и исключение
+шли догрузкой полных карточек по одной с потолком в 120 штук; фильтра по
+числу серий в API v1 нет вовсе; а список жанров из REST `/genres` — легаси
+из 46 записей, где «Магия» есть, но не находит ничего (MAL растворил её во
+«Фэнтези» и «Махо-сёдзё»). В актуальной таксономии 80 пунктов: 22 жанра,
+53 темы, 5 демографий.
+
+Обновление — полная перезакачка с нуля раз в сутки:
+`/api/cron/reindex-anime` (заголовок `Authorization: Bearer $CRON_SECRET`),
+на сервере в 02:00 UTC, то есть 05:00 по Москве. ~480 страниц по 50 тайтлов
+из GraphQL Shikimori, около шести минут; ещё столько же занимает лёгкий
+проход за рангами популярности (само поле GraphQL не отдаёт, только
+сортировать умеет).
+
+Живая таблица при этом не опустошается: закачка пишет строки со своим
+`batch_id`, и указатель `anime_index_state.active_batch` переключается
+только после того, как она целиком удалась и прошла проверку на усадку.
+Оборвалась — читатели продолжают видеть прошлую партию. Если индекса нет
+совсем, каталог откатывается на прежний путь через Shikimori.
+
 ## Оформление
 
 Палитра задана CSS-переменными (`--accent`, `--bg`, `--bg-soft`, `--bg-card`)
@@ -206,6 +234,7 @@ src/
     api/proxy/                            собственный плеер: резолв + Range-прокси,
                                           subtitles, dash-seg, raw
     api/cron/check-episodes/              суточный крон уведомлений
+    api/cron/reindex-anime/               суточная перестройка индекса каталога
     api/admin/, api/presence/, api/health/, api/client-log/
   components/                             UI (Player, OwnPlayer, HlsPlayer, карточки…)
   hooks/
@@ -216,11 +245,12 @@ src/
     shikimori.ts, tmdb.ts                 метаданные аниме / кино
     video/                                абстракция VideoSource + провайдеры
     theme.ts                              палитра: пресеты, CSS-переменные
+    animeIndex.ts, animeIndexQuery.ts     локальный индекс каталога: сбор и чтение
     extract/                              резолв ссылок, Range-прокси, клиент VPS
     subtitles/, watch/, cache/, net/      субтитры, логика просмотра, кэш, сеть
   native/                                 Capacitor: офлайн-загрузки, внешний экран
   middleware.ts                           обновление сессии + auth-gate
-supabase/migrations/                      0001 … 0024
+supabase/migrations/                      0001 … 0025
 vps-extractor/                            VPS-сервис извлечения (Puppeteer)
 ```
 

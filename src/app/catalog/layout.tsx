@@ -5,6 +5,7 @@ import AnimeGenrePanel from '@/components/catalog/AnimeGenrePanel';
 import CatalogMobileDrawer from '@/components/catalog/CatalogMobileDrawer';
 import CatalogMobileTrigger from '@/components/catalog/CatalogMobileTrigger';
 import { ANIME_CATALOG_SORTS, getAnimeGenres, type AnimeCatalogSort } from '@/lib/shikimori';
+import { getGenresFromIndex } from '@/lib/animeIndexQuery';
 import type { FilterOptionDef } from '@/lib/animeFilters';
 
 const DEFAULT_SORT: AnimeCatalogSort = 'aired_on';
@@ -16,9 +17,14 @@ const DEFAULT_SORT: AnimeCatalogSort = 'aired_on';
  * списком не нужны, а список к тому же кэшируется на сутки.
  */
 async function CatalogFilters({ children }: { children: React.ReactNode }) {
+  // Список берём из локального индекса: там актуальная таксономия Shikimori
+  // (22 жанра, 53 темы, 5 демографий). Легаси-эндпоинт REST /genres отдаёт
+  // 46 записей, среди которых мёртвая «Магия» — кнопка есть, результатов
+  // нет. Индекса ещё нет — откатываемся на него же, чтобы каталог не остался
+  // вовсе без фильтра по жанрам.
   let genres: { id: number; russian: string }[] = [];
   try {
-    genres = await getAnimeGenres();
+    genres = (await getGenresFromIndex()) ?? (await getAnimeGenres());
   } catch {
     genres = [];
   }
