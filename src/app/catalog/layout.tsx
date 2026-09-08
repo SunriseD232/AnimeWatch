@@ -30,9 +30,6 @@ async function CatalogFilters({ children }: { children: React.ReactNode }) {
 
   return (
     <CatalogFilterProvider defaultSort={DEFAULT_SORT}>
-      {/* Одна колонка: фильтры больше не отдельный рельс слева, а
-          раскрывающийся блок над выдачей (десктоп) либо шторка по кнопке
-          (телефон). Сетке карточек это заодно вернуло полную ширину. */}
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -49,10 +46,24 @@ async function CatalogFilters({ children }: { children: React.ReactNode }) {
           <CatalogMobileTrigger />
         </div>
 
-        <CatalogDesktopFilters />
-        <AnimeGenrePanel genres={options} sorts={ANIME_CATALOG_SORTS} />
+        {/* Две колонки: фильтры блоком слева, всё остальное справа. Именно
+            колонкой, а не строкой над жанрами — иначе свёрнутая кнопка
+            съедала бы целую строку по вертикали ни за чем.
+            items-start, чтобы колонка не растягивалась на всю высоту
+            выдачи; на телефоне колонки нет вовсе — там шторка. */}
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+          {/* Ширина по самой длинной подписи («Короткометражка») и ни
+              пикселем больше — всё, что колонка забирает, отнимается у
+              карточек справа. */}
+          <aside className="hidden lg:block lg:w-48 lg:shrink-0">
+            <CatalogDesktopFilters />
+          </aside>
 
-        {children}
+          <div className="flex min-w-0 flex-1 flex-col gap-6">
+            <AnimeGenrePanel genres={options} sorts={ANIME_CATALOG_SORTS} />
+            {children}
+          </div>
+        </div>
       </div>
 
       <CatalogMobileDrawer genres={options} sorts={ANIME_CATALOG_SORTS} />
