@@ -1,5 +1,4 @@
-import { createServiceClient } from '@/lib/supabase/service';
-import { getActiveBatch } from '@/lib/animeIndex';
+import { createClient } from '@/lib/supabase/server';
 import { DEFAULT_KINDS, type TriState } from '@/lib/animeFilters';
 import type { AnimeCatalogPage, AnimeCatalogParams, ShikimoriAnimeShort } from '@/lib/shikimori';
 
@@ -12,10 +11,19 @@ import type { AnimeCatalogPage, AnimeCatalogParams, ShikimoriAnimeShort } from '
  * комбинации отдавали мало результатов не потому, что их нет, а потому что
  * кончался бюджет запросов. Числа серий как фильтра у API v1 нет вовсе.
  *
- * Возвращает null, если индекса ещё нет — вызывающий (getAnimeCatalog)
- * откатывается на старый путь через Shikimori. Это нужно и в первые минуты
- * после раскатки, пока ночной крон ни разу не отработал, и как страховка,
- * если индекс почему-то опустеет.
+ * Возвращает null, если индекса ещё нет — вызывающий откатывается на старый
+ * путь через Shikimori. Это нужно и в первые минуты после раскатки, пока
+ * ночной крон ни разу не отработал, и как страховка, если индекс опустеет.
+ *
+ * ВАЖНО: функции отсюда НИКОГДА не бросают. Исключение (нет таблиц, отвалился
+ * Supabase) отменило бы откат — вызывающий поймал бы его своим catch и показал
+ * ошибку вместо того, чтобы просто сходить в Shikimori. Ровно на это я и
+ * напоролся локально: не оказалось ключа, createServiceClient бросил, и панель
+ * фильтров осталась вовсе без жанров.
+ *
+ * Читаем обычным клиентом с сессией пользователя, а не service_role: таблицы
+ * индекса — публичные данные каталога с политикой чтения для всех (миграция
+ * 0025), и брать под это ключ, обходящий RLS, незачем. Пишет их только крон.
  */
 
 /** Строка индекса ровно в том виде, в каком её отдаёт PostgREST. */
@@ -95,11 +103,39 @@ function applyTri<T extends TriFilterable<T>>(
   return q;
 }
 
+/** Активная партия. null — индекса нет или он недоступен. */
+async function getActiveBatchId(): Promise<string | null> {
+  try {
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('anime_index_state')
+      .select('active_batch')
+      .eq('id', true)
+      .maybeSingle();
+    if (error || !data?.active_batch) return null;
+    return data.active_batch as string;
+  } catch {
+    return null;
+  }
+}
+
 export async function getAnimeCatalogFromIndex(
   params: AnimeCatalogParams,
 ): Promise<AnimeCatalogPage | null> {
-  const active = await getActiveBatch();
-  if (!active) return null;
+  try {
+    return await queryIndex(params);
+  } catch (err) {
+    console.error(
+      '[animeIndexQuery] индекс недоступен, откат на Shikimori:',
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+}
+
+async function queryIndex(params: AnimeCatalogParams): Promise<AnimeCatalogPage | null> {
+  const batchId = await getActiveBatchId();
+  if (!batchId) return null;
 
   const {
     genresInclude,
@@ -117,14 +153,14 @@ export async function getAnimeCatalogFromIndex(
     statuses,
   } = params;
 
-  const supabase = createServiceClient();
+  const supabase = createClient();
 
   // count: 'exact' нужен для hasMore: иначе пришлось бы запрашивать на одну
   // страницу больше и гадать. На индексированной таблице это дёшево.
   let query = supabase
     .from('anime_index')
     .select(SELECT_COLUMNS, { count: 'exact' })
-    .eq('batch_id', active.batchId);
+    .eq('batch_id', batchId);
 
   // Жанры: AND через `contains` (@>) и исключение через «не пересекается»
   // (not overlaps). Ровно та семантика, что была у медленного пути, только
@@ -198,12 +234,16 @@ export interface IndexedGenre {
 /** Таксономия из индекса: 22 жанра, 53 темы, 5 демографий вместо легаси-
  *  списка из 46 записей с мёртвой «Магией». null — индекса ещё нет. */
 export async function getGenresFromIndex(): Promise<IndexedGenre[] | null> {
-  const supabase = createServiceClient();
-  const { data, error } = await supabase
-    .from('anime_genres')
-    .select('id, russian, kind')
-    .order('russian', { ascending: true });
+  try {
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('anime_genres')
+      .select('id, russian, kind')
+      .order('russian', { ascending: true });
 
-  if (error || !data || data.length === 0) return null;
-  return data as IndexedGenre[];
+    if (error || !data || data.length === 0) return null;
+    return data as IndexedGenre[];
+  } catch {
+    return null;
+  }
 }

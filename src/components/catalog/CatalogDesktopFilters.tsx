@@ -3,12 +3,14 @@
 import { useCatalogFilters } from '@/components/catalog/CatalogFilterProvider';
 import {
   EpisodesRange,
+  GenreList,
   KindGroup,
   RatingGroup,
   StatusGroup,
   YearRange,
   useGroupCount,
 } from '@/components/catalog/FilterGroups';
+import type { FilterOptionDef } from '@/lib/animeFilters';
 
 /**
  * Десктопные фильтры разнесены на две части: кнопка живёт в строке с
@@ -36,13 +38,14 @@ export function FiltersTrigger({
   onToggle: () => void;
 }) {
   const { pending } = useCatalogFilters();
+  const genres = useGroupCount('genres');
   const ratings = useGroupCount('ratings');
   const kinds = useGroupCount('kinds');
   const statuses = useGroupCount('statuses');
   const ranges =
     (pending.episodesFrom !== null || pending.episodesTo !== null ? 1 : 0) +
     (pending.yearFrom !== null || pending.yearTo !== null ? 1 : 0);
-  const count = ratings + kinds + statuses + ranges;
+  const count = genres + ratings + kinds + statuses + ranges;
 
   return (
     <button
@@ -112,7 +115,7 @@ export function FiltersTrigger({
  * сплошная заливка: при смене палитры в профиле панель меняется вместе со
  * всем остальным и не остаётся тёмным пятном.
  */
-export function FiltersPanel() {
+export function FiltersPanel({ genres }: { genres: FilterOptionDef[] }) {
   const { hasFilters, reset } = useCatalogFilters();
 
   return (
@@ -137,6 +140,13 @@ export function FiltersPanel() {
           </Group>
         </div>
 
+        {/* Жанры переехали сюда из строки чипов над выдачей: пунктов в
+            актуальной таксономии 80, и наверху они отжимали бы у карточек
+            несколько экранов. */}
+        <Group title="Жанры">
+          <GenreList genres={genres} />
+        </Group>
+
         <Group title="Тип">
           <KindGroup />
         </Group>
@@ -153,19 +163,20 @@ export function FiltersPanel() {
         </div>
       </div>
 
-      {/* Подсказки про клики тут нет намеренно — она дословно повторяет
-          строку под заголовком «Каталог аниме». */}
-      {hasFilters && (
-        <div className="mt-4 flex justify-end">
+      <div className="mt-4 flex items-start justify-between gap-3">
+        <p className="text-xs leading-snug text-gray-500">
+          Первое нажатие включает пункт, второе — исключает, третье снимает.
+        </p>
+        {hasFilters && (
           <button
             type="button"
             onClick={reset}
-            className="press text-xs font-medium text-accent hover:text-accent-hover"
+            className="press shrink-0 text-xs font-medium text-accent hover:text-accent-hover"
           >
             Сбросить
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

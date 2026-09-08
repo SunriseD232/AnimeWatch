@@ -388,17 +388,3 @@ async function discardBatch(
   const { error } = await supabase.from('anime_index').delete().eq('batch_id', batchId);
   if (error) console.error('[animeIndex] не удалось удалить партию', batchId, error.message);
 }
-
-/** Активная партия и когда её собрали. null — индекса ещё нет, каталог
- *  должен работать по-старому (см. getAnimeCatalog). */
-export async function getActiveBatch(): Promise<{ batchId: string; builtAt: string | null } | null> {
-  const supabase = createServiceClient();
-  const { data } = await supabase
-    .from('anime_index_state')
-    .select('active_batch, built_at')
-    .eq('id', true)
-    .maybeSingle();
-
-  if (!data?.active_batch) return null;
-  return { batchId: data.active_batch, builtAt: data.built_at };
-}
