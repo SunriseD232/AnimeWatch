@@ -10,7 +10,6 @@ import {
   hasAnyFilter,
   parseFilters,
   type AnimeCatalogFilters,
-  type TriState,
 } from '@/lib/animeFilters';
 
 /**
@@ -102,12 +101,23 @@ export default function CatalogFilterProvider({
     [pending, sort, showAnons, defaultSort, pathname, router],
   );
 
+  // Ключ здесь вычисляемый (group/field — объединения литералов), а spread с
+  // таким ключом TypeScript расширяет до индексной сигнатуры и теряет тип
+  // AnimeCatalogFilters. Поэтому присваивание через явную копию.
   const toggle = useCallback((group: TriGroup, value: string) => {
-    setPending((prev) => ({ ...prev, [group]: cycleTri(prev[group] as TriState, value) }));
+    setPending((prev) => {
+      const next: AnimeCatalogFilters = { ...prev };
+      next[group] = cycleTri(prev[group], value);
+      return next;
+    });
   }, []);
 
   const setRange = useCallback((field: RangeField, value: number | null) => {
-    setPending((prev) => ({ ...prev, [field]: value }));
+    setPending((prev) => {
+      const next: AnimeCatalogFilters = { ...prev };
+      next[field] = value;
+      return next;
+    });
   }, []);
 
   const reset = useCallback(() => {

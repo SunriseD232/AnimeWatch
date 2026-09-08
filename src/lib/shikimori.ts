@@ -273,10 +273,15 @@ const UPSTREAM_PAGE_SIZE = 50;
 // заметно больше, чем MAX_CATALOG_CANDIDATES.
 const MAX_LIST_SCAN_PAGES = 10;
 
-/** Число серий тайтла для фильтра: у онгоингов `episodes` часто 0 («всего
- *  серий пока неизвестно»), но `episodes_aired` уже осмысленно. */
-function episodeCount(a: ShikimoriAnimeShort): number {
-  return a.episodes > 0 ? a.episodes : a.episodes_aired;
+/** Число серий для ФИЛЬТРА. Сознательно не переиспользует экспортированный
+ *  episodeCount ниже: тот предназначен для показа и в крайнем случае отдаёт
+ *  1 («хоть одна серия есть»), а фильтру нужно отличать «одна серия» от
+ *  «неизвестно» — иначе тайтл с неизвестным числом серий попадал бы в выдачу
+ *  по запросу «от 1 до 5». Ноль здесь означает именно «неизвестно». */
+function filterableEpisodeCount(a: ShikimoriAnimeShort): number {
+  if (a.status === 'ongoing' && a.episodes_aired > 0) return a.episodes_aired;
+  if (a.episodes > 0) return a.episodes;
+  return a.episodes_aired;
 }
 
 function matchesEpisodes(
@@ -285,7 +290,7 @@ function matchesEpisodes(
   to: number | null | undefined,
 ): boolean {
   if (from == null && to == null) return true;
-  const n = episodeCount(a);
+  const n = filterableEpisodeCount(a);
   // Ноль — «неизвестно». При заданном диапазоне такие прячем: показать тайтл
   // с неизвестным числом серий в ответе на «от 12 до 24» было бы враньём.
   if (n <= 0) return false;
