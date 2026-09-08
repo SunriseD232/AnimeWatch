@@ -22,13 +22,15 @@ export default function CatalogMobileTrigger() {
       onClick={() => setDrawerOpen(true)}
       aria-label={active ? 'Жанры и фильтры (применены)' : 'Жанры и фильтры'}
       aria-haspopup="dialog"
-      className="press relative shrink-0 rounded-xl border border-white/10 bg-bg-card p-2.5 text-gray-200 transition hover:bg-bg-soft lg:hidden"
+      className="press relative -mr-1 shrink-0 p-1 text-white lg:hidden"
     >
-      <svg viewBox="0 0 20 20" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2">
+      <svg viewBox="0 0 20 20" aria-hidden="true" className="h-6 w-6 fill-none stroke-current stroke-2">
         <path d="M3 5h14M3 10h14M3 15h14" strokeLinecap="round" />
       </svg>
+      {/* Без кольца-обводки: у кнопки больше нет своей подложки, и кольцо
+          цвета карточки читалось бы как случайное пятно на фоне страницы. */}
       {active && (
-        <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent ring-2 ring-bg-card" />
+        <span className="absolute right-0 top-0 h-2 w-2 rounded-full bg-accent" />
       )}
     </button>
   );

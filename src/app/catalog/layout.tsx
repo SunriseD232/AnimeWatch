@@ -31,12 +31,14 @@ async function CatalogFilters({ children }: { children: React.ReactNode }) {
   return (
     <CatalogFilterProvider defaultSort={DEFAULT_SORT}>
       <div className="flex flex-col gap-6">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-bold">Каталог аниме</h1>
-            <p className="text-sm text-gray-400">
-              {/* Без «слева»: на узких экранах фильтры не в колонке, а в
-                  панели по кнопке — указание направления там врало бы. */}
+            {/* Только десктоп: на телефоне подсказка съедала верх экрана
+                перед самой выдачей, а объяснять там нечего — жанры и
+                фильтры спрятаны в панель, и та же фраза про клики есть
+                внутри неё, рядом с самими чекбоксами. */}
+            <p className="hidden text-sm text-gray-400 lg:block">
               Выбирайте жанры и фильтры (клик — включить, ещё раз —
               исключить), затем нажмите «Применить».
             </p>
