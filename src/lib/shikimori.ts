@@ -7,6 +7,7 @@
 import { getYummyPostersMap } from './video/yummy';
 import { mapWithConcurrency } from './concurrency';
 import { wordMatches } from './fuzzy';
+import { DEFAULT_KINDS, MAX_YEAR, MIN_YEAR, type TriState } from './animeFilters';
 
 // ВАЖНО: Shikimori переехал с shikimori.one на shikimori.io. Старый домен
 // отвечает редиректами, из-за чего картинки показывали плейсхолдер.
@@ -232,8 +233,23 @@ export interface AnimeCatalogParams {
   sort: AnimeCatalogSort;
   page: number;
   pageSize: number;
-  /** Скрыть тайтлы со статусом "анонс" (ещё не вышли, смотреть нечего). */
+  /** Скрыть тайтлы со статусом "анонс" (ещё не вышли, смотреть нечего).
+   *  Игнорируется, если задан явный фильтр по статусу — там пользователь
+   *  сказал точнее, чего хочет. */
   excludeAnons: boolean;
+  /** Диапазон числа серий. У Shikimori в API v1 такого параметра НЕТ —
+   *  фильтруется на нашей стороне по полю `episodes` списочного ответа
+   *  (доп. запросов не требует, см. ниже). */
+  episodesFrom?: number | null;
+  episodesTo?: number | null;
+  /** Диапазон года выхода — уходит в `season=ГОД_ГОД`. */
+  yearFrom?: number | null;
+  yearTo?: number | null;
+  /** Трёхпозиционные наборы — уходят в `rating=`/`kind=`/`status=`,
+   *  исключения через префикс `!`, который Shikimori понимает. */
+  ratings?: TriState;
+  kinds?: TriState;
+  statuses?: TriState;
 }
 
 export interface AnimeCatalogPage {
@@ -250,6 +266,79 @@ export interface AnimeCatalogPage {
 const MAX_CATALOG_CANDIDATES = 120;
 const CATALOG_CONCURRENCY = 5;
 const UPSTREAM_PAGE_SIZE = 50;
+
+// Отдельный потолок для фильтров, которым НЕ нужна полная карточка (число
+// серий — поле `episodes` есть уже в списочном ответе). Тут цена одной
+// просмотренной страницы — один запрос, а не 50, поэтому пролистать можно
+// заметно больше, чем MAX_CATALOG_CANDIDATES.
+const MAX_LIST_SCAN_PAGES = 10;
+
+/** Число серий тайтла для фильтра: у онгоингов `episodes` часто 0 («всего
+ *  серий пока неизвестно»), но `episodes_aired` уже осмысленно. */
+function episodeCount(a: ShikimoriAnimeShort): number {
+  return a.episodes > 0 ? a.episodes : a.episodes_aired;
+}
+
+function matchesEpisodes(
+  a: ShikimoriAnimeShort,
+  from: number | null | undefined,
+  to: number | null | undefined,
+): boolean {
+  if (from == null && to == null) return true;
+  const n = episodeCount(a);
+  // Ноль — «неизвестно». При заданном диапазоне такие прячем: показать тайтл
+  // с неизвестным числом серий в ответе на «от 12 до 24» было бы враньём.
+  if (n <= 0) return false;
+  if (from != null && n < from) return false;
+  if (to != null && n > to) return false;
+  return true;
+}
+
+/** `{include:['tv'],exclude:['ova']}` → `tv,!ova`. Отрицание через `!` —
+ *  штатный синтаксис Shikimori для kind/status/rating. */
+function triToParam(sel: TriState | undefined): string | null {
+  const parts = [...(sel?.include ?? []), ...(sel?.exclude ?? []).map((v) => `!${v}`)];
+  return parts.length > 0 ? parts.join(',') : null;
+}
+
+/** Год → параметр `season`. Открытый с одной стороны диапазон закрываем
+ *  разумной границей: у API нет формы «от 2015 и новее». */
+function yearsToSeason(
+  from: number | null | undefined,
+  to: number | null | undefined,
+): string | null {
+  if (from == null && to == null) return null;
+  return `${from ?? MIN_YEAR}_${to ?? MAX_YEAR}`;
+}
+
+/** Общая часть запроса к `/animes` для обоих путей каталога. */
+function catalogQuery(params: AnimeCatalogParams, limit: number, page: number): URLSearchParams {
+  const qp = new URLSearchParams({
+    order: params.sort,
+    limit: String(limit),
+    page: String(page),
+  });
+
+  // Тип: выбор пользователя перекрывает историческое умолчание каталога
+  // (tv/movie/ona) — иначе отметить «OVA» было бы невозможно, её отсекал бы
+  // дефолт.
+  qp.set('kind', triToParam(params.kinds) ?? DEFAULT_KINDS.join(','));
+
+  // Статус: явный выбор важнее галки «Показывать анонсы» — два контрола на
+  // одну сущность, и молча смешивать их значило бы получить пустую выдачу
+  // при «только анонсы» с выключенной галкой.
+  const statusParam = triToParam(params.statuses);
+  if (statusParam) qp.set('status', statusParam);
+  else if (params.excludeAnons) qp.set('status', 'ongoing,released');
+
+  const ratingParam = triToParam(params.ratings);
+  if (ratingParam) qp.set('rating', ratingParam);
+
+  const season = yearsToSeason(params.yearFrom, params.yearTo);
+  if (season) qp.set('season', season);
+
+  return qp;
+}
 
 /**
  * Каталог аниме с множественным выбором жанров (AND — тайтл должен иметь
@@ -270,18 +359,18 @@ const UPSTREAM_PAGE_SIZE = 50;
 export async function getAnimeCatalog(
   params: AnimeCatalogParams,
 ): Promise<AnimeCatalogPage> {
-  const { genresInclude, genresExclude, sort, page, pageSize, excludeAnons } = params;
-  const needsFullFilter = genresExclude.length > 0 || genresInclude.length > 1;
+  const { genresInclude, genresExclude, page, pageSize, episodesFrom, episodesTo } = params;
 
-  if (!needsFullFilter) {
-    const qp = new URLSearchParams({
-      order: sort,
-      kind: 'tv,movie,ona',
-      limit: String(pageSize),
-      page: String(page),
-    });
+  // Полная карточка нужна только ради жанров: AND по нескольким и любое
+  // исключение (в списочном ответе жанров нет вообще).
+  const needsFullCards = genresExclude.length > 0 || genresInclude.length > 1;
+  // Число серий фильтруется по списочному ответу — доп. запросов не нужно,
+  // но пагинацию всё равно приходится считать самим, а значит идти циклом.
+  const needsEpisodeFilter = episodesFrom != null || episodesTo != null;
+
+  if (!needsFullCards && !needsEpisodeFilter) {
+    const qp = catalogQuery(params, pageSize, page);
     if (genresInclude.length === 1) qp.set('genre', String(genresInclude[0]));
-    if (excludeAnons) qp.set('status', 'ongoing,released');
     const items = await shikimoriFetch<ShikimoriAnimeShort[]>(
       `/animes?${qp.toString()}`,
       1800,
@@ -297,15 +386,15 @@ export async function getAnimeCatalog(
   let examined = 0;
   let upstreamPage = 1;
 
-  while (matches.length < need && examined < MAX_CATALOG_CANDIDATES) {
-    const qp = new URLSearchParams({
-      order: sort,
-      kind: 'tv,movie,ona',
-      limit: String(UPSTREAM_PAGE_SIZE),
-      page: String(upstreamPage),
-    });
+  while (matches.length < need) {
+    // Бюджет разный: с догрузкой карточек считаем сами карточки (дорого,
+    // запрос на штуку), без неё — пролистанные страницы (запрос на 50 штук).
+    if (needsFullCards ? examined >= MAX_CATALOG_CANDIDATES : upstreamPage > MAX_LIST_SCAN_PAGES) {
+      break;
+    }
+
+    const qp = catalogQuery(params, UPSTREAM_PAGE_SIZE, upstreamPage);
     if (genresInclude.length > 0) qp.set('genre', genresInclude.join(','));
-    if (excludeAnons) qp.set('status', 'ongoing,released');
 
     const batch = await shikimoriFetch<ShikimoriAnimeShort[]>(
       `/animes?${qp.toString()}`,
@@ -313,23 +402,34 @@ export async function getAnimeCatalog(
     );
     if (batch.length === 0) break;
 
-    const remainingBudget = MAX_CATALOG_CANDIDATES - examined;
-    const toExamine = batch.slice(0, remainingBudget);
-    examined += toExamine.length;
+    // Число серий отсекаем ДО догрузки полных карточек — этот фильтр
+    // бесплатен, и каждый отсеянный им кандидат экономит целый запрос.
+    const byEpisodes = batch.filter((a) => matchesEpisodes(a, episodesFrom, episodesTo));
 
-    const fulls = await mapWithConcurrency(
-      toExamine,
-      CATALOG_CONCURRENCY,
-      (item) => getAnime(item.id).catch(() => null),
-    );
+    if (!needsFullCards) {
+      for (const item of byEpisodes) {
+        matches.push(item);
+        if (matches.length >= need) break;
+      }
+    } else {
+      const remainingBudget = MAX_CATALOG_CANDIDATES - examined;
+      const toExamine = byEpisodes.slice(0, remainingBudget);
+      examined += toExamine.length;
 
-    for (const full of fulls) {
-      if (!full) continue;
-      const ids = full.genres.map((g) => g.id);
-      const hasAllIncluded = genresInclude.every((id) => ids.includes(id));
-      const hasNoExcluded = !genresExclude.some((id) => ids.includes(id));
-      if (hasAllIncluded && hasNoExcluded) matches.push(full);
-      if (matches.length >= need) break;
+      const fulls = await mapWithConcurrency(
+        toExamine,
+        CATALOG_CONCURRENCY,
+        (item) => getAnime(item.id).catch(() => null),
+      );
+
+      for (const full of fulls) {
+        if (!full) continue;
+        const ids = full.genres.map((g) => g.id);
+        const hasAllIncluded = genresInclude.every((id) => ids.includes(id));
+        const hasNoExcluded = !genresExclude.some((id) => ids.includes(id));
+        if (hasAllIncluded && hasNoExcluded) matches.push(full);
+        if (matches.length >= need) break;
+      }
     }
 
     if (batch.length < UPSTREAM_PAGE_SIZE) break; // апстрим исчерпан
