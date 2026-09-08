@@ -1,6 +1,7 @@
 'use client';
 
 import { AnonsToggle, GenreChips, SortSelect } from '@/components/catalog/FilterGroups';
+import CatalogDesktopFilters from '@/components/catalog/CatalogDesktopFilters';
 import type { FilterOptionDef } from '@/lib/animeFilters';
 
 /**
@@ -21,7 +22,11 @@ export default function AnimeGenrePanel({
 }) {
   return (
     <div className="hidden flex-col gap-4 lg:flex">
+      {/* Кнопка «Фильтры» — первой в этой же строке: слева и без отдельной
+          строки под себя. Сама панель раскрывается накладкой и раскладку не
+          двигает (см. CatalogDesktopFilters). */}
       <div className="flex flex-wrap items-center gap-4">
+        <CatalogDesktopFilters />
         <SortSelect sorts={sorts} />
         <AnonsToggle />
       </div>

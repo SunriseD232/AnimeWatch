@@ -1,7 +1,6 @@
 import { Suspense } from 'react';
 import ModeSwitch from '@/components/ModeSwitch';
 import CatalogFilterProvider from '@/components/catalog/CatalogFilterProvider';
-import CatalogDesktopFilters from '@/components/catalog/CatalogDesktopFilters';
 import AnimeGenrePanel from '@/components/catalog/AnimeGenrePanel';
 import CatalogMobileDrawer from '@/components/catalog/CatalogMobileDrawer';
 import CatalogMobileTrigger from '@/components/catalog/CatalogMobileTrigger';
@@ -46,24 +45,12 @@ async function CatalogFilters({ children }: { children: React.ReactNode }) {
           <CatalogMobileTrigger />
         </div>
 
-        {/* Две колонки: фильтры блоком слева, всё остальное справа. Именно
-            колонкой, а не строкой над жанрами — иначе свёрнутая кнопка
-            съедала бы целую строку по вертикали ни за чем.
-            items-start, чтобы колонка не растягивалась на всю высоту
-            выдачи; на телефоне колонки нет вовсе — там шторка. */}
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-          {/* Ширина по самой длинной подписи («Короткометражка») и ни
-              пикселем больше — всё, что колонка забирает, отнимается у
-              карточек справа. */}
-          <aside className="hidden lg:block lg:w-48 lg:shrink-0">
-            <CatalogDesktopFilters />
-          </aside>
-
-          <div className="flex min-w-0 flex-1 flex-col gap-6">
-            <AnimeGenrePanel genres={options} sorts={ANIME_CATALOG_SORTS} />
-            {children}
-          </div>
-        </div>
+        {/* Одна колонка во всю ширину: кнопка «Фильтры» живёт внутри
+            AnimeGenrePanel, а её панель раскрывается накладкой поверх
+            контента. Колонки в потоке тут нет намеренно — она сдвигала
+            вправо и жанры, и сетку карточек. */}
+        <AnimeGenrePanel genres={options} sorts={ANIME_CATALOG_SORTS} />
+        {children}
       </div>
 
       <CatalogMobileDrawer genres={options} sorts={ANIME_CATALOG_SORTS} />
