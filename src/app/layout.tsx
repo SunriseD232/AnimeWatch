@@ -56,7 +56,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ru" className={`dark ${inter.variable}`}>
+    // suppressHydrationWarning ниже: ThemeScript намеренно ставит inline
+    // style на <html> ДО гидратации (иначе кадр чужой палитры), а React
+    // видит на клиенте атрибут, которого не было в серверной разметке, и
+    // ругается «Extra attributes from the server: style». Подавляем точечно
+    // на этом узле — расхождение здесь ожидаемое, а не симптом ошибки.
+    <html lang="ru" className={`dark ${inter.variable}`} suppressHydrationWarning>
       <head>
         {/* До любой отрисовки — иначе кадр стандартной палитры и перекраска
             на глазах у пользователя (см. components/ThemeScript.tsx). */}

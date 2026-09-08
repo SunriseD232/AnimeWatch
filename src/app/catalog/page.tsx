@@ -2,6 +2,14 @@ import AnimeCard from '@/components/AnimeCard';
 import Pagination from '@/components/Pagination';
 import { ANIME_CATALOG_SORTS, getAnimeCatalog, type AnimeCatalogSort } from '@/lib/shikimori';
 import { getEpisodeProgressMap } from '@/lib/watch/progressMap';
+import {
+  PARAM,
+  buildQuery,
+  hasAnyFilter,
+  parseFilters,
+  parseNumericIds,
+  type AnimeCatalogFilters,
+} from '@/lib/animeFilters';
 
 export const metadata = { title: 'Каталог аниме — MediaWatch' };
 
@@ -13,55 +21,62 @@ export const maxDuration = 60;
 const PAGE_SIZE = 24;
 const DEFAULT_SORT: AnimeCatalogSort = 'aired_on';
 
-function parseIds(value: string | undefined): number[] {
-  if (!value) return [];
-  return value
-    .split(',')
-    .map((v) => Number(v))
-    .filter((n) => Number.isFinite(n) && n > 0);
-}
-
 function isValidSort(value: string | undefined): value is AnimeCatalogSort {
   return ANIME_CATALOG_SORTS.some((s) => s.value === value);
 }
 
+/** searchParams у страницы — обычный объект; фильтры разбираются общим
+ *  кодом с клиентом (lib/animeFilters.ts), которому нужен URLSearchParams. */
+function toSearchParams(raw: Record<string, string | string[] | undefined>): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === 'string') params.set(key, value);
+    else if (Array.isArray(value) && value.length > 0) params.set(key, value[0]);
+  }
+  return params;
+}
+
 function pageHref(
-  genresInclude: number[],
-  genresExclude: number[],
+  filters: AnimeCatalogFilters,
   sort: AnimeCatalogSort,
   page: number,
   showAnons: boolean,
 ): string {
-  const params = new URLSearchParams();
-  if (genresInclude.length > 0) params.set('genres', genresInclude.join(','));
-  if (genresExclude.length > 0) params.set('exclude', genresExclude.join(','));
-  if (sort !== DEFAULT_SORT) params.set('sort', sort);
-  if (showAnons) params.set('anons', '1');
-  params.set('page', String(page));
-  return `/catalog?${params.toString()}`;
+  const qs = buildQuery(filters, { sort, defaultSort: DEFAULT_SORT, page, showAnons });
+  return qs ? `/catalog?${qs}` : '/catalog';
 }
 
 export default async function CatalogPage({
   searchParams,
 }: {
-  searchParams: { genres?: string; exclude?: string; sort?: string; page?: string; anons?: string };
+  searchParams: Record<string, string | string[] | undefined>;
 }) {
-  const genresInclude = parseIds(searchParams.genres);
-  const genresExclude = parseIds(searchParams.exclude);
-  const sort = isValidSort(searchParams.sort) ? searchParams.sort : DEFAULT_SORT;
-  const pageParam = Number(searchParams.page);
+  const params = toSearchParams(searchParams);
+  const filters = parseFilters(params);
+
+  const sort = isValidSort(params.get(PARAM.sort) ?? undefined)
+    ? (params.get(PARAM.sort) as AnimeCatalogSort)
+    : DEFAULT_SORT;
+  const pageParam = Number(params.get(PARAM.page));
   const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
-  const showAnons = searchParams.anons === '1';
+  const showAnons = params.get(PARAM.anons) === '1';
 
   let data;
   try {
     data = await getAnimeCatalog({
-      genresInclude,
-      genresExclude,
+      genresInclude: parseNumericIds(filters.genres.include.join(',')),
+      genresExclude: parseNumericIds(filters.genres.exclude.join(',')),
       sort,
       page,
       pageSize: PAGE_SIZE,
       excludeAnons: !showAnons,
+      episodesFrom: filters.episodesFrom,
+      episodesTo: filters.episodesTo,
+      yearFrom: filters.yearFrom,
+      yearTo: filters.yearTo,
+      ratings: filters.ratings,
+      kinds: filters.kinds,
+      statuses: filters.statuses,
     });
   } catch (err) {
     console.error('[catalog] getAnimeCatalog упал:', err instanceof Error ? err.message : err);
@@ -78,7 +93,9 @@ export default async function CatalogPage({
       <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
         {page > 1
           ? 'Дальше ничего нет.'
-          : 'По этим фильтрам ничего не нашлось. Попробуйте убрать часть жанров.'}
+          : hasAnyFilter(filters)
+            ? 'По этим фильтрам ничего не нашлось. Попробуйте ослабить условия — например, расширить диапазон серий или года.'
+            : 'Ничего не нашлось.'}
       </div>
     );
   }
@@ -96,8 +113,8 @@ export default async function CatalogPage({
 
       <Pagination
         page={page}
-        prevHref={hasPrev ? pageHref(genresInclude, genresExclude, sort, page - 1, showAnons) : null}
-        nextHref={data.hasMore ? pageHref(genresInclude, genresExclude, sort, page + 1, showAnons) : null}
+        prevHref={hasPrev ? pageHref(filters, sort, page - 1, showAnons) : null}
+        nextHref={data.hasMore ? pageHref(filters, sort, page + 1, showAnons) : null}
       />
     </div>
   );
