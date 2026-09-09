@@ -48,6 +48,10 @@ const { subtitleLabel } = require('./subtitle-labels');
  */
 
 const YUMMY_BASE = 'https://api.yani.tv';
+
+/** Видео-CDN Alloha (хостится у ВКонтакте) — с него и снимаем заголовки
+ *  подписи, см. cdnAuthHeaders в fetchBnsiData. */
+const CDN_URL_RE = /vkvideo\.cloud/i;
 const REFERER = 'https://yani.tv/';
 const WRAPPER_URL = 'https://yani.tv/__mediawatch_wrapper__';
 const MAX_CANDIDATES = 4;
@@ -118,28 +122,35 @@ async function fetchBnsiData(browser, rawEmbedUrl) {
         });
     });
 
-    // ВРЕМЕННАЯ ДИАГНОСТИКА (ALLOHA_DEBUG_CDN=1). Разбираем, почему
-    // подписанные ссылки vkvideo.cloud отдают 403 всем: и нашему серверу, и
-    // постороннему IP, и настоящему Chrome. Экстрактор читает ссылку из
-    // JSON /bnsi/ и сам её НИКОГДА не запрашивает — значит мы ни разу не
-    // видели, что на самом деле шлёт их плеер. Пишем в лог каждый запрос
-    // страницы к CDN вместе с заголовками.
-    const debugCdn = process.env.ALLOHA_DEBUG_CDN === '1';
-    if (debugCdn) {
-      page.on('response', (res) => {
-        if (!/vkvideo\.cloud/i.test(res.url())) return;
-        console.error(`[alloha-debug] ОТВЕТ CDN ${res.status()} ${res.url().slice(0, 110)}`);
-      });
-    }
+    // Заголовки, которыми их плеер подписывает запросы к видео-CDN.
+    //
+    // Зачем. С сентября 2026 подписанной ссылки vkvideo.cloud недостаточно:
+    // CDN отдаёт 403 ВСЕМ — и нашему серверу, и постороннему IP, и
+    // настоящему Chrome, — если в запросе нет пары `authorizations` и
+    // `accepts-controls`. Разбиралось долго и не с той стороны: экстрактор
+    // читает ссылку из JSON /bnsi/ и сам её никогда не запрашивал, поэтому
+    // мы просто не видели, что шлёт настоящий плеер. Увидели — в его GET к
+    // CDN ровно эти два заголовка, и ответ 200.
+    //
+    // Ловим их с ЛЮБОГО запроса страницы к CDN (плеер сам выбирает, какое
+    // качество тянуть) и отдаём вместе со ссылкой — дальше их проставит наш
+    // прокси. Токен живёт недолго; когда протухнет, прокси переизвлечёт
+    // заново (см. forceFresh в lib/extract/resolve.ts).
+    let cdnAuthHeaders = null;
 
     await page.setRequestInterception(true);
     page.on('request', (request) => {
       const url = request.url();
-      if (debugCdn && /vkvideo\.cloud/i.test(url)) {
-        console.error(
-          `[alloha-debug] ЗАПРОС CDN ${request.method()} ${url.slice(0, 110)} заголовки=` +
-            JSON.stringify(request.headers()),
-        );
+      if (!cdnAuthHeaders && CDN_URL_RE.test(url)) {
+        const h = request.headers();
+        if (h.authorizations || h['accepts-controls']) {
+          cdnAuthHeaders = {};
+          if (h.authorizations) cdnAuthHeaders.Authorizations = h.authorizations;
+          if (h['accepts-controls']) cdnAuthHeaders['Accepts-Controls'] = h['accepts-controls'];
+          // Referer у самого CDN-запроса — НЕ тот же, что у /bnsi/: плеер
+          // шлёт корневой yani.tv, а не origin эмбеда. Берём как есть.
+          if (h.referer) cdnAuthHeaders.Referer = h.referer;
+        }
       }
       if (url === WRAPPER_URL) {
         request
@@ -176,22 +187,25 @@ async function fetchBnsiData(browser, rawEmbedUrl) {
     }
     if (!bnsiData) return null; // ответ пришёл, но не распарсился — см. лог выше
 
-    if (debugCdn) {
-      // Куки, которые страница получила для домена CDN. Если ссылка привязана
-      // к сессии, они тут будут — и тогда решение в том, чтобы отдавать их
-      // вместе с ссылкой (см. headers в результате извлечения).
-      try {
-        const cookies = await page.cookies('https://vkvideo.cloud/', embedUrl);
-        console.error(
-          `[alloha-debug] КУКИ (${cookies.length}): ` +
-            JSON.stringify(cookies.map((c) => `${c.domain}${c.path} ${c.name}`)),
-        );
-      } catch (err) {
-        console.error('[alloha-debug] куки прочитать не вышло:', err.message);
-      }
+    // /bnsi/ обычно отвечает РАНЬШЕ, чем плеер успевает пойти за видео, —
+    // ждём заголовки отдельно и недолго. Не дождались: отдаём что есть,
+    // ссылка без них почти наверняка получит 403, но это не повод потерять
+    // весь результат — приложение честно покажет ошибку и предложит другой
+    // источник, как и до этой правки.
+    const headersDeadline = Date.now() + 6_000;
+    while (!cdnAuthHeaders && Date.now() < headersDeadline) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    if (!cdnAuthHeaders) {
+      console.error(`[alloha] ${embedUrl}: плеер не сходил на CDN — заголовков подписи нет`);
     }
 
-    return { data: bnsiData, embedOrigin: new URL(embedUrl).origin, status: bnsiStatus };
+    return {
+      data: bnsiData,
+      embedOrigin: new URL(embedUrl).origin,
+      status: bnsiStatus,
+      cdnAuthHeaders,
+    };
   } catch (err) {
     console.error(`[alloha] Puppeteer упал на ${embedUrl}:`, err);
     return null;
@@ -240,7 +254,7 @@ function bestQualityUrl(qualityMap) {
  * тот же принцип "одна ссылка по умолчанию", что и у остальных источников;
  * остальные записи (если есть) уходят в audioTracks — см. её комментарий.
  */
-function buildResolvedStream(bnsiData, embedOrigin) {
+function buildResolvedStream(bnsiData, embedOrigin, cdnAuthHeaders) {
   const hlsSource = Array.isArray(bnsiData?.hlsSource) ? bnsiData.hlsSource : [];
   const url = bestQualityUrl(hlsSource[0]?.quality);
   if (!url) return null;
@@ -285,7 +299,11 @@ function buildResolvedStream(bnsiData, embedOrigin) {
 
   return {
     url,
-    headers: { Referer: `${embedOrigin}/`, Origin: embedOrigin },
+    // Заголовки подписи — поверх Referer/Origin: без них CDN отдаёт 403
+    // всем подряд (см. cdnAuthHeaders в fetchBnsiData). Referer внутри них
+    // намеренно перекрывает наш: плеер шлёт корневой yani.tv, а не origin
+    // эмбеда, и подпись считается под него.
+    headers: { Referer: `${embedOrigin}/`, Origin: embedOrigin, ...(cdnAuthHeaders || {}) },
     isHls: true,
     ...(qualities.length > 1 ? { qualities, qualitySwitch: 'reload' } : {}),
     // Раньше qualities не отдавались вовсе.
@@ -330,7 +348,7 @@ async function extractAlloha({ shikimoriId, episode, embedUrl: forcedEmbedUrl })
   for (const embedUrl of embedUrls) {
     const bnsi = await fetchBnsiData(browser, embedUrl);
     if (!bnsi) continue;
-    const result = buildResolvedStream(bnsi.data, bnsi.embedOrigin);
+    const result = buildResolvedStream(bnsi.data, bnsi.embedOrigin, bnsi.cdnAuthHeaders);
     if (result) return result;
     console.error(`[alloha] ${embedUrl}: /bnsi/ (${bnsi.status}) ответил, но без пригодного hlsSource`);
   }
