@@ -59,13 +59,14 @@ export const CINEMA_PARAM = {
 export const CINEMA_SORTS: readonly FilterOptionDef[] = [
   { value: 'new', label: 'Сначала новые' },
   { value: 'last_episode', label: 'По дате последней серии' },
+  { value: 'popularity', label: 'По популярности' },
   { value: 'rating', label: 'По рейтингу' },
   { value: 'name', label: 'По алфавиту' },
 ];
 
 export const CINEMA_DEFAULT_SORT = 'new';
 
-export type CinemaSort = 'new' | 'last_episode' | 'rating' | 'name';
+export type CinemaSort = 'new' | 'last_episode' | 'popularity' | 'rating' | 'name';
 
 export function parseCinemaSort(value: string | null | undefined): CinemaSort {
   return CINEMA_SORTS.some((s) => s.value === value) ? (value as CinemaSort) : 'new';

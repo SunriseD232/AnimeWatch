@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import CollapsibleSection from '@/components/catalog/CollapsibleSection';
 import { useCatalogFilters } from '@/components/catalog/CatalogFilterProvider';
 import {
@@ -24,6 +24,13 @@ import type { FilterOptionDef } from '@/lib/catalogFilters';
  * Панель остаётся в DOM всегда (не размонтируется при закрытии) ради
  * анимации выезда — но её внутренние секции по умолчанию свёрнуты и
  * содержимое не рендерят, см. CollapsibleSection.
+ *
+ * Шторка начинается ПОД шапкой сайта, а не от края экрана. Пока она была
+ * fixed inset-0, на iPhone её заголовок заезжал под часы и индикатор
+ * заряда: fixed-элемент не наследует padding безопасной зоны, который висит
+ * на body. Отступ считаем по реальной высоте шапки (она разная на телефоне
+ * и на десктопе, и меняется при повороте), а не константой — прошлая
+ * константа 57px в фолбэке layout.tsx уже разошлась с фактическими 67px.
  */
 export default function CatalogMobileDrawer({
   options,
@@ -34,6 +41,24 @@ export default function CatalogMobileDrawer({
   const { drawerOpen, setDrawerOpen, dirty, hasFilters, apply, reset, config, pending } =
     useCatalogFilters();
   const panelRef = useRef<HTMLDivElement>(null);
+  const [headerBottom, setHeaderBottom] = useState(0);
+
+  // Низ шапки в координатах вьюпорта — он же верх шторки. Шапка липкая
+  // (sticky top-0), поэтому при прокрутке значение не меняется, но пересчёт
+  // на поворот экрана нужен: там меняется и высота шапки, и безопасная зона.
+  useEffect(() => {
+    const measure = () => {
+      const header = document.querySelector('header');
+      setHeaderBottom(header ? Math.round(header.getBoundingClientRect().bottom) : 0);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    window.addEventListener('orientationchange', measure);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('orientationchange', measure);
+    };
+  }, [drawerOpen]);
 
   // Escape закрывает — обычное ожидание от модальной шторки.
   useEffect(() => {
@@ -70,7 +95,10 @@ export default function CatalogMobileDrawer({
 
   return (
     <div
-      className={`fixed inset-0 z-50 lg:hidden ${drawerOpen ? '' : 'pointer-events-none'}`}
+      // top по низу шапки: сама шапка остаётся видимой и рабочей — поиск под
+      // рукой, и ничего не заезжает под часы и заряд на iPhone.
+      style={{ top: headerBottom }}
+      className={`fixed inset-x-0 bottom-0 z-50 lg:hidden ${drawerOpen ? '' : 'pointer-events-none'}`}
       aria-hidden={!drawerOpen}
     >
       <div

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import Image from 'next/image';
+import PosterImage from '@/components/PosterImage';
 import Link from 'next/link';
 import { fixPosterUrl } from '@/lib/format';
 
@@ -64,16 +64,15 @@ export default function AnimeListRow({ anime }: { anime: ListRowAnime }) {
         href={`/anime/${anime.id}`}
         className="press relative aspect-[3/4] w-24 shrink-0 self-start overflow-hidden rounded-xl bg-bg-soft sm:w-28"
       >
-        {poster ? (
-          <Image
-            src={poster}
-            alt={anime.title}
-            fill
-            sizes="112px"
-            className="object-cover"
-            unoptimized
-          />
-        ) : null}
+        {/* Тот же компонент с запасными ссылками, что и у карточек-плиток:
+            битая картинка вместо постера выглядит хуже, чем подпись
+            «нет постера». */}
+        <PosterImage
+          sources={[poster]}
+          alt={anime.title}
+          className="absolute inset-0 h-full w-full object-cover"
+          placeholderClassName="grid h-full w-full place-items-center text-center text-xs text-gray-500"
+        />
       </Link>
 
       <div className="flex min-w-0 flex-1 flex-col">

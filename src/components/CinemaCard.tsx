@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRef, useState } from 'react';
 import type { CinemaShort } from '@/lib/videoseed-catalog';
 import ExpandTitleButton from '@/components/ExpandTitleButton';
+import PosterImage from '@/components/PosterImage';
 
 /**
  * Карточка фильма/сериала. Постеры приходят с хоста Videoseed
@@ -49,24 +50,18 @@ export default function CinemaCard({
           при навигации, спиннер тут больше не нужен. */}
       <Link href={`/cinema/${item.id}`} prefetch={false} className="flex flex-1 flex-col">
         <div className="relative aspect-[2/3] w-full overflow-hidden bg-bg-soft">
-          {item.poster ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              // Постер идёт через /api/proxy/raw (см. signImageUrl в
-              // videoseed-catalog.ts) — он же умеет ресайзить в WebP по ?w=
-              // (см. maybeResizeImage в api/proxy/raw/route.ts), 480 с
-              // запасом под retina-плотность при карточке ~230px в сетке
-              // grid-cols-6.
-              src={`${item.poster}&w=480`}
-              alt={item.title}
-              loading="lazy"
-              className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-            />
-          ) : (
-            <div className="grid h-full w-full place-items-center text-gray-400">
-              нет постера
-            </div>
-          )}
+          {/* Постер идёт через /api/proxy/raw (см. signImageUrl в
+              videoseed-catalog.ts) — он же умеет ресайзить в WebP по ?w=
+              (см. maybeResizeImage в api/proxy/raw/route.ts), 480 с запасом
+              под retina-плотность при карточке ~230px в сетке grid-cols-6.
+              Запасная ссылка — тот же постер без ресайза: ресайзер иногда
+              спотыкается на битом исходнике, а отдать оригинал может. */}
+          <PosterImage
+            sources={item.poster ? [`${item.poster}&w=480`, item.poster] : []}
+            alt={item.title}
+            className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+            placeholderClassName="grid h-full w-full place-items-center text-gray-400"
+          />
           {item.rating !== null && (
             <span className="absolute right-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-xs font-medium text-amber-300">
               ★ {item.rating.toFixed(1)}

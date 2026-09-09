@@ -79,15 +79,25 @@ const BATCH = 2000;
  */
 const MAX_RUN_MS = 100 * 60 * 1000;
 
+interface TmdbHit {
+  id: number;
+  vote_average?: number;
+  vote_count?: number;
+  /** «Сколько смотрят прямо сейчас» — своя метрика TMDB, не производная от
+   *  рейтинга. Приходит в том же ответе, отдельных запросов не стоит. */
+  popularity?: number;
+}
+
 interface TmdbFindResult {
-  movie_results?: { id: number; vote_average?: number; vote_count?: number }[];
-  tv_results?: { id: number; vote_average?: number; vote_count?: number }[];
+  movie_results?: TmdbHit[];
+  tv_results?: TmdbHit[];
 }
 
 interface RatingRow {
   imdb_id: string;
   rating: number | null;
   votes: number | null;
+  popularity: number | null;
   tmdb_id: number | null;
   media_type: string | null;
   checked_at: string;
@@ -109,7 +119,13 @@ interface RatingRow {
 async function fetchRating(
   imdbId: string,
   apiKey: string,
-): Promise<{ rating: number | null; votes: number | null; tmdbId: number | null; mediaType: string | null } | null> {
+): Promise<{
+  rating: number | null;
+  votes: number | null;
+  popularity: number | null;
+  tmdbId: number | null;
+  mediaType: string | null;
+} | null> {
   try {
     const res = await fetch(
       `${TMDB_API}/find/${encodeURIComponent(imdbId)}?external_source=imdb_id&api_key=${apiKey}`,
@@ -122,14 +138,16 @@ async function fetchRating(
     );
     // 404 от TMDB — это ответ «не найдено», а не сбой: такой id больше
     // спрашивать смысла нет до истечения бэкоффа.
-    if (res.status === 404) return { rating: null, votes: null, tmdbId: null, mediaType: null };
+    if (res.status === 404) {
+      return { rating: null, votes: null, popularity: null, tmdbId: null, mediaType: null };
+    }
     if (!res.ok) return null;
 
     const data = (await res.json()) as TmdbFindResult;
     const movie = data.movie_results?.[0];
     const tv = data.tv_results?.[0];
     const hit = movie ?? tv;
-    if (!hit) return { rating: null, votes: null, tmdbId: null, mediaType: null };
+    if (!hit) return { rating: null, votes: null, popularity: null, tmdbId: null, mediaType: null };
 
     const votes = hit.vote_count ?? 0;
     return {
@@ -137,6 +155,7 @@ async function fetchRating(
       // такие тайтлы должны уходить в конец вместе с непроверенными.
       rating: votes > 0 ? (hit.vote_average ?? null) : null,
       votes,
+      popularity: typeof hit.popularity === 'number' ? hit.popularity : null,
       tmdbId: hit.id,
       mediaType: movie ? 'movie' : 'tv',
     };
@@ -176,13 +195,13 @@ async function loadBatchImdbIds(
 /** Уже известные отметки — чтобы понять, что протухло, а что нет. */
 async function loadKnownRatings(
   supabase: ReturnType<typeof createServiceClient>,
-): Promise<Map<string, { checkedAt: number; missCount: number }>> {
-  const out = new Map<string, { checkedAt: number; missCount: number }>();
+): Promise<Map<string, { checkedAt: number; missCount: number; hasPopularity: boolean }>> {
+  const out = new Map<string, { checkedAt: number; missCount: number; hasPopularity: boolean }>();
 
   for (let from = 0; ; from += READ_PAGE) {
     const { data, error } = await supabase
       .from('cinema_ratings')
-      .select('imdb_id, checked_at, miss_count')
+      .select('imdb_id, checked_at, miss_count, popularity, rating')
       .order('imdb_id', { ascending: true })
       .range(from, from + READ_PAGE - 1);
 
@@ -190,10 +209,21 @@ async function loadKnownRatings(
     if (!data || data.length === 0) break;
 
     for (const r of data) {
-      const row = r as { imdb_id: string; checked_at: string; miss_count: number | null };
+      const row = r as {
+        imdb_id: string;
+        checked_at: string;
+        miss_count: number | null;
+        popularity: number | null;
+        rating: number | null;
+      };
       out.set(row.imdb_id, {
         checkedAt: new Date(row.checked_at).getTime(),
         missCount: row.miss_count ?? 0,
+        // Строка, у которой рейтинг есть, а популярности нет, записана до
+        // того, как мы начали снимать popularity. Такие надо перепроверить
+        // независимо от свежести отметки — иначе сортировка по популярности
+        // месяц ждала бы истечения TTL.
+        hasPopularity: row.popularity !== null || row.rating === null,
       });
     }
   }
@@ -260,6 +290,10 @@ export async function refreshCinemaRatings(budget = DEFAULT_BUDGET): Promise<Rat
       candidates.push({ imdbId, checkedAt: 0 });
       continue;
     }
+    if (!prev.hasPopularity) {
+      candidates.push({ imdbId, checkedAt: prev.checkedAt });
+      continue;
+    }
     const backoff = Math.min(prev.missCount, MAX_MISS_BACKOFF) * MISS_BACKOFF_DAYS;
     const ttl = (FRESH_DAYS + backoff) * day;
     if (now - prev.checkedAt >= ttl) {
@@ -307,6 +341,7 @@ export async function refreshCinemaRatings(budget = DEFAULT_BUDGET): Promise<Rat
         imdb_id: imdbId,
         rating: res.rating,
         votes: res.votes,
+        popularity: res.popularity,
         tmdb_id: res.tmdbId,
         media_type: res.mediaType,
         checked_at: new Date().toISOString(),

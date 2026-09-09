@@ -53,11 +53,29 @@ export default function DiscoverTabs({
         </div>
         {anonsToggle && <AnonsCheckbox />}
       </div>
+      {/* Не серая текстовая ссылка, а кнопка в акцентном цвете: каталог —
+          главный способ что-то найти на сайте, а выглядел он подписью под
+          вкладками и терялся. Цвет берётся из темы пользователя (--accent),
+          так что кнопка совпадает с выбранной палитрой, а не спорит с ней.
+          Заливка полупрозрачная, а не сплошная: сплошной акцент рядом с
+          активной вкладкой (она тоже bg-accent) читался бы как вторая
+          выбранная вкладка. */}
       <Link
         href={catalogHref}
-        className="text-sm font-medium text-gray-400 transition hover:text-accent"
+        className="press group flex items-center gap-2 rounded-full bg-accent/15 px-4 py-1.5 text-sm font-semibold text-accent ring-1 ring-accent/30 transition hover:bg-accent hover:text-white hover:ring-accent"
       >
-        Каталог →
+        <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4 shrink-0">
+          <g className="fill-none stroke-current" strokeWidth="1.6" strokeLinecap="round">
+            <path d="M3 5.5h14M3 10h14M3 14.5h9" />
+          </g>
+        </svg>
+        Весь каталог
+        <span
+          aria-hidden="true"
+          className="transition-transform duration-200 group-hover:translate-x-0.5"
+        >
+          →
+        </span>
       </Link>
     </div>
   );

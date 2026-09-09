@@ -310,12 +310,13 @@ interface IndexRow {
   genre_ids: number[];
   country_ids: number[];
   rating: number | null;
+  popularity: number | null;
 }
 
 function toRow(
   item: VsRawItem,
   batchId: string,
-  ratings: Map<string, number>,
+  ratings: Map<string, { rating: number | null; popularity: number | null }>,
 ): IndexRow | null {
   const kpId = Number(item.id_kp);
   // Без kinopoisk_id тайтл бесполезен: по нему открывается плеер и пишется
@@ -352,23 +353,25 @@ function toRow(
     translation: (item.translation ?? '').trim() || null,
     genre_ids: genreIds,
     country_ids: parseIds(item.country_ids),
-    rating: imdbId ? (ratings.get(imdbId) ?? null) : null,
+    rating: imdbId ? (ratings.get(imdbId)?.rating ?? null) : null,
+    popularity: imdbId ? (ratings.get(imdbId)?.popularity ?? null) : null,
   };
 }
 
-/** Все рейтинги из долгоживущей таблицы — их проставляем прямо при сборке
- *  партии. Читаем страницами: PostgREST отдаёт максимум 1000 строк за раз. */
+/** Рейтинг и популярность из долгоживущей таблицы — проставляем прямо при
+ *  сборке партии. Читаем страницами: PostgREST отдаёт максимум 1000 за раз. */
 async function loadRatings(
   supabase: ReturnType<typeof createServiceClient>,
-): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
+): Promise<Map<string, { rating: number | null; popularity: number | null }>> {
+  const out = new Map<string, { rating: number | null; popularity: number | null }>();
   const PAGE = 1000;
 
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from('cinema_ratings')
-      .select('imdb_id, rating')
-      .not('rating', 'is', null)
+      .select('imdb_id, rating, popularity')
+      // Строки, где нет ни того, ни другого, в партии бесполезны.
+      .or('rating.not.is.null,popularity.not.is.null')
       // order() обязателен: без него Postgres не обещает порядок между
       // LIMIT/OFFSET-запросами, страницы перекрываются и часть строк не
       // попадает ни в одну. Поймано вживую на списке imdb_id.
@@ -384,8 +387,13 @@ async function loadRatings(
     if (!data || data.length === 0) break;
 
     for (const r of data) {
-      const rating = Number((r as { rating: number | null }).rating);
-      if (Number.isFinite(rating)) out.set((r as { imdb_id: string }).imdb_id, rating);
+      const row = r as { imdb_id: string; rating: number | null; popularity: number | null };
+      const rating = Number(row.rating);
+      const popularity = Number(row.popularity);
+      out.set(row.imdb_id, {
+        rating: Number.isFinite(rating) ? rating : null,
+        popularity: Number.isFinite(popularity) ? popularity : null,
+      });
     }
     // Выходим только на пустой странице: PostgREST на части страниц отдаёт
     // меньше запрошенного, и «пришло меньше — значит конец» обрывало чтение

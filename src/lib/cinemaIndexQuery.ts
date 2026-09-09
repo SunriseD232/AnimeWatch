@@ -175,6 +175,11 @@ async function queryIndex(params: CinemaIndexParams): Promise<CinemaIndexPage | 
       // ровно то, чего ждёшь от такой сортировки.
       query = query.order('last_episode_at', { ascending: false, nullsFirst: false });
       break;
+    case 'popularity':
+      // Популярность TMDB — «сколько смотрят прямо сейчас», не производная
+      // от оценки. Это разные сортировки, и нужны обе.
+      query = query.order('popularity', { ascending: false, nullsFirst: false });
+      break;
     case 'rating':
       query = query.order('rating', { ascending: false, nullsFirst: false });
       break;
@@ -182,10 +187,14 @@ async function queryIndex(params: CinemaIndexParams): Promise<CinemaIndexPage | 
       query = query.order('title', { ascending: true, nullsFirst: false });
       break;
     default:
-      // «Сначала новые» — по дате появления у Videoseed. Настоящей даты
-      // премьеры апстрим не отдаёт вообще, только год, так что это лучшее
-      // приближение к «новинкам» из доступного.
-      query = query.order('added_at', { ascending: false, nullsFirst: false });
+      // «Сначала новые» — по ГОДУ выпуска, а не по дате появления записи у
+      // Videoseed. По дате добавления первыми шли фильмы 1986 и 1996 годов:
+      // она про то, когда запись завели у апстрима, а не когда вышло кино.
+      // Дата добавления осталась вторым ключом — внутри одного года свежая
+      // запись впереди. Так же ведёт себя подборка «Новинки» на главной.
+      query = query
+        .order('year', { ascending: false, nullsFirst: false })
+        .order('added_at', { ascending: false, nullsFirst: false });
   }
   // Вторичный ключ сортировки — иначе у записей с одинаковым значением
   // порядок между страницами «плавает», и один и тот же тайтл может

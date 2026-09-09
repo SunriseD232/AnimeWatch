@@ -6,6 +6,7 @@ import EpisodeGrid from '@/components/EpisodeGrid';
 import ListButton from '@/components/ListButton';
 import { RelatedAnimeSections, RelatedAnimeSectionsSkeleton } from '@/components/RelatedAnimeSections';
 import TrailerButton from '@/components/TrailerButton';
+import PosterImage from '@/components/PosterImage';
 import {
   episodeCount,
   getAnime,
@@ -120,20 +121,15 @@ export default async function AnimePage({
         )}
         <div className="flex flex-col gap-5 p-5 sm:flex-row sm:p-8">
           <div className="relative mx-auto aspect-[2/3] w-40 shrink-0 overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 sm:mx-0 sm:w-48">
-            {poster ? (
-              // <img> + no-referrer: хотлинк-защита Shikimori (см. AnimeCard).
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={poster}
-                alt={title}
-                referrerPolicy="no-referrer"
-                className="absolute inset-0 h-full w-full object-cover"
-              />
-            ) : (
-              <div className="grid h-full w-full place-items-center text-gray-400">
-                нет постера
-              </div>
-            )}
+            {/* Запасные ссылки — на случай, когда основная отдаёт 404:
+                постер из индекса, оригинал Shikimori, его же превью. */}
+            <PosterImage
+              sources={[poster, imageUrl(anime.image?.original), imageUrl(anime.image?.preview)]}
+              alt={title}
+              loading="eager"
+              className="absolute inset-0 h-full w-full object-cover"
+              placeholderClassName="grid h-full w-full place-items-center text-gray-400"
+            />
           </div>
 
           <div className="flex flex-1 flex-col gap-3">
