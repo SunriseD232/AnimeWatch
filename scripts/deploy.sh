@@ -45,6 +45,19 @@ REL_DIST=".build-$STAMP"
 BUILD_DIR="$ROOT/$REL_DIST"
 
 echo "==> git pull origin main"
+# Правки прямо на сервере — тупик: git pull на них падает на середине, а до
+# этого сервер тихо работает не на том коде, что в репозитории. Отваливаемся
+# сразу и говорим, что именно изменено. Учитываются только отслеживаемые
+# файлы: ecosystem.config.js и posters/ лежат рядом намеренно и в git не
+# входят.
+DIRTY="$(git status --porcelain -uno)"
+if [ -n "$DIRTY" ]; then
+  echo "!! на сервере есть незакоммиченные правки — деплой остановлен:"
+  echo "$DIRTY"
+  echo "   вернуть как в репозитории: git checkout -- <файл>"
+  exit 1
+fi
+
 BEFORE="$(git rev-parse HEAD)"
 git pull origin main
 AFTER="$(git rev-parse HEAD)"

@@ -128,19 +128,43 @@ body {
 
 /* Раскрытие панели фильтров: без этого она возникала мгновенно, рывком —
    особенно заметно рядом с плавно уменьшающимися карточками. */
+/* Появление выпадающей панели.
+   ВАЖНО: opacity здесь НЕ анимируется, хотя визуально панель проявляется.
+   Причина конкретная. У панели есть backdrop-filter, а анимация с
+   fill-mode: both остаётся привязанной к элементу и ПОСЛЕ завершения —
+   getAnimations() показывает её в состоянии finished навсегда. Значит на
+   размывающем элементе постоянно висит эффект прозрачности, а это ровно та
+   комбинация, на которой Chrome непредсказуемо перестаёт брать подложку:
+   панель вместо матового стекла становится просто полупрозрачной. Ловилось
+   вживую на проде «иногда».
+   Поэтому проявляется не элемент целиком, а его собственная поверхность —
+   через --glass-a (альфа фона) и --glass-blur (радиус), — плюс содержимое
+   отдельной анимацией ниже. Прозрачность на ПОТОМКАХ безопасна: backdrop-root
+   задают только предки.
+   Кадра «to» нет намеренно: неявный конечный кадр равен базовому стилю, так
+   что значения не дублируются и не разъезжаются при правке .glass-panel.
+   fill: backwards, а не both, по той же причине — после конца анимация не
+   должна оставлять на элементе вообще ничего. */
 @keyframes filters-panel-in {
   from {
-    opacity: 0;
     transform: translateY(-6px) scale(0.98);
+    --glass-a: 0;
+    --glass-blur: 0px;
   }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
+}
+
+@keyframes filters-panel-content-in {
+  from {
+    opacity: 0;
   }
 }
 
 .animate-filters-panel {
-  animation: filters-panel-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: filters-panel-in 260ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.animate-filters-panel > * {
+  animation: filters-panel-content-in 200ms 60ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 /* Появление секций/карточек: мягкий подъём с растворением */
@@ -236,10 +260,26 @@ body {
    ним, — поэтому дропдауны шапки выносятся порталом (см. SearchBox и
    NotificationBell). Заодно это чинит координаты: backdrop-filter делает
    элемент containing block и для position: fixed внутри. */
+/* Альфа фона и радиус вынесены в @property, чтобы их можно было
+   анимировать вместо opacity самой панели — см. filters-panel-in выше.
+   Без @property браузер считает произвольное свойство строкой и
+   переключает его скачком, а не плавно. initial-value равны рабочим
+   значениям, так что неанимированные панели ничего не теряют. */
+@property --glass-a {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0.8;
+}
+@property --glass-blur {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 40px;
+}
+
 .glass-panel {
-  background: rgb(var(--bg-card) / 0.8);
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  background: rgb(var(--bg-card) / var(--glass-a));
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
 }
 
 .line-clamp-2 {
