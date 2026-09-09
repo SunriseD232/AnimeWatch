@@ -146,14 +146,34 @@ export function themeToCssVars(theme: Theme): Record<string, string> {
   };
 }
 
-/** Применяет тему к документу. Вызывается и при живом предпросмотре в
- *  настройках, и после подтягивания темы с сервера. */
+/**
+ * Применяет тему к документу. Вызывается и при живом предпросмотре в
+ *  настройках, и после подтягивания темы с сервера.
+ *
+ * Переходы на время подмены гасятся. Смена палитры меняет цвет, фон, рамку и
+ * тень почти у каждого элемента разом, и все их transition стартуют в один
+ * кадр — вместо мгновенного переключения экран «размазывается» на несколько
+ * сотен миллисекунд, причём разные элементы доезжают вразнобой. Классический
+ * приём: вставить правило-глушилку, форсировать пересчёт стилей (чтение
+ * offsetHeight), применить цвета и снять глушилку на следующем кадре.
+ */
 export function applyTheme(theme: Theme): void {
   const vars = themeToCssVars(theme);
   const root = document.documentElement;
+
+  const killer = document.createElement('style');
+  killer.textContent = '*,*::before,*::after{transition:none !important}';
+  document.head.appendChild(killer);
+
   for (const [name, value] of Object.entries(vars)) {
     root.style.setProperty(name, value);
   }
+
+  // Чтение offsetHeight — синхронный пересчёт стилей: без него браузер мог бы
+  // объединить добавление и удаление глушилки в один кадр, и она бы не
+  // сработала вовсе.
+  void root.offsetHeight;
+  requestAnimationFrame(() => killer.remove());
 }
 
 export const THEME_STORAGE_KEY = 'mediawatch:theme';

@@ -59,8 +59,10 @@ export function FiltersTrigger({
       aria-expanded={open}
       className="press flex items-center gap-2 text-sm font-bold text-white"
     >
-      {/* Иконка перетекает из трёх полосок в стрелку поворотом с
-          растворением. Направление зависит от того, откуда панель берёт
+      {/* Иконка перетекает из трёх полосок в стрелку: масштаб 0.25 → 1,
+          прозрачность 0 → 1, размытие 4px → 0 на cubic-bezier(0.2, 0, 0, 1).
+          Поворота больше нет: перетекание масштабом с размытием читается как
+          смена сущности, а вращение — как «та же иконка повернулась». Направление зависит от того, откуда панель берёт
           место: «ᐸ» — когда она уходит в свободное поле страницы и стоит
           левее всего контента; «⌄» — когда поля нет и она раскрывается
           колонкой ниже строки с кнопкой. Обе стрелки в разметке всегда,
@@ -70,8 +72,8 @@ export function FiltersTrigger({
         <svg
           viewBox="0 0 20 20"
           aria-hidden="true"
-          className={`absolute h-5 w-5 fill-none stroke-current stroke-2 transition-all duration-300 ${
-            open ? '-rotate-90 scale-50 opacity-0' : 'rotate-0 scale-100 opacity-100'
+          className={`absolute h-5 w-5 fill-none stroke-current stroke-2 transition-[transform,opacity,filter] duration-300 ease-[cubic-bezier(0.2,0,0,1)] ${
+            open ? 'scale-[0.25] opacity-0 blur-[4px]' : 'scale-100 opacity-100 blur-0'
           }`}
         >
           <path d="M3 5h14M3 10h14M3 15h14" strokeLinecap="round" />
@@ -79,8 +81,8 @@ export function FiltersTrigger({
         <svg
           viewBox="0 0 20 20"
           aria-hidden="true"
-          className={`absolute hidden h-5 w-5 fill-none stroke-current stroke-2 transition-all duration-300 filters-side:block ${
-            open ? 'rotate-0 scale-100 opacity-100' : 'rotate-90 scale-50 opacity-0'
+          className={`absolute hidden h-5 w-5 fill-none stroke-current stroke-2 transition-[transform,opacity,filter] duration-300 ease-[cubic-bezier(0.2,0,0,1)] filters-side:block ${
+            open ? 'scale-100 opacity-100 blur-0' : 'scale-[0.25] opacity-0 blur-[4px]'
           }`}
         >
           <path d="M12.5 4 6.5 10l6 6" strokeLinecap="round" strokeLinejoin="round" />
@@ -88,8 +90,8 @@ export function FiltersTrigger({
         <svg
           viewBox="0 0 20 20"
           aria-hidden="true"
-          className={`absolute h-5 w-5 fill-none stroke-current stroke-2 transition-all duration-300 filters-side:hidden ${
-            open ? 'rotate-0 scale-100 opacity-100' : '-rotate-90 scale-50 opacity-0'
+          className={`absolute h-5 w-5 fill-none stroke-current stroke-2 transition-[transform,opacity,filter] duration-300 ease-[cubic-bezier(0.2,0,0,1)] filters-side:hidden ${
+            open ? 'scale-100 opacity-100 blur-0' : 'scale-[0.25] opacity-0 blur-[4px]'
           }`}
         >
           <path d="M4 7.5 10 13.5l6-6" strokeLinecap="round" strokeLinejoin="round" />

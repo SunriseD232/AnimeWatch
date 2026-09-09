@@ -70,16 +70,16 @@ export default function ExpandTitleButton({
       <span className="relative block h-3.5 w-3.5">
         <span
           aria-hidden="true"
-          className={`absolute inset-0 grid -translate-x-[0.5px] place-items-center text-xs font-bold italic transition-all duration-200 ${
-            expanded ? 'rotate-90 scale-50 opacity-0' : 'rotate-0 scale-100 opacity-100'
+          className={`absolute inset-0 grid -translate-x-[0.5px] place-items-center text-xs font-bold italic transition-[transform,opacity,filter] duration-200 ease-[cubic-bezier(0.2,0,0,1)] ${
+            expanded ? 'scale-[0.25] opacity-0 blur-[4px]' : 'scale-100 opacity-100 blur-0'
           }`}
         >
           i
         </span>
         <span
           aria-hidden="true"
-          className={`absolute inset-0 grid place-items-center text-sm font-bold transition-all duration-200 ${
-            expanded ? 'rotate-0 scale-100 opacity-100' : '-rotate-90 scale-50 opacity-0'
+          className={`absolute inset-0 grid place-items-center text-sm font-bold transition-[transform,opacity,filter] duration-200 ease-[cubic-bezier(0.2,0,0,1)] ${
+            expanded ? 'scale-100 opacity-100 blur-0' : 'scale-[0.25] opacity-0 blur-[4px]'
           }`}
         >
           ×

@@ -59,8 +59,12 @@ export default function AnimeListRow({ anime }: { anime: ListRowAnime }) {
 
   const poster = fixPosterUrl(anime.poster);
 
+  // Радиусы концентричны: внешний = внутренний + отступ. Постер скруглён на
+  // 12px при p-3 (тоже 12), значит у карточки 24px, а не 16 — при 16 внешний
+  // угол «врезался» в угол постера, и строка выглядела слегка кривой, хотя
+  // ничего не съехало.
   return (
-    <div className="flex gap-4 rounded-2xl bg-bg-card p-3">
+    <div className="flex gap-4 rounded-3xl bg-bg-card p-3">
       {/* self-start обязателен: строка — это flex, а он по умолчанию тянет
           детей на всю высоту (align-items: stretch). Растянутая высота
           перебивала aspect-[3/4], и при раскрытии описания кнопкой «ещё…»

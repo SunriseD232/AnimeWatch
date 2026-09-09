@@ -65,7 +65,7 @@ export function ListRowsSkeleton({ count = 8 }: { count?: number }) {
   return (
     <div className="flex flex-col gap-3">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="flex gap-4 rounded-2xl bg-bg-card p-3">
+        <div key={i} className="flex gap-4 rounded-3xl bg-bg-card p-3">
           <div className="skeleton aspect-[3/4] w-24 shrink-0 rounded-xl sm:w-28" />
           <div className="flex min-w-0 flex-1 flex-col gap-2 pt-1">
             <div className="skeleton h-4 w-1/3" />
