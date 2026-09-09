@@ -267,6 +267,33 @@ export async function rebuildAnimeIndex(): Promise<ReindexResult> {
     .update({ last_run_started_at: new Date().toISOString(), last_error: null })
     .eq('id', true);
 
+  // ── Уборка за прошлыми неудачами ──
+  // Прогон, упавший ПОСЛЕ начала вставки, оставляет свои строки навсегда:
+  // discardBatch ниже срабатывает только при провале проверки на усадку или
+  // после успешного переключения, а до него в таких случаях не доходит.
+  // Поэтому чистим здесь всё, что не является активной партией: активную не
+  // трогаем (её прямо сейчас читает каталог), а всё остальное — заведомо
+  // мусор от оборвавшихся попыток.
+  const { data: before } = await supabase
+    .from('anime_index_state')
+    .select('active_batch')
+    .eq('id', true)
+    .maybeSingle();
+
+  if (before?.active_batch) {
+    const { error } = await supabase
+      .from('anime_index')
+      .delete()
+      .neq('batch_id', before.active_batch);
+    if (error) console.error('[animeIndex] уборка старых партий не удалась:', error.message);
+  } else {
+    // Активной партии нет вовсе (первый запуск или прошлый упал до
+    // переключения) — чистить можно всё, читателям сейчас всё равно нечего
+    // показывать из индекса, они на запасном пути через Shikimori.
+    const { error } = await supabase.from('anime_index').delete().not('batch_id', 'is', null);
+    if (error) console.error('[animeIndex] уборка перед первой сборкой не удалась:', error.message);
+  }
+
   // ── Таксономия ──
   const taxonomy = await fetchTaxonomy();
   if (taxonomy.length === 0) throw new Error('таксономия пришла пустой');

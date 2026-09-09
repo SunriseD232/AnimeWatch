@@ -50,6 +50,12 @@ interface CatalogFilterValue {
    *  компонент, соседний, а не родительский. */
   drawerOpen: boolean;
   setDrawerOpen: (open: boolean) => void;
+  /** Десктопная панель фильтров. Состояние здесь, потому что от него зависит
+   *  не только сама панель: при открытой панели сетка карточек переходит на
+   *  более мелкие (см. CatalogArea и .catalog-grid в globals.css), а это уже
+   *  соседняя ветка разметки. */
+  filtersOpen: boolean;
+  setFiltersOpen: (open: boolean) => void;
 }
 
 export type TriGroup = 'genres' | 'ratings' | 'kinds' | 'statuses';
@@ -83,6 +89,7 @@ export default function CatalogFilterProvider({
 
   const [pending, setPending] = useState<AnimeCatalogFilters>(applied);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Подхватываем применённое состояние, когда URL изменился не нашей же
   // apply(): назад/вперёд в браузере, заход по ссылке с параметрами. После
@@ -147,8 +154,21 @@ export default function CatalogFilterProvider({
       reset,
       drawerOpen,
       setDrawerOpen,
+      filtersOpen,
+      setFiltersOpen,
     }),
-    [pending, applied, sort, showAnons, toggle, setRange, apply, reset, drawerOpen],
+    [
+      pending,
+      applied,
+      sort,
+      showAnons,
+      toggle,
+      setRange,
+      apply,
+      reset,
+      drawerOpen,
+      filtersOpen,
+    ],
   );
 
   return (

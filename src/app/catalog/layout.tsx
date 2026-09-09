@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 import ModeSwitch from '@/components/ModeSwitch';
 import CatalogFilterProvider from '@/components/catalog/CatalogFilterProvider';
+import CatalogArea from '@/components/catalog/CatalogArea';
 import AnimeGenrePanel from '@/components/catalog/AnimeGenrePanel';
 import CatalogMobileDrawer from '@/components/catalog/CatalogMobileDrawer';
 import CatalogMobileTrigger from '@/components/catalog/CatalogMobileTrigger';
@@ -11,10 +12,8 @@ import type { FilterOptionDef } from '@/lib/animeFilters';
 const DEFAULT_SORT: AnimeCatalogSort = 'aired_on';
 
 /**
- * Жанры тянутся один раз и отдаются ОБОИМ потребителям — верхней панели
- * (десктоп) и выезжающей шторке (телефон). Поэтому запрос живёт здесь, а не
- * внутри каждого из них: два одинаковых похода к Shikimori за одним и тем же
- * списком не нужны, а список к тому же кэшируется на сутки.
+ * Жанры тянутся один раз и отдаются обоим потребителям — панели фильтров на
+ * десктопе и выезжающей шторке на телефоне.
  */
 async function CatalogFilters({ children }: { children: React.ReactNode }) {
   // Список берём из локального индекса: там актуальная таксономия Shikimori
@@ -35,23 +34,22 @@ async function CatalogFilters({ children }: { children: React.ReactNode }) {
 
   return (
     <CatalogFilterProvider defaultSort={DEFAULT_SORT}>
-      <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between gap-3">
-          {/* Только заголовок: подсказка про клики переехала внутрь панели
-              фильтров, к самим чекбоксам. Сверху она объясняла то, чего на
-              экране уже нет — жанры и фильтры спрятаны в панель, — и просто
-              отодвигала выдачу вниз. */}
+      {/* order-* задают порядок внутри CatalogArea: панель фильтров он
+          рисует сам и ставит между тулбаром и выдачей (order-3). */}
+      <CatalogArea genres={options}>
+        <div className="order-1 flex items-center justify-between gap-3">
+          {/* Подсказка про клики переехала внутрь панели фильтров, к самим
+              чекбоксам: сверху она объясняла то, чего на экране уже нет. */}
           <h1 className="text-xl font-bold">Каталог аниме</h1>
           <CatalogMobileTrigger />
         </div>
 
-        {/* Одна колонка во всю ширину: кнопка «Фильтры» живёт внутри
-            AnimeGenrePanel, а её панель раскрывается накладкой поверх
-            контента. Колонки в потоке тут нет намеренно — она сдвигала
-            вправо и жанры, и сетку карточек. */}
-        <AnimeGenrePanel genres={options} sorts={ANIME_CATALOG_SORTS} />
-        {children}
-      </div>
+        <div className="order-2">
+          <AnimeGenrePanel sorts={ANIME_CATALOG_SORTS} />
+        </div>
+
+        <div className="order-4">{children}</div>
+      </CatalogArea>
 
       <CatalogMobileDrawer genres={options} sorts={ANIME_CATALOG_SORTS} />
     </CatalogFilterProvider>

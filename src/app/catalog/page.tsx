@@ -112,7 +112,7 @@ export default async function CatalogPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+      <div className="catalog-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
         {data.items.map((a) => (
           <AnimeCard key={a.id} anime={a} currentEpisode={progressMap.get(a.id) ?? null} />
         ))}
