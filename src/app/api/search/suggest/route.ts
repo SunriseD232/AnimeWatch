@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { searchAnime, imageUrl } from '@/lib/shikimori';
 import { searchCinema } from '@/lib/videoseed-catalog';
+import { getCachedUser } from '@/lib/supabase/server';
 
 export interface SearchSuggestion {
   id: number;
@@ -14,8 +15,20 @@ export interface SearchSuggestion {
  * Подсказки при вводе — короткий список (не полноценные результаты поиска,
  * которые остаются на /search). Debounce и рендер дропдауна — на клиенте
  * (SearchBox.tsx).
+ *
+ * Требует сессии. Middleware сюда не достаёт — он пропускает всё под /api/
+ * без проверки (см. isApiRoute в lib/supabase/middleware.ts), — поэтому
+ * убрать поле поиска из шапки было бы полумерой: эндпоинт остался бы открыт
+ * и продолжал бы жечь квоту Shikimori и Videoseed на любой запрос извне.
  */
 export async function GET(request: NextRequest) {
+  const {
+    data: { user },
+  } = await getCachedUser();
+  if (!user) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  }
+
   const q = (request.nextUrl.searchParams.get('q') ?? '').trim();
   const type = request.nextUrl.searchParams.get('type') === 'cinema'
     ? 'cinema'

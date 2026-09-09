@@ -67,7 +67,13 @@ export default function RootLayout({
             на глазах у пользователя (см. components/ThemeScript.tsx). */}
         <ThemeScript />
       </head>
-      <body className="min-h-screen font-sans pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
+      {/* Верхний отступ безопасной зоны здесь НЕ ставится: его берёт на себя
+          сама шапка (components/Navbar.tsx). Пока он висел на body, липкая
+          шапка при прокрутке прилипала к нулю вьюпорта, то есть уезжала
+          ПОД часы и индикатор заряда на iPhone — её содержимое оказывалось
+          за строкой статуса. Теперь шапка закрывает эту зону собственным
+          фоном, как принято в iOS. */}
+      <body className="min-h-screen font-sans pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
         <PwaRegister />
         <ThemeSync />
         <PresenceHeartbeat />
@@ -75,7 +81,13 @@ export default function RootLayout({
         <OfflineSyncTrigger />
         <ToastProvider>
           <PipPlayerHost>
-            <Suspense fallback={<div className="h-[57px] border-b border-white/5" />}>
+            {/* Заглушка повторяет геометрию шапки вместе с безопасной зоной —
+                иначе контент прыгает вверх в момент, когда шапка доезжает. */}
+            <Suspense
+              fallback={
+                <div className="h-[57px] border-b border-white/5 pt-[env(safe-area-inset-top)]" />
+              }
+            >
               <Navbar />
             </Suspense>
             <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>

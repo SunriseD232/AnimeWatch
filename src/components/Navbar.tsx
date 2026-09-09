@@ -52,13 +52,19 @@ export default async function Navbar() {
   }
 
   return (
-    <header className="glass sticky top-0 z-40 border-b border-white/[0.06]">
+    // pt с безопасной зоной — на самой шапке, а не на body: липкая шапка
+    // прилипает к нулю вьюпорта, и с отступом на body её содержимое при
+    // прокрутке уезжало под часы и заряд на iPhone. Своим фоном она эту
+    // зону закрывает, а контент внутри остаётся ниже выреза.
+    <header className="glass sticky top-0 z-40 border-b border-white/[0.06] pt-[env(safe-area-inset-top)]">
       <nav className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
         <SiteLogoLink />
 
-        <div className="flex-1">
-          <SearchBox />
-        </div>
+        {/* Поиск — только вошедшим. Гостю на /login и /signup он не нужен:
+            все результаты ведут на страницы за авторизацией, то есть каждый
+            клик отправлял бы обратно на форму входа. Пустой flex-1 остаётся
+            распоркой, иначе кнопки входа съезжают к логотипу. */}
+        <div className="flex-1">{user && <SearchBox />}</div>
 
         {user ? (
           <div className="flex shrink-0 items-center gap-1">
