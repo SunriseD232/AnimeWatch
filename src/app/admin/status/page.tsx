@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation';
 import { isAdminEmail } from '@/lib/admin';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getCachedUser } from '@/lib/supabase/server';
+import RunJobButton from '@/components/admin/RunJobButton';
+import type { JobName } from '@/lib/adminJobs';
 
 export const metadata = { title: 'Состояние — MediaWatch' };
 export const dynamic = 'force-dynamic';
@@ -49,7 +51,7 @@ export default async function AdminStatusPage() {
         </p>
       </div>
 
-      <Section title="Индекс аниме">
+      <Section title="Индекс аниме" jobs={['reindex-anime']}>
         <Row label="Тайтлов в активной партии" value={num(a?.titles_count)} />
         <Row label="Собран" value={stamp(a?.built_at)} ok={fresh(a?.built_at, 48)} />
         <Row label="Последний запуск начат" value={stamp(a?.last_run_started_at)} />
@@ -57,7 +59,7 @@ export default async function AdminStatusPage() {
         <Row label="Ошибка" value={String(a?.last_error ?? '') || 'нет'} ok={!a?.last_error} />
       </Section>
 
-      <Section title="Индекс кино">
+      <Section title="Индекс кино" jobs={['reindex-cinema']}>
         <Row label="Тайтлов в активной партии" value={num(c?.titles_count)} />
         <Row label="Собран" value={stamp(c?.built_at)} ok={fresh(c?.built_at, 48)} />
         <Row label="Последний запуск начат" value={stamp(c?.last_run_started_at)} />
@@ -65,7 +67,7 @@ export default async function AdminStatusPage() {
         <Row label="Ошибка" value={String(c?.last_error ?? '') || 'нет'} ok={!c?.last_error} />
       </Section>
 
-      <Section title="Рейтинги TMDB">
+      <Section title="Рейтинги TMDB" jobs={['refresh-cinema-ratings']}>
         <Row label="Тайтлов с рейтингом" value={num(ratings.count)} />
         <Row label="Проверено в последний прогон" value={num(c?.ratings_checked)} />
         <Row label="Прогон начат" value={stamp(c?.ratings_run_started_at)} />
@@ -79,7 +81,7 @@ export default async function AdminStatusPage() {
         <Row label="Ошибка" value={String(c?.ratings_error ?? '') || 'нет'} ok={!c?.ratings_error} />
       </Section>
 
-      <Section title="Кэш обложек">
+      <Section title="Кэш обложек" jobs={['cache-posters']}>
         <Row label="Скачано обложек аниме" value={num(animePosters.count)} />
         <Row label="Скачано обложек кино" value={num(cinemaPosters.count)} />
         <Row
@@ -96,19 +98,49 @@ export default async function AdminStatusPage() {
         />
       </Section>
 
+      {/* У проверки новых серий нет своих цифр — она только рассылает
+          уведомления, — но кнопка ей нужна не меньше остальных: чаще всего
+          руками дёргают именно её. */}
+      <Section title="Уведомления о новых сериях" jobs={['check-episodes']}>
+        <Row
+          label="Расписание"
+          value="каждый день в 6:00 (/etc/cron.d/mediawatch-check-episodes)"
+        />
+      </Section>
+
       <p className="text-xs text-gray-500">
         Расписание: индекс аниме — 5:00, индекс кино — 5:20, обложки — 5:40,
-        рейтинги — воскресенье 4:00. Уведомления о новых сериях — 6:00
-        (/etc/cron.d/mediawatch-check-episodes).
+        рейтинги — воскресенье 4:00. Кнопка «Запустить» дёргает ту же ручку,
+        что и системный крон, и отвечает сразу — исход появится в строках выше,
+        когда прогон закончится.
       </p>
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+/** Заголовок раздела и, если раздел чем-то управляет, кнопки запуска
+ *  справа от него — рядом с теми самыми строками, куда придёт результат. */
+function Section({
+  title,
+  jobs,
+  children,
+}: {
+  title: string;
+  jobs?: JobName[];
+  children: React.ReactNode;
+}) {
   return (
     <section className="flex flex-col gap-2 rounded-2xl bg-bg-card p-4">
-      <h2 className="text-sm font-bold text-gray-100">{title}</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-bold text-gray-100">{title}</h2>
+        {jobs && jobs.length > 0 && (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {jobs.map((job) => (
+              <RunJobButton key={job} job={job} />
+            ))}
+          </div>
+        )}
+      </div>
       <dl className="flex flex-col gap-1">{children}</dl>
     </section>
   );

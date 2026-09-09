@@ -12,6 +12,7 @@ import ExpandTitleButton from '@/components/ExpandTitleButton';
 import PosterImage from '@/components/PosterImage';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
+import { SlidingPill, useSlidingPill } from '@/components/useSlidingPill';
 
 const TYPE_TABS: { value: ContentType; label: string }[] = [
   { value: 'anime', label: 'Аниме' },
@@ -179,6 +180,8 @@ export default function UserListView({
 
   useEffect(() => setLocalItems(items), [items]);
 
+  const { rootRef, setTabRef, pill } = useSlidingPill(type);
+
   // Аниме и кино — раздельные вкладки, чтобы списки не перемешивались.
   const ofType = localItems.filter((i) => i.content_type === type);
   const visible =
@@ -249,7 +252,15 @@ export default function UserListView({
           ModeSwitch на главной. Визуально отличается от ряда фильтров
           статуса ниже — раньше оба ряда были одинаковыми плоскими пилюлями,
           и было сложно с ходу понять, что это два разных уровня. */}
-      <div className="inline-flex w-fit rounded-full border border-white/10 bg-bg-card p-1">
+      <div
+        ref={rootRef}
+        className="relative inline-flex w-fit rounded-full border border-white/10 bg-bg-card p-1"
+      >
+        {/* Подсветка — переезжающим ползунком, тем же, что на главной
+            (useSlidingPill). Раньше здесь заливалась сама кнопка, и раздел
+            менялся рывком: подсветка гасла на одной вкладке и зажигалась на
+            другой. */}
+        <SlidingPill pill={pill} />
         {TYPE_TABS.map((t) => {
           const count = localItems.filter(
             (i) => i.content_type === t.value,
@@ -258,12 +269,12 @@ export default function UserListView({
             <button
               key={t.value}
               type="button"
+              ref={setTabRef(t.value)}
               onClick={() => setType(t.value)}
+              aria-pressed={type === t.value}
               className={[
-                'press rounded-full px-4 py-2 text-sm font-medium transition',
-                type === t.value
-                  ? 'bg-accent text-white'
-                  : 'text-gray-300 hover:bg-bg-soft hover:text-white',
+                'press relative z-10 rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200',
+                type === t.value ? 'text-white' : 'text-gray-300 hover:text-white',
               ].join(' ')}
             >
               {t.label}
@@ -343,8 +354,16 @@ export default function UserListView({
         </div>
       )}
 
+      {/* key по разделу: React пересоздаёт узел при переключении аниме/кино,
+          и анимация проигрывается заново. Без key узел переиспользуется,
+          карточки подменяются мгновенно и переход выглядит рывком. Фильтр
+          статуса в ключ НЕ входит — он сужает тот же список, а не меняет
+          раздел, и мигать на каждом клике по «Смотрю» незачем. */}
       {visible.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/5 bg-bg-card px-6 py-10 text-center">
+        <div
+          key={type}
+          className="animate-tab-swap flex flex-col items-center gap-3 rounded-2xl border border-white/5 bg-bg-card px-6 py-10 text-center"
+        >
           <span className="text-3xl" aria-hidden="true">
             🗂️
           </span>
@@ -357,7 +376,10 @@ export default function UserListView({
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+        <div
+          key={type}
+          className="animate-tab-swap grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6"
+        >
           {visible.map((item) => (
             <ListCard
               key={item.id}

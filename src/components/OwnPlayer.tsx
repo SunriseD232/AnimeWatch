@@ -593,6 +593,65 @@ export default function OwnPlayer({
     comboWarnedRef.current = key;
     toast('Данное сочетание не нашлось, выбрано доступное', 'error');
   }, [toast, season, episode]);
+
+  // Озвучки, на которых проверочный запрос уже провалился В ЭТОЙ серии.
+  //
+  // Зачем вообще. У источника бывает битым ровно одно сочетание «серия ×
+  // озвучка». Воспроизведено вживую на проде: «Адский рай 2», серия 3,
+  // «Озвучка AniLibria · Alloha» — апстрим отвечает 403, при этом та же
+  // озвучка на серии 4 и другие озвучки той же серии отдаются нормально.
+  // Плеер, запомнив озвучку с прошлой серии, упирался в это сочетание,
+  // показывал «Не удалось загрузить видео» — и обновление страницы выбирало
+  // ТО ЖЕ САМОЕ, то есть выхода не было вовсе.
+  const failedTranslationsRef = useRef<{ key: string; ids: Set<number> }>({
+    key: '',
+    ids: new Set(),
+  });
+
+  // Вынужденная замена озвучки ТОЛЬКО для этой серии. Держим отдельно от
+  // activeTranslationTitleRef и localStorage намеренно: выбор пользователя —
+  // это выбор пользователя, и из-за одной битой серии он не должен
+  // подменяться на все последующие.
+  const translationOverrideRef = useRef<{ key: string; title: string } | null>(null);
+
+  /**
+   * Битая озвучка — молча перейти на соседнюю вместо тупика.
+   * Возвращает true, если замена нашлась (тогда экран ошибки не нужен:
+   * смена translationId сама перезапустит резолв с новым src).
+   */
+  const fallbackTranslation = useCallback((): boolean => {
+    if (translationId == null || translations.length < 2) return false;
+    const key = `${season}:${episode}`;
+    const failed = failedTranslationsRef.current;
+    if (failed.key !== key) {
+      failed.key = key;
+      failed.ids = new Set();
+    }
+    failed.ids.add(translationId);
+
+    const current = translations.find((t) => t.id === translationId);
+    // «Озвучка AniLibria · Alloha» → база «Озвучка AniLibria», источник
+    // «Alloha». Сначала ищем ту же озвучку у ДРУГОГО источника: для зрителя
+    // это ровно то, что он выбирал, просто с другой полки.
+    const base = current ? current.title.split(' · ')[0] : null;
+    const untried = translations.filter((t) => !failed.ids.has(t.id));
+    const next =
+      (base ? untried.find((t) => t.title.split(' · ')[0] === base) : undefined) ?? untried[0];
+    if (!next) return false;
+
+    translationOverrideRef.current = { key, title: next.title };
+    logEvent('player.translation_fallback', {
+      shikimoriId,
+      season,
+      episode,
+      fromId: translationId,
+      toId: next.id,
+      toSource: next.source ?? null,
+    });
+    warnComboMissing();
+    setTranslationId(next.id);
+    return true;
+  }, [translations, translationId, season, episode, shikimoriId, warnComboMissing]);
   // Доп. аудиодорожки той же серии+перевода (см. ResolvedStream.audioTracks
   // — сейчас реально отдаёт только Alloha, напр. оригинал без перевода).
   // Та же ручка /api/proxy/subtitles, что и для subtitles выше (см. её
@@ -654,8 +713,18 @@ export default function OwnPlayer({
     // пришла пропом → сохранённая с прошлых серий и сеансов. Последняя и
     // делает выбор «липким» между тайтлами, а не только между сериями.
     const stored = readTrackPrefs();
+    // Вынужденная замена этой серии — важнее сохранённого выбора: иначе
+    // эффект тут же вернул бы нас на озвучку, которая только что не
+    // загрузилась, и мы бы ходили по кругу.
+    const override =
+      translationOverrideRef.current?.key === `${season}:${episode}`
+        ? translationOverrideRef.current.title
+        : null;
     const wantTitle =
-      activeTranslationTitleRef.current ?? initialTranslationTitle ?? stored.translation;
+      override ??
+      activeTranslationTitleRef.current ??
+      initialTranslationTitle ??
+      stored.translation;
     const match = wantTitle ? translations.find((t) => t.title === wantTitle) : undefined;
     const resolved = match ?? translations[0] ?? null;
 
@@ -666,7 +735,9 @@ export default function OwnPlayer({
     // Обновляем ref ЗДЕСЬ, а не синхронно в теле рендера (см. коммент у
     // объявления ref выше) — на этот момент translations уже гарантированно
     // соответствует новой серии.
-    if (resolved) {
+    // Запоминаем — только когда это ВЫБОР, а не вынужденная замена: иначе
+    // одна битая серия переписала бы предпочтение на все следующие тайтлы.
+    if (resolved && !override) {
       activeTranslationTitleRef.current = resolved.title;
       storeTrackPrefs({ translation: resolved.title });
     }
@@ -817,6 +888,9 @@ export default function OwnPlayer({
             episode,
             status: res.status,
           });
+          // Сначала соседняя озвучка той же серии, и только если менять
+          // уже не на что — экран ошибки (см. failedTranslationsRef выше).
+          if (fallbackTranslation()) return;
           setLoadState(res.status === 404 ? 'unavailable' : 'failed');
           return;
         }
@@ -1814,6 +1888,11 @@ export default function OwnPlayer({
       // (см. коммент у объявления activeTranslationTitleRef выше).
       const picked = translations.find((t) => t.id === id);
       if (picked) activeTranslationTitleRef.current = picked.title;
+      // Явный выбор отменяет вынужденную замену и снимает пометку «уже
+      // не загрузилась» с выбранного: пользователь просит попробовать
+      // именно это, и отказывать ему по прошлому опыту неправильно.
+      translationOverrideRef.current = null;
+      failedTranslationsRef.current.ids.delete(id);
       logEvent('player.change_translation', {
         shikimoriId,
         season,

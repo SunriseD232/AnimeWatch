@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ContentType } from '@/lib/types';
+import { SlidingPill, useSlidingPill } from '@/components/useSlidingPill';
 
 // href «Аниме» — /?mode=anime, не голый '/': у него отдельный ключ
 // клиентского Router Cache Next.js, независимый от '/' (который middleware
@@ -49,53 +50,14 @@ export default function ModeSwitch({ active }: { active: ContentType }) {
     setOptimistic(null);
   }, [active]);
 
-  // Ползунок под активной вкладкой. Ширины у вкладок разные («Аниме» против
-  // «Фильмы и сериалы»), поэтому позицию и ширину меряем, а не считаем по
-  // доле: с фиксированной долей ползунок либо не докрывал бы длинную
-  // подпись, либо торчал за короткую.
-  const rootRef = useRef<HTMLDivElement>(null);
-  const tabRefs = useRef<Record<string, HTMLAnchorElement | null>>({});
-  const [pill, setPill] = useState<{ left: number; width: number } | null>(null);
-
-  useLayoutEffect(() => {
-    const measure = () => {
-      const root = rootRef.current;
-      const el = tabRefs.current[shown];
-      if (!root || !el) return;
-      const r = root.getBoundingClientRect();
-      const t = el.getBoundingClientRect();
-      setPill({ left: t.left - r.left, width: t.width });
-    };
-    measure();
-
-    // Ширина подписи меняется от шрифта и языка интерфейса, а положение — от
-    // ширины окна: без наблюдателя ползунок разъезжался с вкладкой.
-    const observer = new ResizeObserver(measure);
-    if (rootRef.current) observer.observe(rootRef.current);
-    return () => observer.disconnect();
-  }, [shown]);
+  const { rootRef, setTabRef, pill } = useSlidingPill(shown);
 
   return (
     <div
       ref={rootRef}
       className="relative inline-flex rounded-full border border-white/10 bg-bg-card p-1"
     >
-      {/* Ползунок отдельным слоем под подписями: так он переезжает между
-          вкладками одним движением, а не гасится на одной и зажигается на
-          другой. Пока не измерен — не рисуем вовсе, иначе первый кадр
-          показал бы его в левом углу и он бы «прыгнул» на место. */}
-      {pill && (
-        <span
-          aria-hidden="true"
-          className="absolute top-1 z-0 rounded-full bg-accent transition-[transform,width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
-          style={{
-            height: 'calc(100% - 0.5rem)',
-            width: pill.width,
-            transform: `translateX(${pill.left}px)`,
-            left: 0,
-          }}
-        />
-      )}
+      <SlidingPill pill={pill} />
       {TABS.map((tab) => {
         const isActive = tab.value === shown;
         return (
@@ -110,9 +72,7 @@ export default function ModeSwitch({ active }: { active: ContentType }) {
             // раздела без ошибки в консоли.
             prefetch={false}
             aria-current={isActive ? 'page' : undefined}
-            ref={(el) => {
-              tabRefs.current[tab.value] = el;
-            }}
+            ref={setTabRef(tab.value)}
             onClick={() => {
               // Кука ставится синхронно ДО перехода (обычная навигация
               // Link, без ручного router.push) — иначе middleware вернул бы

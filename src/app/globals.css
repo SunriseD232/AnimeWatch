@@ -153,6 +153,22 @@ body {
   }
 }
 
+/* Смена вкладки раздела (аниме/кино) в профиле. Короче и мягче, чем
+   animate-rise у секций страницы: здесь содержимое подменяется по клику, и
+   полусекундный подъём на каждое нажатие читался бы как задержка.
+   fill: backwards — после конца анимация не должна оставлять на элементе
+   ничего, см. большой комментарий у filters-panel-in выше. */
+@keyframes tab-swap-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.animate-tab-swap {
+  animation: tab-swap-in 220ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
 @keyframes filters-panel-content-in {
   from {
     opacity: 0;

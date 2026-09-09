@@ -1204,8 +1204,12 @@ export default function Player({
                       ? `${label}. Позиция запоминается приблизительно, не посекундно`
                       : undefined
                   }
+                  // flex, а не inline-поток: значок «≈» иначе тянет строчный бокс
+                  // вверх, кнопка становится выше соседей, и её подпись съезжает
+                  // ниже их подписей. Во флексе выравнивание не зависит от
+                  // базовой линии, и все вкладки стоят на одной высоте.
                   className={[
-                    'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
+                    'flex shrink-0 items-center whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
                     player === kind
                       ? 'bg-accent text-white'
                       : 'text-gray-300 hover:text-white',
@@ -1222,7 +1226,9 @@ export default function Player({
                         );
                       }}
                       aria-hidden="true"
-                      className="ml-1 cursor-help align-super text-[10px] text-gray-400"
+                      // Приподнят сдвигом, а не align-super: сдвиг не участвует
+                      // в раскладке и потому не может ничего перекосить.
+                      className="ml-1 inline-block -translate-y-1 cursor-help text-[10px] leading-none text-gray-400"
                     >
                       ≈
                     </span>

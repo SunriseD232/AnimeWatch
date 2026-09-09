@@ -767,74 +767,64 @@ export default function WatchPlayer({
                 длинную «AniLibria · 720p») не влезают в строку на мобильном
                 без этого, подписи переносились внутри своих же пилюль. */}
             <div className="inline-flex max-w-full overflow-x-auto rounded-full bg-bg-card p-0.5 ring-1 ring-white/5">
-              {aniQualities && (
+              {/* Список, а не четыре отдельные кнопки: так порядок вкладок
+                  виден одной строкой и совпадает с кино (см. Player.tsx).
+                  «Наш плеер» первым — он наш и умеет больше остальных, с него
+                  и стоит начинать. */}
+              {(
+                [
+                  hasOwnPlayer ? (['own', 'Наш плеер', false] as const) : null,
+                  aniQualities
+                    ? ([
+                        'hls',
+                        `AniLibria · ${aniQualities[0]?.label ?? '720'}p`,
+                        false,
+                      ] as const)
+                    : null,
+                  ['kodik', 'Kodik', false] as const,
+                  hasYummy ? (['yummy', 'Yummy', true] as const) : null,
+                ].filter(Boolean) as ReadonlyArray<readonly [Source, string, boolean]>
+              ).map(([kind, label, approxTracking]) => (
                 <button
+                  key={kind}
                   type="button"
-                  onClick={() => switchTo('hls')}
+                  onClick={() => switchTo(kind)}
+                  title={
+                    approxTracking
+                      ? `${label}. Позиция запоминается приблизительно, не посекундно`
+                      : undefined
+                  }
+                  // flex, а не inline-поток: значок «≈» иначе тянет строчный бокс
+                  // вверх, кнопка становится выше соседей, и её подпись съезжает
+                  // ниже их подписей. Во флексе выравнивание не зависит от
+                  // базовой линии, и все вкладки стоят на одной высоте.
                   className={[
-                    'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
-                    source === 'hls'
+                    'flex shrink-0 items-center whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
+                    source === kind
                       ? 'bg-accent text-white'
                       : 'text-gray-300 hover:text-white',
                   ].join(' ')}
                 >
-                  AniLibria · {aniQualities[0]?.label ?? '720'}p
+                  {label}
+                  {approxTracking && (
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toast(
+                          'Этот плеер не запоминает точную позицию — только приблизительно',
+                          'info',
+                        );
+                      }}
+                      aria-hidden="true"
+                      // Приподнят сдвигом, а не align-super: сдвиг не участвует
+                      // в раскладке и потому не может ничего перекосить.
+                      className="ml-1 inline-block -translate-y-1 cursor-help text-[10px] leading-none text-gray-400"
+                    >
+                      ≈
+                    </span>
+                  )}
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={() => switchTo('kodik')}
-                className={[
-                  'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
-                  source === 'kodik'
-                    ? 'bg-accent text-white'
-                    : 'text-gray-300 hover:text-white',
-                ].join(' ')}
-              >
-                Kodik
-              </button>
-              {hasYummy && (
-                <button
-                  type="button"
-                  onClick={() => switchTo('yummy')}
-                  title="Yummy. Позиция запоминается приблизительно, не посекундно"
-                  className={[
-                    'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
-                    source === 'yummy'
-                      ? 'bg-accent text-white'
-                      : 'text-gray-300 hover:text-white',
-                  ].join(' ')}
-                >
-                  Yummy
-                  <span
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toast(
-                        'Этот плеер не запоминает точную позицию — только приблизительно',
-                        'info',
-                      );
-                    }}
-                    aria-hidden="true"
-                    className="ml-1 cursor-help align-super text-[10px] text-gray-400"
-                  >
-                    ≈
-                  </span>
-                </button>
-              )}
-              {hasOwnPlayer && (
-                <button
-                  type="button"
-                  onClick={() => switchTo('own')}
-                  className={[
-                    'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
-                    source === 'own'
-                      ? 'bg-accent text-white'
-                      : 'text-gray-300 hover:text-white',
-                  ].join(' ')}
-                >
-                  Наш плеер
-                </button>
-              )}
+              ))}
             </div>
             {(switching || switchingEpisode) && (
               <span className="text-xs text-gray-400">
