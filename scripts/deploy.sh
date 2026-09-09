@@ -28,14 +28,20 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 ROOT="$(pwd)"
-RELEASES="$ROOT/.releases"
 STAMP="$(date +%Y%m%d-%H%M%S)"
-# ОТНОСИТЕЛЬНЫЙ путь — принципиально. Next воспроизводит distDir ВНУТРИ
-# standalone-вывода как есть: при distDir=.releases/<метка> серверный
-# server.js ищет свои манифесты в ./.releases/<метка>/ относительно
-# собственного каталога. С абсолютным путём эта вложенность стала бы
-# /opt/mediawatch/... внутри standalone, и сборка не нашла бы саму себя.
-REL_DIST=".releases/$STAMP"
+# Имя сборки — ОДИН сегмент пути и ОТНОСИТЕЛЬНОЕ. Оба условия обязательны:
+#
+#  - относительное, потому что Next воспроизводит distDir внутри
+#    standalone-вывода как есть, и server.js ищет свои манифесты по тому же
+#    относительному пути. С абсолютным вложенность стала бы
+#    /opt/mediawatch/... внутри standalone, и сборка не нашла бы саму себя;
+#  - ОДИН сегмент, потому что в сгенерированных типах страниц Next считает
+#    путь до исходников исходя из глубины distDir в ОДИН уровень (как у
+#    .next). При двухуровневом «.releases/<метка>» он выдавал на уровень
+#    меньше «../», и сборка падала на «Cannot find module
+#    ../../../../../../src/app/admin/users/[id]/page.js». Проверено вживую
+#    дважды: с семью «../» через симлинк и с шестью — напрямую.
+REL_DIST=".build-$STAMP"
 BUILD_DIR="$ROOT/$REL_DIST"
 
 echo "==> git pull origin main"
@@ -62,7 +68,6 @@ npm ci
 # distDir задаётся переменной окружения (см. next.config.js) — так `next build`
 # кладёт результат мимо живого .next и ничего не стирает.
 echo "==> npm run build (в $BUILD_DIR)"
-mkdir -p "$RELEASES"
 NEXT_DIST_DIR="$REL_DIST" npm run build
 
 # Проверка вменяемости до переключения: без server.js standalone не стартует,
@@ -136,7 +141,7 @@ fi
 # Держим три последние сборки: одна живая, одна на откат, одна про запас.
 # Каждая — около 400 МБ, копить их бесконечно на 77-гигабайтном диске не надо.
 echo "==> убираю старые сборки (оставляю 3)"
-ls -1dt "$RELEASES"/*/ 2>/dev/null | tail -n +4 | while read -r old; do
+ls -1dt "$ROOT"/.build-*/ 2>/dev/null | tail -n +4 | while read -r old; do
   [ "$(readlink -f "$old")" = "$(readlink -f "$ROOT/.current")" ] && continue
   echo "    удаляю $old"
   rm -rf "$old"

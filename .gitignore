@@ -35,5 +35,5 @@ next-env.d.ts
 .vscode/
 
 # Сборки деплоя: .next — симлинк на одну из них (см. scripts/deploy.sh)
-.releases/
+.build-*/
 .current
