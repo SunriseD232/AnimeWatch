@@ -369,6 +369,10 @@ async function loadRatings(
       .from('cinema_ratings')
       .select('imdb_id, rating')
       .not('rating', 'is', null)
+      // order() обязателен: без него Postgres не обещает порядок между
+      // LIMIT/OFFSET-запросами, страницы перекрываются и часть строк не
+      // попадает ни в одну. Поймано вживую на списке imdb_id.
+      .order('imdb_id', { ascending: true })
       .range(from, from + PAGE - 1);
 
     // Рейтинги — не повод ронять перестройку: без них каталог работает,

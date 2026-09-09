@@ -53,11 +53,14 @@ const MAX_MISS_BACKOFF = 6;
 /**
  * PostgREST отдаёт максимум 1000 строк за запрос.
  *
- * ВАЖНО про цикл чтения ниже: выходим ТОЛЬКО на пустой странице, а не на
- * «пришло меньше, чем просили». Второе выглядит очевидной оптимизацией и
- * ровно так и было написано — а на живых данных обрывало чтение на 45 793
- * id из 84 808: PostgREST на части страниц отдаёт меньше запрошенного, и
- * это не признак конца. Лишний холостой запрос дешевле половины базы.
+ * ВАЖНО про циклы чтения ниже — две грабли сразу, обе поймал вживую:
+ *
+ * 1. У постраничного запроса ОБЯЗАН быть order(). Без него Postgres не
+ *    обещает никакого порядка между LIMIT/OFFSET-запросами, страницы
+ *    перекрываются и часть строк не попадает НИ В ОДНУ: из 84 808 id
+ *    вычитывалось то 45 793, то 55 841 — число плавало от прогона к прогону.
+ * 2. Выходим только на пустой странице, а не на «пришло меньше, чем
+ *    просили»: короткая страница не является признаком конца.
  */
 const READ_PAGE = 1000;
 const UPSERT_CHUNK = 500;
@@ -155,6 +158,7 @@ async function loadBatchImdbIds(
       .select('imdb_id')
       .eq('batch_id', batchId)
       .not('imdb_id', 'is', null)
+      .order('kp_id', { ascending: true })
       .range(from, from + READ_PAGE - 1);
 
     if (error) throw new Error(`не прочитать imdb_id партии: ${error.message}`);
@@ -179,6 +183,7 @@ async function loadKnownRatings(
     const { data, error } = await supabase
       .from('cinema_ratings')
       .select('imdb_id, checked_at, miss_count')
+      .order('imdb_id', { ascending: true })
       .range(from, from + READ_PAGE - 1);
 
     if (error) throw new Error(`не прочитать cinema_ratings: ${error.message}`);
