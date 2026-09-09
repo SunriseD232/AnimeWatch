@@ -6,7 +6,7 @@ import { useCatalogFilters } from '@/components/catalog/CatalogFilterProvider';
 import {
   AnonsToggle,
   EpisodesRange,
-  GenreChips,
+  GenreList,
   KindGroup,
   RatingGroup,
   SortSelect,
@@ -123,7 +123,7 @@ export default function CatalogMobileDrawer({
           </div>
 
           <CollapsibleSection title="Жанры" count={genresCount}>
-            <GenreChips genres={genres} />
+            <GenreList genres={genres} />
           </CollapsibleSection>
 
           <CollapsibleSection title="Количество эпизодов">

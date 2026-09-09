@@ -2,6 +2,7 @@ import AnimeCard from '@/components/AnimeCard';
 import Pagination from '@/components/Pagination';
 import { ANIME_CATALOG_SORTS, getAnimeCatalog, type AnimeCatalogSort } from '@/lib/shikimori';
 import { getEpisodeProgressMap } from '@/lib/watch/progressMap';
+import { getAnimeCatalogFromIndex } from '@/lib/animeIndexQuery';
 import {
   PARAM,
   buildQuery,
@@ -61,23 +62,29 @@ export default async function CatalogPage({
   const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
   const showAnons = params.get(PARAM.anons) === '1';
 
+  const catalogParams = {
+    genresInclude: parseNumericIds(filters.genres.include.join(',')),
+    genresExclude: parseNumericIds(filters.genres.exclude.join(',')),
+    sort,
+    page,
+    pageSize: PAGE_SIZE,
+    excludeAnons: !showAnons,
+    episodesFrom: filters.episodesFrom,
+    episodesTo: filters.episodesTo,
+    yearFrom: filters.yearFrom,
+    yearTo: filters.yearTo,
+    ratings: filters.ratings,
+    kinds: filters.kinds,
+    statuses: filters.statuses,
+  };
+
   let data;
   try {
-    data = await getAnimeCatalog({
-      genresInclude: parseNumericIds(filters.genres.include.join(',')),
-      genresExclude: parseNumericIds(filters.genres.exclude.join(',')),
-      sort,
-      page,
-      pageSize: PAGE_SIZE,
-      excludeAnons: !showAnons,
-      episodesFrom: filters.episodesFrom,
-      episodesTo: filters.episodesTo,
-      yearFrom: filters.yearFrom,
-      yearTo: filters.yearTo,
-      ratings: filters.ratings,
-      kinds: filters.kinds,
-      statuses: filters.statuses,
-    });
+    // Сначала локальный индекс (см. lib/animeIndexQuery.ts) — там весь фильтр
+    // это один SQL-запрос. Вернул null (индекс ещё не построен ночным кроном
+    // или почему-то опустел) — работаем по-старому через Shikimori, чтобы
+    // каталог не оставался пустым.
+    data = (await getAnimeCatalogFromIndex(catalogParams)) ?? (await getAnimeCatalog(catalogParams));
   } catch (err) {
     console.error('[catalog] getAnimeCatalog упал:', err instanceof Error ? err.message : err);
     return (

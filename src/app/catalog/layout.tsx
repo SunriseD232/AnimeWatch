@@ -5,6 +5,7 @@ import AnimeGenrePanel from '@/components/catalog/AnimeGenrePanel';
 import CatalogMobileDrawer from '@/components/catalog/CatalogMobileDrawer';
 import CatalogMobileTrigger from '@/components/catalog/CatalogMobileTrigger';
 import { ANIME_CATALOG_SORTS, getAnimeGenres, type AnimeCatalogSort } from '@/lib/shikimori';
+import { getGenresFromIndex } from '@/lib/animeIndexQuery';
 import type { FilterOptionDef } from '@/lib/animeFilters';
 
 const DEFAULT_SORT: AnimeCatalogSort = 'aired_on';
@@ -16,9 +17,14 @@ const DEFAULT_SORT: AnimeCatalogSort = 'aired_on';
  * списком не нужны, а список к тому же кэшируется на сутки.
  */
 async function CatalogFilters({ children }: { children: React.ReactNode }) {
+  // Список берём из локального индекса: там актуальная таксономия Shikimori
+  // (22 жанра, 53 темы, 5 демографий). Легаси-эндпоинт REST /genres отдаёт
+  // 46 записей, среди которых мёртвая «Магия» — кнопка есть, результатов
+  // нет. Индекса ещё нет — откатываемся на него же, чтобы каталог не остался
+  // вовсе без фильтра по жанрам.
   let genres: { id: number; russian: string }[] = [];
   try {
-    genres = await getAnimeGenres();
+    genres = (await getGenresFromIndex()) ?? (await getAnimeGenres());
   } catch {
     genres = [];
   }
@@ -31,17 +37,11 @@ async function CatalogFilters({ children }: { children: React.ReactNode }) {
     <CatalogFilterProvider defaultSort={DEFAULT_SORT}>
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold">Каталог аниме</h1>
-            {/* Только десктоп: на телефоне подсказка съедала верх экрана
-                перед самой выдачей, а объяснять там нечего — жанры и
-                фильтры спрятаны в панель, и та же фраза про клики есть
-                внутри неё, рядом с самими чекбоксами. */}
-            <p className="hidden text-sm text-gray-400 lg:block">
-              Выбирайте жанры и фильтры (клик — включить, ещё раз —
-              исключить), затем нажмите «Применить».
-            </p>
-          </div>
+          {/* Только заголовок: подсказка про клики переехала внутрь панели
+              фильтров, к самим чекбоксам. Сверху она объясняла то, чего на
+              экране уже нет — жанры и фильтры спрятаны в панель, — и просто
+              отодвигала выдачу вниз. */}
+          <h1 className="text-xl font-bold">Каталог аниме</h1>
           <CatalogMobileTrigger />
         </div>
 

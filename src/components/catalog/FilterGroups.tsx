@@ -160,37 +160,41 @@ export function StatusGroup() {
   return <CheckboxGroup group="statuses" options={STATUS_OPTIONS} />;
 }
 
-/** Чипы жанров. Их много (40+), поэтому на десктопе они живут наверху во всю
- *  ширину, а не в узкой колонке; на телефоне — внутри раскрывающейся секции
- *  мобильной панели. */
-export function GenreChips({ genres }: { genres: FilterOptionDef[] }) {
+/**
+ * Жанры списком внутри панели фильтров — теми же трёхпозиционными чекбоксами,
+ * что и остальные группы.
+ *
+ * Раньше это была строка чипов во всю ширину над выдачей. С переходом на
+ * актуальную таксономию Shikimori пунктов стало 80 вместо 46 (22 жанра,
+ * 53 темы, 5 демографий), и такой строкой они отжимали бы у карточек
+ * несколько экранов по вертикали.
+ *
+ * Показываем десять строк, остальное — прокруткой. Высота задана числом
+ * (строка выходит ровно в 30px), а не рассчитывается по содержимому: иначе
+ * список «дышал» бы при переключении пункта — у зачёркнутой подписи другая
+ * метрика, — и полоса прокрутки дёргалась бы на каждый клик.
+ */
+export function GenreList({ genres }: { genres: FilterOptionDef[] }) {
   const { pending, toggle } = useCatalogFilters();
 
   return (
-    <div className="flex flex-wrap gap-2">
-      {genres.map((g) => {
-        const isIncluded = pending.genres.include.includes(g.value);
-        const isExcluded = pending.genres.exclude.includes(g.value);
-        return (
-          <button
+    <div className="max-h-[300px] overflow-y-auto pr-1">
+      <div className="flex flex-col gap-0.5">
+        {genres.map((g) => (
+          <TriStateCheckbox
             key={g.value}
-            type="button"
-            onClick={() => toggle('genres', g.value)}
-            aria-pressed={isIncluded ? true : isExcluded ? 'mixed' : false}
-            className={[
-              'press rounded-full px-3.5 py-1.5 text-sm font-medium transition',
-              isIncluded
-                ? 'bg-accent text-white shadow-lg shadow-accent/25'
-                : isExcluded
-                  ? 'bg-red-500/15 text-red-300 line-through ring-1 ring-red-500/40'
-                  : 'bg-bg-card text-gray-300 ring-1 ring-white/5 hover:bg-bg-soft hover:text-white',
-            ].join(' ')}
-          >
-            {isIncluded ? '✓ ' : isExcluded ? '✕ ' : ''}
-            {g.label}
-          </button>
-        );
-      })}
+            label={g.label}
+            state={
+              pending.genres.include.includes(g.value)
+                ? 'include'
+                : pending.genres.exclude.includes(g.value)
+                  ? 'exclude'
+                  : 'off'
+            }
+            onToggle={() => toggle('genres', g.value)}
+          />
+        ))}
+      </div>
     </div>
   );
 }
