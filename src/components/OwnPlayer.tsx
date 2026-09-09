@@ -5,6 +5,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { useProgressSaver } from '@/hooks/useProgressSaver';
 import { logEvent } from '@/lib/clientLog';
+import { useToast } from '@/components/ToastProvider';
+import {
+  DEFAULT_SUBTITLE_STYLE,
+  outlineShadow,
+  readSubtitleStyle,
+  storeSubtitleStyle,
+  withAlpha,
+  type SubtitleStyle,
+} from '@/lib/subtitleStyle';
 import { formatTime } from '@/lib/format';
 import type { ContentType } from '@/lib/types';
 import type { ExtractSource, Subtitle } from '@/lib/extract/types';
@@ -117,13 +126,60 @@ const SOURCE_LABELS: Record<ExtractSource, string> = {
 type LoadState = 'probing' | 'ready' | 'unavailable' | 'failed';
 // Меню настроек — корневой список категорий или подменю выбора значения для
 // одной из них (см. рендер в конце компонента).
-type SettingsView = 'root' | 'quality' | 'audio' | 'audioTrack' | 'subtitles' | 'speed';
+/** Реплики, активные одновременно, показываем в столбик. */
+const CUE_LINE_BREAK = '\n';
+
+/**
+ * Выбор озвучки и субтитров переживает не только смену серии, но и уход со
+ * страницы. Храним ПОДПИСИ, а не идентификаторы: id перевода у каждой серии
+ * свои, а подпись («AniLibria», «(Russian) Субтитры») стабильна. Ключ общий
+ * на весь сайт — человек, который смотрит с сабами, смотрит с сабами везде.
+ */
+const TRACK_PREFS_KEY = 'mediawatch:player-tracks';
+
+interface TrackPrefs {
+  translation: string | null;
+  subtitle: string | null;
+}
+
+function readTrackPrefs(): TrackPrefs {
+  try {
+    const raw = localStorage.getItem(TRACK_PREFS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Partial<TrackPrefs>) : {};
+    return {
+      translation: typeof parsed.translation === 'string' ? parsed.translation : null,
+      subtitle: typeof parsed.subtitle === 'string' ? parsed.subtitle : null,
+    };
+  } catch {
+    return { translation: null, subtitle: null };
+  }
+}
+
+function storeTrackPrefs(patch: Partial<TrackPrefs>): void {
+  try {
+    const next = { ...readTrackPrefs(), ...patch };
+    localStorage.setItem(TRACK_PREFS_KEY, JSON.stringify(next));
+  } catch {
+    // Приватный режим — выбор просто не переживёт перезагрузку.
+  }
+}
+
+
+type SettingsView =
+  | 'root'
+  | 'quality'
+  | 'audio'
+  | 'audioTrack'
+  | 'subtitles'
+  | 'subtitleStyle'
+  | 'speed';
 
 const SETTINGS_VIEW_TITLES: Record<Exclude<SettingsView, 'root'>, string> = {
   quality: 'Качество',
   audio: 'Озвучка',
   audioTrack: 'Аудиодорожка',
   subtitles: 'Субтитры',
+  subtitleStyle: 'Оформление субтитров',
   speed: 'Скорость',
 };
 
@@ -159,6 +215,68 @@ function SettingsRow({
 }
 
 /** Пункт подменю (значение категории) — радио-кружок + подпись. */
+/** Ползунок в меню оформления субтитров. */
+function StyleSlider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  format,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  format: (value: number) => string;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="flex items-baseline justify-between gap-2 text-xs text-gray-300">
+        {label}
+        <span className="tabular-nums text-gray-400">{format(value)}</span>
+      </span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="player-range h-1 w-full cursor-pointer appearance-none rounded-full bg-white/20 accent-white"
+      />
+    </label>
+  );
+}
+
+/** Выбор цвета. Нативный input[type=color] намеренно: свой пикер — это
+ *  отдельный компонент на сотню строк ради того, что система уже умеет, и
+ *  на телефоне системный выбор цвета удобнее любого своего. */
+function StyleColor({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-2 text-xs text-gray-300">
+      {label}
+      <input
+        type="color"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-6 w-10 cursor-pointer rounded border border-white/20 bg-transparent p-0"
+      />
+    </label>
+  );
+}
+
 function RadioOption({
   label,
   active,
@@ -441,7 +559,40 @@ export default function OwnPlayer({
   // Сейчас реально отдаёт только Videoseed — для остальных источников список
   // всегда пуст, и селектор просто не рендерится.
   const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
+  // Текст активной реплики. Рисуем его сами (см. lib/subtitleStyle.ts): у
+  // нативной дорожки не сдвинуть текст выше панели управления, и на паузе
+  // она закрывала субтитры собственными кнопками.
+  const [cueText, setCueText] = useState('');
+  const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>(DEFAULT_SUBTITLE_STYLE);
+
+  // Настройка живёт в localStorage: она про этот экран (диагональ, освещение,
+  // зрение), а не про аккаунт, и синхронизировать её между устройствами было
+  // бы скорее вредно. Читаем в эффекте, а не в useState — на сервере
+  // localStorage нет, и начальное значение обязано совпасть с серверным.
+  useEffect(() => {
+    setSubtitleStyle(readSubtitleStyle());
+  }, []);
+
+  const updateSubtitleStyle = useCallback((patch: Partial<SubtitleStyle>) => {
+    setSubtitleStyle((prev) => {
+      const next = { ...prev, ...patch };
+      storeSubtitleStyle(next);
+      return next;
+    });
+  }, []);
   const [activeSubtitleIndex, setActiveSubtitleIndex] = useState<number | null>(null); // null = выкл
+  const { toast } = useToast();
+  // Предупреждение о несостоявшемся сочетании показываем ОДИН раз на серию:
+  // эффекты озвучки и субтитров срабатывают отдельно и оба могут промахнуться,
+  // а два одинаковых тоста подряд — уже шум.
+  const comboWarnedRef = useRef<string | null>(null);
+
+  const warnComboMissing = useCallback(() => {
+    const key = `${season}:${episode}`;
+    if (comboWarnedRef.current === key) return;
+    comboWarnedRef.current = key;
+    toast('Данное сочетание не нашлось, выбрано доступное', 'error');
+  }, [toast, season, episode]);
   // Доп. аудиодорожки той же серии+перевода (см. ResolvedStream.audioTracks
   // — сейчас реально отдаёт только Alloha, напр. оригинал без перевода).
   // Та же ручка /api/proxy/subtitles, что и для subtitles выше (см. её
@@ -497,15 +648,30 @@ export default function OwnPlayer({
   // так что от нестабильной ссылки translations на каждый рендер это не
   // зациклится.
   useEffect(() => {
-    const wantTitle = activeTranslationTitleRef.current ?? initialTranslationTitle;
+    if (translations.length === 0) return;
+
+    // Порядок предпочтений: та озвучка, что играла прямо сейчас → та, что
+    // пришла пропом → сохранённая с прошлых серий и сеансов. Последняя и
+    // делает выбор «липким» между тайтлами, а не только между сериями.
+    const stored = readTrackPrefs();
+    const wantTitle =
+      activeTranslationTitleRef.current ?? initialTranslationTitle ?? stored.translation;
     const match = wantTitle ? translations.find((t) => t.title === wantTitle) : undefined;
     const resolved = match ?? translations[0] ?? null;
+
+    // Хотели конкретную и не нашли — предупреждаем и берём первую доступную.
+    // Только когда хотели: на первом заходе выбирать не из чего, и тост там
+    // был бы ложной тревогой.
+    if (wantTitle && !match && resolved) warnComboMissing();
     // Обновляем ref ЗДЕСЬ, а не синхронно в теле рендера (см. коммент у
     // объявления ref выше) — на этот момент translations уже гарантированно
     // соответствует новой серии.
-    if (resolved) activeTranslationTitleRef.current = resolved.title;
+    if (resolved) {
+      activeTranslationTitleRef.current = resolved.title;
+      storeTrackPrefs({ translation: resolved.title });
+    }
     setTranslationId(resolved?.id ?? null);
-  }, [episode, translations, initialTranslationTitle]);
+  }, [episode, translations, initialTranslationTitle, warnComboMissing]);
 
   // --- Громкость: восстановление/сохранение ---------------------------------
   // Читаем сохранённое значение сразу (до монтирования <video> — он рисуется
@@ -981,8 +1147,22 @@ export default function OwnPlayer({
       .then((r) => (r.ok ? r.json() : { subtitles: [] }))
       .then((data: { subtitles?: Subtitle[]; audioTracks?: { label: string }[] }) => {
         if (cancelled) return;
-        setSubtitles(Array.isArray(data.subtitles) ? data.subtitles : []);
+        const list = Array.isArray(data.subtitles) ? data.subtitles : [];
+        setSubtitles(list);
         setAudioTracks(Array.isArray(data.audioTracks) ? data.audioTracks : []);
+
+        // Восстанавливаем дорожку субтитров ПО ПОДПИСИ: индексы у каждой
+        // серии свои, а подпись стабильна. Не нашли сохранённую — выключаем
+        // субтитры и предупреждаем: продолжать серию без них молча, когда
+        // человек их специально включил, хуже, чем сказать вслух.
+        const want = readTrackPrefs().subtitle;
+        if (!want) {
+          setActiveSubtitleIndex(null);
+          return;
+        }
+        const idx = list.findIndex((sub) => sub.label === want);
+        setActiveSubtitleIndex(idx >= 0 ? idx : null);
+        if (idx < 0) warnComboMissing();
       })
       .catch(() => {});
     return () => {
@@ -1001,9 +1181,39 @@ export default function OwnPlayer({
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+
+    // Активная дорожка тоже 'hidden', а не 'showing': реплики нужны нам как
+    // данные, рисуем мы их сами. В 'showing' браузер поверх нашего текста
+    // нарисовал бы ещё и свой.
     for (let i = 0; i < video.textTracks.length; i++) {
-      video.textTracks[i].mode = i === activeSubtitleIndex ? 'showing' : 'hidden';
+      video.textTracks[i].mode = i === activeSubtitleIndex ? 'hidden' : 'disabled';
     }
+
+    const track = activeSubtitleIndex != null ? video.textTracks[activeSubtitleIndex] : null;
+    if (!track) {
+      setCueText('');
+      return;
+    }
+
+    const onCueChange = () => {
+      const active = track.activeCues;
+      if (!active || active.length === 0) {
+        setCueText('');
+        return;
+      }
+      const parts: string[] = [];
+      for (let i = 0; i < active.length; i++) {
+        const cue = active[i] as VTTCue;
+        // Разметку WebVTT (<i>, <b>, <v Имя>) выбрасываем: рисуем обычным
+        // текстом, а вставлять чужой HTML в DOM ради курсива не стоит риска.
+        if (cue.text) parts.push(cue.text.replace(/<[^>]*>/g, ''));
+      }
+      setCueText(parts.join(CUE_LINE_BREAK));
+    };
+
+    onCueChange();
+    track.addEventListener('cuechange', onCueChange);
+    return () => track.removeEventListener('cuechange', onCueChange);
   }, [activeSubtitleIndex, subtitles]);
 
   // --- События <video> -------------------------------------------------------
@@ -1868,7 +2078,10 @@ export default function OwnPlayer({
           }
         }}
         className={[
-          'group relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10 outline-none focus:ring-accent/40',
+          // @container — чтобы кегль субтитров считался от ШИРИНЫ ПЛЕЕРА, а
+          // не окна: в полноэкранном режиме и в маленьком окне это разные
+          // вещи, а vw знает только про окно.
+          'group relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10 outline-none focus:ring-accent/40 [container-type:inline-size]',
           // Курсор прячем вместе с панелью управления — тот же признак
           // (controlsVisible || !playing), что решает видимость самой панели
           // ниже, чтобы не рассинхронизировать. На паузе/буферизации курсор
@@ -1892,6 +2105,41 @@ export default function OwnPlayer({
             <track key={i} kind="subtitles" src={s.url} srcLang={s.lang} label={s.label} />
           ))}
         </video>
+
+        {/* Субтитры рисуем сами (см. lib/subtitleStyle.ts). Положение снизу
+            зависит от панели управления: пока она видна, поднимаем текст над
+            ней, иначе он оказывался бы под кнопками и полосой перемотки.
+            Переход по bottom плавный — панель тоже появляется плавно, и
+            рывок субтитров рядом с ней читался бы как дефект. */}
+        {cueText && (
+          <div
+            aria-hidden="true"
+            className={[
+              'pointer-events-none absolute inset-x-0 z-10 flex justify-center px-4 text-center',
+              'transition-[bottom] duration-300 ease-out',
+              controlsVisible || !playing ? 'bottom-[4.5rem] sm:bottom-24' : 'bottom-6',
+            ].join(' ')}
+          >
+            <span
+              className="whitespace-pre-line rounded-lg px-2 py-0.5 font-semibold leading-snug"
+              style={{
+                color: subtitleStyle.color,
+                opacity: subtitleStyle.opacity,
+                background:
+                  subtitleStyle.backgroundOpacity > 0
+                    ? withAlpha(subtitleStyle.background, subtitleStyle.backgroundOpacity)
+                    : undefined,
+                textShadow: outlineShadow(subtitleStyle.outline),
+                // Размер в vw, а не в px: субтитры обязаны читаться и в окне
+                // 375px, и на весь экран — при фиксированном кегле в
+                // полноэкранном режиме они превращаются в строчку внизу.
+                fontSize: `calc(${subtitleStyle.size / 100} * clamp(14px, 2.4cqw + 8px, 34px))`,
+              }}
+            >
+              {cueText}
+            </span>
+          </div>
+        )}
 
         {/* Озвучка в ready-состоянии переехала в единое меню настроек ниже
             (см. Скорость/Качество/Субтитры) — translationSelector тут больше
@@ -2239,6 +2487,9 @@ export default function OwnPlayer({
                             active={activeSubtitleIndex === null}
                             onClick={() => {
                               setActiveSubtitleIndex(null);
+                              // Запоминаем и «выключено» тоже: иначе на
+                              // следующей серии субтитры вернулись бы сами.
+                              storeTrackPrefs({ subtitle: null });
                               setSettingsOpen(false);
                             }}
                           />
@@ -2249,11 +2500,73 @@ export default function OwnPlayer({
                               active={activeSubtitleIndex === i}
                               onClick={() => {
                                 setActiveSubtitleIndex(i);
+                                storeTrackPrefs({ subtitle: s.label });
                                 setSettingsOpen(false);
                               }}
                             />
                           ))}
                         </>
+                      )}
+
+                      {settingsView === 'subtitleStyle' && (
+                        <div className="flex flex-col gap-3 px-2 py-2">
+                          <StyleColor
+                            label="Цвет текста"
+                            value={subtitleStyle.color}
+                            onChange={(color) => updateSubtitleStyle({ color })}
+                          />
+                          <StyleSlider
+                            label="Размер"
+                            value={subtitleStyle.size}
+                            min={60}
+                            max={200}
+                            step={10}
+                            format={(v) => `${v}%`}
+                            onChange={(size) => updateSubtitleStyle({ size })}
+                          />
+                          <StyleSlider
+                            label="Прозрачность текста"
+                            value={Math.round(subtitleStyle.opacity * 100)}
+                            min={20}
+                            max={100}
+                            step={5}
+                            format={(v) => `${v}%`}
+                            onChange={(v) => updateSubtitleStyle({ opacity: v / 100 })}
+                          />
+                          <StyleSlider
+                            label="Обводка"
+                            value={subtitleStyle.outline}
+                            min={0}
+                            max={6}
+                            step={1}
+                            format={(v) => (v === 0 ? 'нет' : `${v}px`)}
+                            onChange={(outline) => updateSubtitleStyle({ outline })}
+                          />
+                          <StyleColor
+                            label="Цвет фона"
+                            value={subtitleStyle.background}
+                            onChange={(background) => updateSubtitleStyle({ background })}
+                          />
+                          <StyleSlider
+                            label="Прозрачность фона"
+                            value={Math.round(subtitleStyle.backgroundOpacity * 100)}
+                            min={0}
+                            max={100}
+                            step={5}
+                            format={(v) => (v === 0 ? 'нет фона' : `${v}%`)}
+                            onChange={(v) => updateSubtitleStyle({ backgroundOpacity: v / 100 })}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              storeSubtitleStyle(DEFAULT_SUBTITLE_STYLE);
+                              setSubtitleStyle(DEFAULT_SUBTITLE_STYLE);
+                            }}
+                            className="press rounded-md px-2 py-1.5 text-left text-xs font-medium text-accent hover:bg-white/10"
+                          >
+                            Сбросить оформление
+                          </button>
+                        </div>
                       )}
 
                       {settingsView === 'speed' &&
