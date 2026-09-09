@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * Постер с запасными ссылками.
@@ -41,12 +41,24 @@ export default function PosterImage({
   // зависимость эффекта статически (выражение в массиве зависимостей).
   const chainKey = chain.join('|');
   const [index, setIndex] = useState(0);
+  const imgRef = useRef<HTMLImageElement>(null);
 
   // Список сменился (перерисовали карточку под другой тайтл) — начинаем с
   // начала, иначе новый постер унаследовал бы «сломанность» прошлого.
   useEffect(() => {
     setIndex(0);
   }, [chainKey]);
+
+  // Одного onError мало. Разметку отдаёт сервер, браузер начинает грузить
+  // картинку сразу, и на 404 она успевает упасть ДО гидратации — React к
+  // этому моменту обработчик ещё не повесил, и событие теряется навсегда.
+  // Проверено вживую: карточки с ещё не скачанной локальной обложкой так и
+  // оставались битыми, хотя запасная ссылка была рядом. Поэтому после
+  // монтирования спрашиваем сам элемент, чем всё кончилось.
+  useEffect(() => {
+    const el = imgRef.current;
+    if (el && el.complete && el.naturalWidth === 0) setIndex((i) => i + 1);
+  }, [chainKey, index]);
 
   if (chain.length === 0 || index >= chain.length) {
     return <div className={placeholderClassName}>нет постера</div>;
@@ -59,6 +71,7 @@ export default function PosterImage({
       // и в Safari onError по новому src иногда не срабатывает вовсе —
       // элемент остаётся в состоянии ошибки от прошлой попытки.
       key={chain[index]}
+      ref={imgRef}
       src={chain[index]}
       alt={alt}
       loading={loading}
