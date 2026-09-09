@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRef, useState } from 'react';
-import { episodeCount, imageUrl, type ShikimoriAnimeShort } from '@/lib/shikimori';
+import { episodeCount, imageUrl, type ShikimoriAnimeShort } from '@/lib/shikimoriShared';
 import ExpandTitleButton from '@/components/ExpandTitleButton';
 import PosterImage from '@/components/PosterImage';
 

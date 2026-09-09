@@ -3,7 +3,7 @@ import { signImageUrl } from '@/lib/extract/proxy';
 import type { TriState } from '@/lib/catalogFilters';
 import type { CinemaShort } from '@/lib/videoseed-catalog';
 import { cinemaKindLabel, type CinemaSort } from '@/lib/cinemaFilters';
-import { localPosterUrl } from '@/lib/posterCacheQuery';
+import { localPosterUrl } from '@/lib/posterPath';
 
 /**
  * Чтение каталога кино из локального индекса (миграция 0027,

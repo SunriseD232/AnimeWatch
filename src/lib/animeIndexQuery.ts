@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { DEFAULT_KINDS, type TriState } from '@/lib/animeFilters';
-import { localPosterUrl } from '@/lib/posterCacheQuery';
+import { localPosterUrl } from '@/lib/posterPath';
 import type { AnimeCatalogPage, AnimeCatalogParams, ShikimoriAnimeShort } from '@/lib/shikimori';
 
 /**

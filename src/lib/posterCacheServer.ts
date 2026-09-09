@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { localPosterUrl, type PosterKind } from '@/lib/posterPath';
 
 /**
  * Чтение локального кэша постеров (см. миграцию 0029, lib/posterCache.ts).
@@ -11,16 +12,8 @@ import { createClient } from '@/lib/supabase/server';
  * продолжат отдавать ссылки на апстрим.
  */
 
-export type PosterKind = 'anime' | 'cinema';
-
-/**
- * Путь к сохранённой обложке. Относительный, с нашего же домена: так он
- * одинаково работает и локально, и на проде, и не зависит от того, отдаёт
- * файл nginx напрямую или роут приложения.
- */
-export function localPosterUrl(kind: PosterKind, id: number): string {
-  return `/posters/${kind}/${id}.webp`;
-}
+export { localPosterUrl };
+export type { PosterKind };
 
 /** У кого из списка обложка уже лежит у нас. Один запрос на список. */
 export async function getLocalPosterIds(

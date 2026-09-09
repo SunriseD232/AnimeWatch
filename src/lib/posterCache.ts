@@ -4,7 +4,7 @@ import sharp from 'sharp';
 import { createServiceClient } from '@/lib/supabase/service';
 import { mapWithConcurrency } from '@/lib/concurrency';
 import { getYummyPostersMap } from '@/lib/video/yummy';
-import type { PosterKind } from '@/lib/posterCacheQuery';
+import type { PosterKind } from '@/lib/posterPath';
 
 /**
  * Локальный кэш постеров (см. миграцию 0029).

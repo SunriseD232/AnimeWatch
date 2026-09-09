@@ -5,7 +5,13 @@
  */
 
 import { getYummyPostersMap } from './video/yummy';
-import { getLocalPosterIds, localPosterUrl } from './posterCacheQuery';
+import { getLocalPosterIds, localPosterUrl } from './posterCacheServer';
+import { episodeCount, imageUrl, type ShikimoriAnimeShort } from './shikimoriShared';
+
+// Ре-экспорт, чтобы серверный код продолжал импортировать всё из одного
+// места: сами определения переехали в shikimoriShared.ts (см. там почему).
+export { episodeCount, imageUrl };
+export type { ShikimoriAnimeShort };
 import { mapWithConcurrency } from './concurrency';
 import { wordMatches } from './fuzzy';
 import { DEFAULT_KINDS, MAX_YEAR, MIN_YEAR, type TriState } from './animeFilters';
@@ -17,33 +23,6 @@ const API_URL = `${BASE_URL}/api`;
 const USER_AGENT = 'MediaWatch MVP';
 
 /** Краткая карточка аниме (списки, поиск, популярное). */
-export interface ShikimoriAnimeShort {
-  id: number;
-  name: string;
-  russian: string;
-  image: {
-    original: string;
-    preview: string;
-    x96: string;
-    x48: string;
-  };
-  url: string;
-  kind: string | null;
-  score: string;
-  status: string;
-  episodes: number;
-  episodes_aired: number;
-  aired_on: string | null;
-  released_on: string | null;
-  /** Заполняется только локальным индексом (см. lib/animeIndexQuery.ts) —
-   *  REST-ответы Shikimori описания в списках не содержат. Нужно списочному
-   *  виду каталога. */
-  description?: string | null;
-  /** Обложка с нашего диска, если она туда уже скачана (см. миграцию 0029).
-   *  Карточка пробует её первой, а ссылки выше остаются запасными — файла
-   *  может не быть у только что появившегося тайтла. */
-  localPoster?: string | null;
-}
 
 interface ShikimoriVideo {
   url: string;
@@ -128,11 +107,6 @@ async function shikimoriFetch<T>(
 }
 
 /** Абсолютный URL картинки из относительного пути Shikimori. */
-export function imageUrl(path: string | undefined | null): string | null {
-  if (!path) return null;
-  if (path.startsWith('http')) return path;
-  return `${BASE_URL}${path}`;
-}
 
 /**
  * Раздаёт тайтлам лучшие доступные обложки — в порядке предпочтения:
@@ -658,14 +632,3 @@ export function stripBbCode(text: string | null | undefined): string {
 }
 
 /** Число серий: для онгоингов берём aired, иначе объявленное. */
-export function episodeCount(anime: {
-  episodes: number;
-  episodes_aired: number;
-  status: string;
-}): number {
-  if (anime.status === 'ongoing' && anime.episodes_aired > 0) {
-    return anime.episodes_aired;
-  }
-  if (anime.episodes > 0) return anime.episodes;
-  return anime.episodes_aired > 0 ? anime.episodes_aired : 1;
-}
