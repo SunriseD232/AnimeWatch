@@ -40,3 +40,35 @@ export async function getLocalPosterIds(
     return new Set();
   }
 }
+
+/**
+ * То же самое для смешанного списка (аниме и кино вперемешку — так выглядят
+ * «Продолжить просмотр», «Вы хотели посмотреть», список и история в профиле).
+ *
+ * Возвращает готовые ссылки по ключу `${kind}:${id}`. Ключ, которого нет в
+ * ответе, означает «файла нет» — и ссылку на него отдавать НЕЛЬЗЯ: карточка
+ * получит 404, переживёт его и покажет запасную, но 404 останется в сетевой
+ * панели у каждого такого тайтла. Именно это и было видно на главной.
+ */
+export async function getLocalPosterMap(
+  items: { kind: PosterKind; id: number }[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const byKind = new Map<PosterKind, number[]>();
+
+  for (const item of items) {
+    if (!Number.isFinite(item.id) || item.id <= 0) continue;
+    const list = byKind.get(item.kind);
+    if (list) list.push(item.id);
+    else byKind.set(item.kind, [item.id]);
+  }
+
+  await Promise.all(
+    [...byKind].map(async ([kind, ids]) => {
+      const found = await getLocalPosterIds(kind, ids);
+      for (const id of found) out.set(`${kind}:${id}`, localPosterUrl(kind, id));
+    }),
+  );
+
+  return out;
+}

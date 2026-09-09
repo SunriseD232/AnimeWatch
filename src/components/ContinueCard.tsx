@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import PosterImage from '@/components/PosterImage';
-import { localPosterUrl } from '@/lib/posterPath';
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
@@ -14,10 +13,15 @@ import { fixPosterUrl, formatTime, watchPercent } from '@/lib/format';
 /** Карточка блока «Продолжить просмотр» с кнопкой убрать из списка. */
 export default function ContinueCard({
   progress,
+  localPoster = null,
   isMultiSeason = false,
   readOnly = false,
 }: {
   progress: WatchProgress;
+  /** Ссылка на нашу копию обложки, если она есть в реестре. Проверяется на
+   *  сервере (getLocalPosterMap) — сюда попадает только то, что реально
+   *  лежит на диске. */
+  localPoster?: string | null;
   /** true — у тайтла больше одного сезона (см. getCinemaSeasonCountMap),
    *  тогда подпись включает номер сезона. Не задано/false — сезон не
    *  пишем: он либо всегда 1 (аниме — там сезонов в этом смысле нет
@@ -76,22 +80,16 @@ export default function ContinueCard({
     <div className="card-lift group relative overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60">
       <Link href={watchHref}>
         <div className="relative aspect-video w-full overflow-hidden bg-bg-soft">
-          {/* Сперва наша копия с диска (миграция 0029), потом сохранённая в
-              базе ссылка. Второе — главная причина 404 на главной: в
-              watch_progress лежит ссылка, записанная в момент просмотра, и
-              часть таких давно протухла (Shikimori заменил постер, подпись
-              прокси у кино истекла). Флага «есть локально» здесь нет —
-              данные идут из своей таблицы, не из индекса, — поэтому пробуем
-              оптимистично: промах стоит один быстрый 404 к своему же nginx. */}
+          {/* localPoster приходит с сервера уже проверенным по реестру
+              (см. getLocalPosterMap): ссылку, для которой файла нет, сюда не
+              передают вовсе. Пробовать её «на удачу» было ошибкой — каждый
+              незакэшированный тайтл давал 404 в сетевой панели, и именно их
+              было видно на главной. Сохранённая в базе ссылка остаётся
+              запасной: она записана в момент просмотра и со временем
+              протухает. */}
           {progress.poster_url ? (
             <PosterImage
-              sources={[
-                localPosterUrl(
-                  progress.content_type === 'cinema' ? 'cinema' : 'anime',
-                  progress.shikimori_id,
-                ),
-                fixPosterUrl(progress.poster_url),
-              ]}
+              sources={[localPoster, fixPosterUrl(progress.poster_url)]}
               alt={progress.anime_title}
               className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
               placeholderClassName="grid h-full w-full place-items-center text-gray-400"

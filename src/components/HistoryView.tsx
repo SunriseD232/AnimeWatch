@@ -4,9 +4,15 @@ import Link from 'next/link';
 import type { WatchedEpisode } from '@/lib/types';
 import { fixPosterUrl, formatDateTime } from '@/lib/format';
 import PosterImage from '@/components/PosterImage';
-import { localPosterUrl } from '@/lib/posterPath';
 
-export default function HistoryView({ items }: { items: WatchedEpisode[] }) {
+export default function HistoryView({
+  items,
+  localPosters = {},
+}: {
+  items: WatchedEpisode[];
+  /** См. одноимённый проп в UserListView. */
+  localPosters?: Record<string, string>;
+}) {
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/5 bg-bg-card px-6 py-10 text-center">
@@ -34,7 +40,7 @@ export default function HistoryView({ items }: { items: WatchedEpisode[] }) {
             {ep.poster_url ? (
               <PosterImage
                 sources={[
-                  localPosterUrl(ep.content_type === 'cinema' ? 'cinema' : 'anime', ep.shikimori_id),
+                  localPosters[`${ep.content_type === 'cinema' ? 'cinema' : 'anime'}:${ep.shikimori_id}`],
                   fixPosterUrl(ep.poster_url),
                 ]}
                 alt=""

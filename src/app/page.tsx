@@ -12,6 +12,7 @@ import { getAnime, getNewAnime, getPopularRanked } from '@/lib/shikimori';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
 import { getEpisodeProgressMap } from '@/lib/watch/progressMap';
+import { getLocalPosterMap } from '@/lib/posterCacheServer';
 
 const DISCOVER_TABS = [
   { key: 'new', label: 'Новинки', href: '/?tab=new' },
@@ -84,13 +85,30 @@ async function ContinueWatching() {
     );
   }
 
+  // Локальные обложки — одним запросом на весь список. Проверяем ЗДЕСЬ, а не
+  // гадаем в карточке: ссылка на несуществующий файл — это 404 у каждого
+  // незакэшированного тайтла, их и было видно на главной.
+  const localPosters = await getLocalPosterMap(
+    progress.map((p) => ({
+      kind: p.content_type === 'cinema' ? ('cinema' as const) : ('anime' as const),
+      id: p.shikimori_id,
+    })),
+  );
+
   // Горизонтальная карусель: последние просмотренные листаются вбок.
   // Помимо родной полосы прокрутки — колесо мыши и драг (см. ScrollCarousel).
   return (
     <ScrollCarousel className="flex snap-x gap-3 overflow-x-auto pb-2">
       {progress.map((p) => (
         <div key={p.id} className="w-56 shrink-0 snap-start sm:w-72">
-          <ContinueCard progress={p} />
+          <ContinueCard
+            progress={p}
+            localPoster={
+              localPosters.get(
+                `${p.content_type === 'cinema' ? 'cinema' : 'anime'}:${p.shikimori_id}`,
+              ) ?? null
+            }
+          />
         </div>
       ))}
     </ScrollCarousel>
@@ -122,6 +140,10 @@ async function PlannedCarousel() {
   const items = (data ?? []) as UserListItem[];
   if (items.length === 0) return null;
 
+  const localPosters = await getLocalPosterMap(
+    items.map((i) => ({ kind: 'anime' as const, id: i.shikimori_id })),
+  );
+
   return (
     <section className="animate-rise flex flex-col gap-4" style={{ animationDelay: '40ms' }}>
       <h2 className="text-xl font-bold">Вы хотели посмотреть</h2>
@@ -133,6 +155,7 @@ async function PlannedCarousel() {
               shikimoriId={i.shikimori_id}
               title={i.anime_title}
               posterUrl={i.poster_url}
+              localPoster={localPosters.get(`anime:${i.shikimori_id}`) ?? null}
             />
           </div>
         ))}

@@ -6,6 +6,7 @@ import { getTodaysSignupCode } from '@/lib/signupCode';
 import { getVpsRelayEnabled, getKodikPlayerEnabled } from '@/lib/settings';
 import { normalizeTheme } from '@/lib/theme';
 import type { UserListItem, WatchedEpisode } from '@/lib/types';
+import { getLocalPosterMap } from '@/lib/posterCacheServer';
 
 export const metadata = { title: 'Профиль — MediaWatch' };
 
@@ -35,6 +36,20 @@ export default async function ProfilePage() {
 
   const items = (data ?? []) as UserListItem[];
   const historyItems = (history ?? []) as WatchedEpisode[];
+
+  // Ссылки на наши копии обложек — одним запросом на оба списка сразу.
+  // Проверяем ЗДЕСЬ, а не собираем в карточке: ссылка на несуществующий файл
+  // это 404 у каждого тайтла, которого нет в кэше.
+  const localPosters = await getLocalPosterMap([
+    ...items.map((i) => ({
+      kind: i.content_type === 'cinema' ? ('cinema' as const) : ('anime' as const),
+      id: i.shikimori_id,
+    })),
+    ...historyItems.map((h) => ({
+      kind: h.content_type === 'cinema' ? ('cinema' as const) : ('anime' as const),
+      id: h.shikimori_id,
+    })),
+  ]);
   const isAdmin = isAdminEmail(user.email);
   const relayEnabled = isAdmin ? await getVpsRelayEnabled(true) : false;
   const kodikPlayerEnabled = isAdmin ? await getKodikPlayerEnabled(true) : false;
@@ -59,6 +74,7 @@ export default async function ProfilePage() {
       <ProfileTabs
         items={items}
         history={historyItems}
+        localPosters={Object.fromEntries(localPosters)}
         initialTheme={normalizeTheme(themeRow)}
         isAdmin={isAdmin}
         relayEnabled={relayEnabled}

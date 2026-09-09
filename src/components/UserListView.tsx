@@ -10,7 +10,6 @@ import type {
 import { fixPosterUrl } from '@/lib/format';
 import ExpandTitleButton from '@/components/ExpandTitleButton';
 import PosterImage from '@/components/PosterImage';
-import { localPosterUrl } from '@/lib/posterPath';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
 
@@ -41,11 +40,13 @@ const STATUS_LABELS: Record<UserListStatus, string> = {
 /** Карточка тайтла в списке — своё состояние раскрытия названия на каждую. */
 function ListCard({
   item,
+  localPosters,
   selectMode,
   selected,
   onToggleSelect,
 }: {
   item: UserListItem;
+  localPosters: Record<string, string>;
   selectMode: boolean;
   selected: boolean;
   onToggleSelect: () => void;
@@ -57,18 +58,15 @@ function ListCard({
     <>
       <div className="relative aspect-[2/3] w-full overflow-hidden bg-bg-soft">
         {/* Сперва наша копия с диска (миграция 0029), потом сохранённая в
-            базе ссылка. Здесь это не только про скорость: в списке лежат
-            ссылки, записанные в момент добавления тайтла, и часть из них
-            давно отдаёт 404 — у кино это подписанные ссылки на прокси, у
-            аниме постеры, которые Shikimori с тех пор заменил.
-            Флага «есть локально» тут нет (список приходит из своей таблицы,
-            не из индекса), поэтому пробуем оптимистично: промах стоит один
-            быстрый 404 к своему же nginx, а попадание экономит поход
-            наружу. */}
+            базе ссылка. Второе со временем протухает: у кино это подписанные
+            ссылки на прокси, у аниме — постеры, которые Shikimori заменил.
+            Ссылка на копию приходит ГОТОВОЙ с сервера (getLocalPosterMap):
+            собирать её здесь «на удачу» значило бы 404 у каждого тайтла,
+            которого нет в кэше. */}
         {item.poster_url ? (
           <PosterImage
             sources={[
-              localPosterUrl(item.content_type === 'cinema' ? 'cinema' : 'anime', item.shikimori_id),
+              localPosters[`${item.content_type === 'cinema' ? 'cinema' : 'anime'}:${item.shikimori_id}`],
               fixPosterUrl(item.poster_url),
             ]}
             alt={item.anime_title}
@@ -160,9 +158,14 @@ function ListCard({
 
 export default function UserListView({
   items,
+  localPosters = {},
   readOnly = false,
 }: {
   items: UserListItem[];
+  /** Готовые ссылки на наши копии обложек по ключу `${kind}:${id}` — их
+   *  проверяет сервер (getLocalPosterMap). Пусто — карточки работают по
+   *  сохранённым в базе ссылкам, как раньше. */
+  localPosters?: Record<string, string>;
   /** Просмотр чужого списка админом (см. /admin/users/[id]) — без выбора/массовых действий. */
   readOnly?: boolean;
 }) {
@@ -359,6 +362,7 @@ export default function UserListView({
             <ListCard
               key={item.id}
               item={item}
+              localPosters={localPosters}
               selectMode={selectMode}
               selected={selected.has(item.id)}
               onToggleSelect={() => toggleSelect(item.id)}

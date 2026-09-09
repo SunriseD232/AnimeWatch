@@ -15,6 +15,8 @@ import type { Theme } from '@/lib/theme';
 interface Props {
   items: UserListItem[];
   history: WatchedEpisode[];
+  /** Готовые ссылки на наши копии обложек — см. getLocalPosterMap. */
+  localPosters: Record<string, string>;
   /** Тема из БД, прочитанная на сервере (см. ThemeSettings). */
   initialTheme: Theme;
   isAdmin: boolean;
@@ -39,6 +41,7 @@ type Tab = 'list' | 'history' | 'ui' | 'password' | 'admin' | 'code';
 export default function ProfileTabs({
   items,
   history,
+  localPosters,
   initialTheme,
   isAdmin,
   relayEnabled,
@@ -80,8 +83,8 @@ export default function ProfileTabs({
         ))}
       </div>
 
-      {tab === 'list' && <UserListView items={items} />}
-      {tab === 'history' && <HistoryView items={history} />}
+      {tab === 'list' && <UserListView items={items} localPosters={localPosters} />}
+      {tab === 'history' && <HistoryView items={history} localPosters={localPosters} />}
       {tab === 'ui' && <ThemeSettings initialTheme={initialTheme} />}
       {tab === 'password' && <ChangePasswordForm />}
       {tab === 'admin' && isAdmin && (
