@@ -318,3 +318,40 @@ export async function getIndexedTitle(shikimoriId: number): Promise<IndexedTitle
     return null;
   }
 }
+
+/**
+ * Поиск по локальному индексу (миграция 0034).
+ *
+ * Раньше и страница поиска, и подсказки ходили в Shikimori: сотни
+ * миллисекунд на каждое нажатие клавиши, зависимость от доступности чужого
+ * сервиса и никакой устойчивости к опечаткам — он ищет подстрокой.
+ *
+ * Ранжирование живёт в SQL-функции: PostgREST умеет сортировать только по
+ * колонкам, а нужен составной порядок (точное совпадение → начинается с
+ * запроса → содержит → похожесть по триграммам → оценка).
+ *
+ * null — индекса нет или запрос упал: вызывающий откатывается на Shikimori.
+ */
+export async function searchAnimeFromIndex(
+  query: string,
+  limit = 20,
+): Promise<ShikimoriAnimeShort[] | null> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+
+  try {
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc('search_anime_index', { q, lim: limit });
+    if (error || !data) {
+      if (error) console.error('[animeIndexQuery] поиск упал:', error.message);
+      return null;
+    }
+    return (data as unknown as IndexRow[]).map(toShort);
+  } catch (err) {
+    console.error(
+      '[animeIndexQuery] поиск недоступен, откат на Shikimori:',
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+}

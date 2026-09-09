@@ -1,5 +1,8 @@
 'use client';
 
+import { createPortal } from 'react-dom';
+import { useAnchoredPanelFor } from '@/components/useAnchoredPanel';
+
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import type { AdminUserEntry, PresenceSummary } from '@/lib/admin';
@@ -53,6 +56,8 @@ export default function UserPresenceBadge({ onlineCount }: { onlineCount: number
     }
   };
 
+  const { anchorRef, box, measure } = useAnchoredPanelFor<HTMLButtonElement>(open);
+
   const users = summary?.users ?? [];
   const onlineUsers = users.filter((u) => u.online);
   const restUsers = users.filter((u) => !u.online);
@@ -61,7 +66,12 @@ export default function UserPresenceBadge({ onlineCount }: { onlineCount: number
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        onClick={toggle}
+        ref={anchorRef}
+        onClick={() => {
+          // Меряем ДО показа — см. useAnchoredPanel.
+          if (!open) measure();
+          toggle();
+        }}
         aria-haspopup="menu"
         aria-expanded={open}
         className="press flex items-center gap-1.5 rounded-full bg-bg-card px-3 py-1.5 text-xs font-medium text-gray-400 ring-1 ring-white/10 transition hover:text-white"
@@ -70,8 +80,15 @@ export default function UserPresenceBadge({ onlineCount }: { onlineCount: number
         {onlineCount} онлайн
       </button>
 
-      {open && (
-        <div className="glass-panel absolute right-0 z-30 mt-2 w-80 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl border border-white/10 shadow-2xl">
+      {open &&
+        box &&
+        // Портал в body: внутри шапки эта панель размывала бы саму шапку, а
+        // не страницу под собой (см. useAnchoredPanel).
+        createPortal(
+          <div
+            style={{ top: box.top, right: box.right }}
+            className="glass-panel fixed z-50 w-80 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl border border-white/10 shadow-2xl"
+          >
           {loading && !summary ? (
             <p className="px-4 py-6 text-center text-sm text-gray-400">Загрузка…</p>
           ) : (
@@ -99,8 +116,9 @@ export default function UserPresenceBadge({ onlineCount }: { onlineCount: number
               )}
             </div>
           )}
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

@@ -171,12 +171,13 @@ export default async function CinemaCatalogPage({
         /* .catalog-grid — то же, что у аниме: при открытой панели фильтров
            карточки плавно мельчают вместе с колонкой (см. globals.css). */
         <div className="catalog-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-          {data.items.map((item) => (
+          {data.items.map((item, i) => (
             <CinemaCard
               key={item.id}
               item={item}
               currentEpisode={progressMap.get(item.id) ?? null}
               episodesTotal={episodesTotalMap.get(item.id) ?? null}
+              priority={i < 6}
             />
           ))}
         </div>

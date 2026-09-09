@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { searchAnime, imageUrl } from '@/lib/shikimori';
 import { searchCinema } from '@/lib/videoseed-catalog';
 import { getCachedUser } from '@/lib/supabase/server';
+import { searchAnimeFromIndex } from '@/lib/animeIndexQuery';
+import { searchCinemaFromIndex } from '@/lib/cinemaIndexQuery';
 
 export interface SearchSuggestion {
   id: number;
@@ -39,6 +41,39 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Сперва локальный индекс: один запрос к своей базе вместо похода в
+    // Shikimori/Videoseed на каждое нажатие клавиши. null — индекса нет или
+    // он недоступен, тогда работаем по-старому.
+    if (type === 'cinema') {
+      const indexed = await searchCinemaFromIndex(q, 6);
+      if (indexed) {
+        return NextResponse.json({
+          items: indexed.map((item) => ({
+            id: item.id,
+            title: item.title,
+            poster: item.poster,
+            contentType: 'cinema' as const,
+            year: item.year,
+          })),
+        });
+      }
+    } else {
+      const indexed = await searchAnimeFromIndex(q, 6);
+      if (indexed) {
+        return NextResponse.json({
+          items: indexed.map((anime) => ({
+            id: anime.id,
+            title: anime.russian || anime.name,
+            // Обложка с нашего диска, если она там есть (см. миграцию 0029),
+            // иначе превью Shikimori — как и раньше.
+            poster: anime.localPoster ?? imageUrl(anime.image?.preview),
+            contentType: 'anime' as const,
+            year: anime.aired_on ? Number(anime.aired_on.slice(0, 4)) : null,
+          })),
+        });
+      }
+    }
+
     const items: SearchSuggestion[] =
       type === 'cinema'
         ? (await searchCinema(q, 6)).map((item) => ({

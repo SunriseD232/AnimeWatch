@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import SignupCodeCard from '@/components/SignupCodeCard';
 import UserListView from '@/components/UserListView';
@@ -89,6 +90,23 @@ export default function ProfileTabs({
       {tab === 'password' && <ChangePasswordForm />}
       {tab === 'admin' && isAdmin && (
         <div className="flex flex-col gap-4">
+          {/* Ссылка на страницу состояния — единственный вход в неё: сама
+              страница закрыта notFound()'ом для не-админов, и светить её в
+              общей навигации незачем. */}
+          <Link
+            href="/admin/status"
+            className="press flex items-center justify-between gap-3 rounded-2xl bg-bg-card p-4 ring-1 ring-white/5 transition hover:ring-accent/60"
+          >
+            <span>
+              <span className="block text-sm font-semibold text-gray-100">Состояние</span>
+              <span className="block text-xs text-gray-400">
+                Индексы каталогов, рейтинги, кэш обложек — когда обновлялись и чем закончилось
+              </span>
+            </span>
+            <span aria-hidden="true" className="shrink-0 text-accent">
+              →
+            </span>
+          </Link>
           <VibixTrialStatus />
           <RelayToggle initialEnabled={relayEnabled} />
           <KodikPlayerToggle initialEnabled={kodikPlayerEnabled} />

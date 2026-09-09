@@ -27,6 +27,9 @@ export default function PosterImage({
   alt,
   className,
   loading = 'lazy',
+  width,
+  height,
+  priority = false,
   placeholderClassName = 'grid h-full w-full place-items-center text-gray-400',
 }: {
   /** Ссылки по убыванию предпочтительности; пустые и повторы отбрасываются. */
@@ -34,6 +37,17 @@ export default function PosterImage({
   alt: string;
   className?: string;
   loading?: 'lazy' | 'eager';
+  /**
+   * Собственные размеры файла. Вёрстку они здесь не держат — все постеры и
+   * так лежат в боксах с фиксированной пропорцией, и замеренный CLS равен
+   * нулю. Пользы две другие: браузер знает пропорцию до применения CSS и
+   * заранее отводит память под декодирование нужного размера.
+   */
+  width?: number;
+  height?: number;
+  /** true — постер в первом экране: грузим сразу и с высоким приоритетом,
+   *  он почти всегда и есть LCP-элемент страницы. */
+  priority?: boolean;
   placeholderClassName?: string;
 }) {
   const chain = [...new Set(sources.filter((s): s is string => Boolean(s)))];
@@ -74,7 +88,13 @@ export default function PosterImage({
       ref={imgRef}
       src={chain[index]}
       alt={alt}
-      loading={loading}
+      width={width}
+      height={height}
+      loading={priority ? 'eager' : loading}
+      // Декодирование вне основного потока: на сетке из 24 постеров синхронное
+      // декодирование заметно подмораживает прокрутку на слабых телефонах.
+      decoding={priority ? 'sync' : 'async'}
+      fetchPriority={priority ? 'high' : undefined}
       referrerPolicy="no-referrer"
       onError={() => setIndex((i) => i + 1)}
       className={className}

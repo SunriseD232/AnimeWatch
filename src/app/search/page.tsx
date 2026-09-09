@@ -5,12 +5,16 @@ import CinemaCard from '@/components/CinemaCard';
 import { CardGridSkeleton } from '@/components/Skeletons';
 import { searchCinema } from '@/lib/videoseed-catalog';
 import { searchAnime } from '@/lib/shikimori';
+import { searchAnimeFromIndex } from '@/lib/animeIndexQuery';
+import { searchCinemaFromIndex } from '@/lib/cinemaIndexQuery';
 
 export const metadata = { title: 'Поиск — MediaWatch' };
 
 async function AnimeResults({ query }: { query: string }) {
   try {
-    const animes = await searchAnime(query, 20);
+    // Сперва локальный индекс: он и быстрее, и переживает опечатки
+    // (триграммы, см. миграцию 0034). Вернул null — работаем по-старому.
+    const animes = (await searchAnimeFromIndex(query, 20)) ?? (await searchAnime(query, 20));
     if (animes.length === 0) {
       return (
         <p className="text-sm text-gray-400">
@@ -40,7 +44,7 @@ async function AnimeResults({ query }: { query: string }) {
 
 async function CinemaResults({ query }: { query: string }) {
   try {
-    const items = await searchCinema(query, 20);
+    const items = (await searchCinemaFromIndex(query, 20)) ?? (await searchCinema(query, 20));
     if (items.length === 0) {
       return (
         <p className="text-sm text-gray-400">

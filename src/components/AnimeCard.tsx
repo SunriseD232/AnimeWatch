@@ -21,9 +21,13 @@ export default function AnimeCard({
    *  передан, если тайтл ещё не начат: бейдж «X из Y» тогда не рендерится,
    *  см. getEpisodeProgressMap. */
   currentEpisode = null,
+  /** Карточка в первом экране: постер грузится сразу и с высоким
+   *  приоритетом — он почти всегда и есть LCP-элемент страницы. */
+  priority = false,
 }: {
   anime: ShikimoriAnimeShort;
   currentEpisode?: number | null;
+  priority?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -51,6 +55,12 @@ export default function AnimeCard({
           <PosterImage
             sources={[anime.localPoster, poster, imageUrl(anime.image?.preview)]}
             alt={title}
+            // 480x720 — размер, в который мы пережимаем обложки (см.
+            // lib/posterCache.ts). У запасных ссылок размер другой, но бокс
+            // всё равно держит пропорция контейнера.
+            width={480}
+            height={720}
+            priority={priority}
             className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105"
             placeholderClassName="grid h-full w-full place-items-center text-gray-400"
           />

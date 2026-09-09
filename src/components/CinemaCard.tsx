@@ -22,9 +22,13 @@ export default function CinemaCard({
    *  единицы из 24), см. getCinemaEpisodesTotalMap. null — бейдж не рендерится
    *  (тайтл без прогресса, фильм, или подгрузка не удалась — fail-open). */
   episodesTotal = null,
+  /** См. одноимённый проп в AnimeCard. */
+  priority = false,
 }: {
   item: CinemaShort;
   currentEpisode?: number | null;
+  /** См. одноимённый проп в AnimeCard. */
+  priority?: boolean;
   episodesTotal?: number | null;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -57,6 +61,9 @@ export default function CinemaCard({
               Запасная ссылка — тот же постер без ресайза: ресайзер иногда
               спотыкается на битом исходнике, а отдать оригинал может. */}
           <PosterImage
+            width={480}
+            height={720}
+            priority={priority}
             sources={
               // Локальная копия — уже готовый WebP нужной ширины, ей ?w= не
               // нужен (и прокси её не обслуживает). Отличаем по пути: у

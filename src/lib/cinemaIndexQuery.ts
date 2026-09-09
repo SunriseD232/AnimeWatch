@@ -326,3 +326,34 @@ export async function getSimilarFromIndex(
     return null;
   }
 }
+
+/**
+ * Поиск по локальному индексу (миграция 0034) — см. тот же приём в
+ * lib/animeIndexQuery.ts. Для кино выигрыш ещё заметнее: прежний путь ходил
+ * в Videoseed, у которого квота, и делал это на каждое нажатие клавиши.
+ *
+ * null — индекса нет или запрос упал: вызывающий откатывается на Videoseed.
+ */
+export async function searchCinemaFromIndex(
+  query: string,
+  limit = 20,
+): Promise<CinemaShort[] | null> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+
+  try {
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc('search_cinema_index', { q, lim: limit });
+    if (error || !data) {
+      if (error) console.error('[cinemaIndexQuery] поиск упал:', error.message);
+      return null;
+    }
+    return (data as unknown as IndexRow[]).map(toShort);
+  } catch (err) {
+    console.error(
+      '[cinemaIndexQuery] поиск недоступен, откат на Videoseed:',
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+}
