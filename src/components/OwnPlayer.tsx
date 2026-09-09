@@ -158,6 +158,9 @@ const TRACK_PREFS_KEY = 'mediawatch:player-tracks';
 interface TrackPrefs {
   translation: string | null;
   subtitle: string | null;
+  /** Доп. аудиодорожка внутри озвучки — сейчас её отдаёт только Alloha
+   *  (например, оригинал без перевода). null — основная. */
+  audio: string | null;
 }
 
 function readTrackPrefs(): TrackPrefs {
@@ -166,10 +169,11 @@ function readTrackPrefs(): TrackPrefs {
     const parsed = raw ? (JSON.parse(raw) as Partial<TrackPrefs>) : {};
     return {
       translation: typeof parsed.translation === 'string' ? parsed.translation : null,
+      audio: typeof parsed.audio === 'string' ? parsed.audio : null,
       subtitle: typeof parsed.subtitle === 'string' ? parsed.subtitle : null,
     };
   } catch {
-    return { translation: null, subtitle: null };
+    return { translation: null, subtitle: null, audio: null };
   }
 }
 
@@ -792,11 +796,12 @@ export default function OwnPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [episode, season, resumeFrom]);
 
-  // Явно выбранное DASH-качество (Aksor) и доп. аудиодорожка (Alloha) не
-  // переносятся между сериями и сменой озвучки — новый эпизод/дорожка снова
-  // стартует с основного варианта (см. src выше — null означает "без ?q="/
-  // "без ?audio="). Список самих audioTracks НЕ трогаем тут — его обновит
-  // отдельный эффект резолва субтитров/дорожек ниже, когда придёт новый.
+  // Сбрасываем на основной вариант, пока не приехал список дорожек новой
+  // серии: индексы у каждой серии свои, и оставить прежний ЧИСЛОВОЙ индекс
+  // значило бы включить наугад чужую дорожку. Выбор при этом не теряется —
+  // он хранится ПОДПИСЬЮ и восстанавливается эффектом резолва дорожек ниже,
+  // как только придёт новый список. DASH-качество (Aksor) действительно не
+  // переносится: там выбор числовой и завязан на конкретный вариант.
   useEffect(() => {
     setDashQualityHeight(null);
     setAudioTrackIndex(null);
@@ -1252,7 +1257,22 @@ export default function OwnPlayer({
         // серии свои, а подпись стабильна. Не нашли сохранённую — выключаем
         // субтитры и предупреждаем: продолжать серию без них молча, когда
         // человек их специально включил, хуже, чем сказать вслух.
-        const want = readTrackPrefs().subtitle;
+        const prefs = readTrackPrefs();
+
+        // Доп. аудиодорожку переносим ТАК ЖЕ, как субтитры, — по подписи.
+        // Раньше она сбрасывалась на основную при каждой смене серии: индекс
+        // у каждой серии свой, а по индексу переносить нельзя. Подпись
+        // («Оригинал», «(Russian) ...») стабильна, по ней и ищем. Не нашли —
+        // остаёмся на основной, это осмысленный запасной вариант, в отличие
+        // от субтитров, где молчаливое выключение хуже предупреждения.
+        const tracks = Array.isArray(data.audioTracks) ? data.audioTracks : [];
+        const wantAudio = prefs.audio;
+        if (wantAudio) {
+          const audioIdx = tracks.findIndex((t) => t.label === wantAudio);
+          setAudioTrackIndex(audioIdx >= 0 ? audioIdx : null);
+        }
+
+        const want = prefs.subtitle;
         if (!want) {
           setActiveSubtitleIndex(null);
           return;
@@ -1997,9 +2017,13 @@ export default function OwnPlayer({
     (index: number | null) => {
       logEvent('player.change_audio_track', { source: effectiveSource, shikimoriId, season, episode, index });
       seekTargetRef.current = currentTime > 1 ? currentTime : resumeFrom;
+      // Запоминаем по подписи — переживёт смену серии (см. эффект резолва
+      // дорожек выше). null («Основная») тоже запоминаем: иначе возврат на
+      // основную отменялся бы на следующей же серии.
+      storeTrackPrefs({ audio: index != null ? (audioTracks[index]?.label ?? null) : null });
       setAudioTrackIndex(index);
     },
-    [currentTime, resumeFrom, effectiveSource, shikimoriId, season, episode],
+    [currentTime, resumeFrom, effectiveSource, shikimoriId, season, episode, audioTracks],
   );
 
   const changeSpeed = useCallback((rate: number) => {
