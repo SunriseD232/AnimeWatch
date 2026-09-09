@@ -23,7 +23,11 @@ export const metadata = { title: 'Каталог аниме — MediaWatch' };
 // покрывает потолок MAX_CATALOG_CANDIDATES при троттлере 5 rps.
 export const maxDuration = 60;
 
-const PAGE_SIZE = 24;
+// 30 — пять полных рядов по шесть колонок. Было 24 (четыре ряда): при
+// открытом фильтре колонка сужается и карточки мельчают, экран вмещает
+// больше, и страница из четырёх рядов заканчивалась заметно раньше, чем
+// хотелось листать. Кратно шести, поэтому последний ряд всегда полный.
+const PAGE_SIZE = 30;
 const DEFAULT_SORT: AnimeCatalogSort = 'aired_on';
 
 function isValidSort(value: string | undefined): value is AnimeCatalogSort {

@@ -41,12 +41,19 @@ async function CatalogFilters({ children }: { children: React.ReactNode }) {
       <CatalogArea
         genres={options}
         header={
-          <div className="flex items-center justify-between gap-3">
+          <>
+            {/* ModeSwitch внутри сужаемой области, а не над ней: при открытом
+                фильтре вся колонка каталога становится уже, и переключатель
+                обязан сужаться вместе с сеткой — иначе они расходятся по
+                ширине, и это читается как сбитое выравнивание. */}
+            <ModeSwitch active="anime" />
+            <div className="flex items-center justify-between gap-3">
             {/* Подсказка про клики переехала внутрь панели фильтров, к самим
                 чекбоксам: сверху она объясняла то, чего на экране уже нет. */}
-            <h1 className="text-xl font-bold">Каталог аниме</h1>
-            <CatalogMobileTrigger />
-          </div>
+              <h1 className="text-xl font-bold">Каталог аниме</h1>
+              <CatalogMobileTrigger />
+            </div>
+          </>
         }
       >
         <div className="order-1">
@@ -67,14 +74,19 @@ export default function CatalogLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-6">
-      <ModeSwitch active="anime" />
-
-      {/* Suspense — из-за useSearchParams внутри провайдера: без него сборка
-          падает на пререндере. Заодно закрывает и await за жанрами. */}
-      <Suspense fallback={<div className="h-32 animate-pulse rounded-2xl bg-bg-card" />}>
-        <CatalogFilters>{children}</CatalogFilters>
-      </Suspense>
-    </div>
+    // Suspense — из-за useSearchParams внутри провайдера: без него сборка
+    // падает на пререндере. Заодно закрывает и await за жанрами. Заглушка
+    // включает полосу ModeSwitch: он теперь рисуется внутри, и без неё при
+    // загрузке страница дёргалась бы на его высоту.
+    <Suspense
+      fallback={
+        <div className="flex flex-col gap-6">
+          <div className="h-11 animate-pulse rounded-full bg-bg-card" />
+          <div className="h-32 animate-pulse rounded-2xl bg-bg-card" />
+        </div>
+      }
+    >
+      <CatalogFilters>{children}</CatalogFilters>
+    </Suspense>
   );
 }
