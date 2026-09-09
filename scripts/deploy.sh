@@ -31,7 +31,22 @@ REL_DIST=".releases/$STAMP"
 BUILD_DIR="$ROOT/$REL_DIST"
 
 echo "==> git pull origin main"
+BEFORE="$(git rev-parse HEAD)"
 git pull origin main
+AFTER="$(git rev-parse HEAD)"
+
+# Скрипт обновляет сам себя. Bash читает файл ПО МЕРЕ выполнения, и подмена
+# на лету даёт в лучшем случае старое поведение, в худшем — выполнение
+# случайного куска нового файла со сдвигом по смещению. Наступил на это
+# вживую: первый прогон после правки молча отработал прежней версией.
+# Поэтому: если pull что-то принёс и файл изменился — перезапускаем себя
+# заново уже новым содержимым, ровно один раз (флаг через переменную).
+if [ "$BEFORE" != "$AFTER" ] && [ "${DEPLOY_REEXECED:-}" != "1" ]; then
+  if ! git diff --quiet "$BEFORE" "$AFTER" -- "$0"; then
+    echo "==> скрипт деплоя обновился — перезапускаю себя новой версией"
+    DEPLOY_REEXECED=1 exec bash "$0" "$@"
+  fi
+fi
 
 echo "==> npm ci"
 npm ci
