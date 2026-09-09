@@ -7,7 +7,8 @@ import { fixPosterUrl } from '@/lib/format';
 
 /**
  * Строка каталога в списочном виде: постер слева, справа название, строка
- * характеристик и описание.
+ * характеристик и описание. Одна и та же для аниме и для кино — отличаются
+ * только подписи в строке характеристик и куда ведёт ссылка (`href`).
  *
  * Клиентский компонент из-за одной вещи — кнопки «ещё…». Влезло описание или
  * нет, известно только после верстки в браузере: зависит от ширины окна,
@@ -16,7 +17,11 @@ import { fixPosterUrl } from '@/lib/format';
  */
 export interface ListRowAnime {
   id: number;
+  /** Куда ведёт карточка: /anime/<id> или /cinema/<id>. */
+  href: string;
   title: string;
+  /** Запасная ссылка на постер, если основная не открылась. */
+  posterFallback?: string | null;
   poster: string | null;
   kindLabel: string | null;
   statusLabel: string | null;
@@ -61,14 +66,14 @@ export default function AnimeListRow({ anime }: { anime: ListRowAnime }) {
           перебивала aspect-[3/4], и при раскрытии описания кнопкой «ещё…»
           постер вытягивался вертикально, а object-cover срезал его по бокам. */}
       <Link
-        href={`/anime/${anime.id}`}
+        href={anime.href}
         className="press relative aspect-[3/4] w-24 shrink-0 self-start overflow-hidden rounded-xl bg-bg-soft sm:w-28"
       >
         {/* Тот же компонент с запасными ссылками, что и у карточек-плиток:
             битая картинка вместо постера выглядит хуже, чем подпись
             «нет постера». */}
         <PosterImage
-          sources={[poster]}
+          sources={[poster, fixPosterUrl(anime.posterFallback ?? null)]}
           alt={anime.title}
           className="absolute inset-0 h-full w-full object-cover"
           placeholderClassName="grid h-full w-full place-items-center text-center text-xs text-gray-500"
@@ -78,7 +83,7 @@ export default function AnimeListRow({ anime }: { anime: ListRowAnime }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-start justify-between gap-3">
           <Link
-            href={`/anime/${anime.id}`}
+            href={anime.href}
             className="line-clamp-2 font-semibold text-gray-100 transition hover:text-accent"
           >
             {anime.title}

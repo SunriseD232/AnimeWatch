@@ -34,10 +34,11 @@ interface IndexRow {
   poster: string | null;
   rating: number | null;
   poster_local: boolean | null;
+  description: string | null;
 }
 
 const SELECT_COLUMNS =
-  'kp_id, title, original_title, kind, is_serial, year, poster, rating, poster_local';
+  'kp_id, title, original_title, kind, is_serial, year, poster, rating, poster_local, description';
 
 /** `{a,b}` — литерал массива Postgres, его ждут операторы `cs`/`ov`. */
 function pgArray(values: (number | string)[]): string {
@@ -83,6 +84,7 @@ function toShort(row: IndexRow): CinemaShort {
     kind: cinemaKindLabel(row.kind),
     isSerial: row.is_serial,
     rating: row.rating !== null ? Number(row.rating) : null,
+    description: row.description,
   };
 }
 
@@ -196,7 +198,10 @@ async function queryIndex(params: CinemaIndexParams): Promise<CinemaIndexPage | 
       query = query.order('rating_weighted', { ascending: false, nullsFirst: false });
       break;
     case 'name':
-      query = query.order('title', { ascending: true, nullsFirst: false });
+      // По ключу сортировки, а не по сырому названию (миграция 0032):
+      // коллация Postgres ставит пунктуацию перед буквами, и первую страницу
+      // занимали «- Ишь ты, Масленица!», «¡Ay, mi madre!», «... и в бедности».
+      query = query.order('title_sort', { ascending: true, nullsFirst: false });
       break;
     default:
       // «Сначала новые» — по ГОДУ выпуска, а не по дате появления записи у

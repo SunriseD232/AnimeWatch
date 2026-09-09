@@ -90,7 +90,11 @@ export default function RootLayout({
             >
               <Navbar />
             </Suspense>
-            <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
+            {/* Запас снизу под нижний док на телефоне (MobileDock): он
+                fixed, то есть контент под ним иначе не докручивается. */}
+            <main className="mx-auto max-w-6xl px-4 pb-[calc(4.75rem+env(safe-area-inset-bottom))] pt-6 md:pb-6">
+              {children}
+            </main>
           </PipPlayerHost>
         </ToastProvider>
       </body>

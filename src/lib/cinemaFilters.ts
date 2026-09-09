@@ -121,4 +121,7 @@ export const CINEMA_FILTER_CONFIG: CatalogFilterConfig = {
   ],
   sorts: CINEMA_SORTS,
   defaultSort: CINEMA_DEFAULT_SORT,
+  // Списочный вид — тот же, что у аниме: описания в индексе есть у 84 тысяч
+  // тайтлов из 93, и плиткой они не показываются вовсе.
+  showViewSwitch: true,
 };

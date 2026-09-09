@@ -9,6 +9,8 @@ import type {
 } from '@/lib/types';
 import { fixPosterUrl } from '@/lib/format';
 import ExpandTitleButton from '@/components/ExpandTitleButton';
+import PosterImage from '@/components/PosterImage';
+import { localPosterUrl } from '@/lib/posterPath';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
 
@@ -54,16 +56,24 @@ function ListCard({
   const body = (
     <>
       <div className="relative aspect-[2/3] w-full overflow-hidden bg-bg-soft">
+        {/* Сперва наша копия с диска (миграция 0029), потом сохранённая в
+            базе ссылка. Здесь это не только про скорость: в списке лежат
+            ссылки, записанные в момент добавления тайтла, и часть из них
+            давно отдаёт 404 — у кино это подписанные ссылки на прокси, у
+            аниме постеры, которые Shikimori с тех пор заменил.
+            Флага «есть локально» тут нет (список приходит из своей таблицы,
+            не из индекса), поэтому пробуем оптимистично: промах стоит один
+            быстрый 404 к своему же nginx, а попадание экономит поход
+            наружу. */}
         {item.poster_url ? (
-          // <img> + no-referrer: хотлинк-защита Shikimori/Кинопоиска
-          // (next/image через серверный прокси терял картинки).
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={fixPosterUrl(item.poster_url)!}
+          <PosterImage
+            sources={[
+              localPosterUrl(item.content_type === 'cinema' ? 'cinema' : 'anime', item.shikimori_id),
+              fixPosterUrl(item.poster_url),
+            ]}
             alt={item.anime_title}
-            loading="lazy"
-            referrerPolicy="no-referrer"
             className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105"
+            placeholderClassName="grid h-full w-full place-items-center text-gray-400"
           />
         ) : (
           <div className="grid h-full w-full place-items-center text-gray-400">

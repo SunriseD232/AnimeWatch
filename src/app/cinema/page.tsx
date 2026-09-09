@@ -102,7 +102,7 @@ async function ContinueWatching() {
   // Горизонтальная карусель: последние просмотренные листаются вбок.
   // Помимо родной полосы прокрутки — колесо мыши и драг (см. ScrollCarousel).
   return (
-    <ScrollCarousel className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2">
+    <ScrollCarousel className="-mx-4 flex snap-x scroll-px-4 gap-3 overflow-x-auto px-4 pb-2">
       {progress.map((p) => (
         <div key={p.id} className="w-56 shrink-0 snap-start sm:w-72">
           <ContinueCard progress={p} isMultiSeason={(seasonCountMap.get(p.shikimori_id) ?? 0) > 1} />
@@ -136,9 +136,9 @@ async function PlannedCarousel() {
   return (
     <section className="animate-rise flex flex-col gap-4" style={{ animationDelay: '40ms' }}>
       <h2 className="text-xl font-bold">Вы хотели посмотреть</h2>
-      <ScrollCarousel className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2">
+      <ScrollCarousel className="-mx-4 flex snap-x scroll-px-4 gap-3 overflow-x-auto px-4 pb-2">
         {items.map((i) => (
-          <div key={i.id} className="w-40 shrink-0 snap-start sm:w-48">
+          <div key={i.id} className="w-28 shrink-0 snap-start sm:w-[134px]">
             <PlannedCard
               contentType="cinema"
               shikimoriId={i.shikimori_id}

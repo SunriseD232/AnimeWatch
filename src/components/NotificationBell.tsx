@@ -101,6 +101,22 @@ export default function NotificationBell({
       .eq('id', notification.id);
   }
 
+  /**
+   * Убрать одно уведомление. Оптимистично: строка исчезает сразу, запрос
+   * уходит следом — ждать ответа ради удаления мелочи из списка незачем.
+   * Не удалилось (нет сети) — вернётся при следующей загрузке страницы, это
+   * честнее, чем блокировать интерфейс на время запроса.
+   */
+  async function dismiss(notification: AppNotification) {
+    setItems((prev) => prev.filter((n) => n.id !== notification.id));
+    const supabase = createClient();
+    const { error } = await supabase
+      .from(tableFor(notification.kind))
+      .delete()
+      .eq('id', notification.id);
+    if (error) console.error('[NotificationBell] не удалилось:', error.message);
+  }
+
   async function markAllRead() {
     const unreadItems = items.filter((n) => !n.read_at);
     if (unreadItems.length === 0) return;
@@ -152,7 +168,13 @@ export default function NotificationBell({
       </button>
 
       {open && (
-        <div className="absolute right-0 z-30 mt-2 w-80 max-w-[90vw] overflow-hidden rounded-2xl border border-white/10 bg-bg-card shadow-2xl">
+        <div
+          // max-w от ширины окна, а не 90vw: на телефоне колокольчик стоит
+          // не у самого края, и список шириной 90vw уезжал левым краем за
+          // границу экрана. Здесь ширина ограничена так, чтобы между списком
+          // и краями оставалось по 12px, откуда бы он ни открывался.
+          className="glass absolute right-0 z-30 mt-2 w-80 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl border border-white/10 shadow-2xl"
+        >
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
             <span className="text-sm font-semibold">Уведомления</span>
             {unread > 0 && (
@@ -174,8 +196,8 @@ export default function NotificationBell({
             ) : (
               items.map((n) =>
                 n.kind === 'system' ? (
+                  <div key={n.id} className="group relative">
                   <button
-                    key={n.id}
                     type="button"
                     onClick={() => markRead(n)}
                     className={[
@@ -199,9 +221,11 @@ export default function NotificationBell({
                       <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-accent" />
                     )}
                   </button>
+                  <DismissButton onClick={() => dismiss(n)} />
+                  </div>
                 ) : (
+                  <div key={n.id} className="group relative">
                   <Link
-                    key={n.id}
                     href={`/${n.content_type === 'cinema' ? 'cinema' : 'anime'}/${n.shikimori_id}`}
                     onClick={() => {
                       setOpen(false);
@@ -238,6 +262,8 @@ export default function NotificationBell({
                       <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-accent" />
                     )}
                   </Link>
+                  <DismissButton onClick={() => dismiss(n)} />
+                  </div>
                 ),
               )
             )}
@@ -245,5 +271,34 @@ export default function NotificationBell({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Крестик «убрать это уведомление».
+ *
+ * Отдельным элементом ПОВЕРХ строки, а не внутри неё: строка уведомления —
+ * это ссылка (или кнопка «прочитано»), и вложенная кнопка внутри ссылки —
+ * невалидная разметка, по которой браузеры расходятся в поведении клика.
+ *
+ * На мыши появляется по наведению, на тач-экранах виден всегда: hover там
+ * не существует, и спрятанный за ним крестик был бы недоступен вовсе.
+ *
+ * Снизу справа, а не сверху: сверху справа стоит точка «не прочитано», и
+ * крестик её перекрывал бы. Внизу справа пусто — время публикации слева.
+ */
+function DismissButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Убрать уведомление"
+      title="Убрать"
+      className="press absolute bottom-1.5 right-1.5 grid h-6 w-6 place-items-center rounded-full bg-bg-card/80 text-gray-400 opacity-100 transition hover:bg-white/10 hover:text-white md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+    >
+      <svg viewBox="0 0 20 20" aria-hidden="true" className="h-3.5 w-3.5 fill-none stroke-current stroke-2">
+        <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" strokeLinecap="round" />
+      </svg>
+    </button>
   );
 }

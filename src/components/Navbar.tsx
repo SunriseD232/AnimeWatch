@@ -3,6 +3,7 @@ import { createClient, getCachedUser } from '@/lib/supabase/server';
 import { getOnlineUserCount, isAdminEmail } from '@/lib/admin';
 import CalendarLink from './CalendarLink';
 import NotificationBell from './NotificationBell';
+import MobileDock from './MobileDock';
 import SearchBox from './SearchBox';
 import SiteLogoLink from './SiteLogoLink';
 import TipsLink from './TipsLink';
@@ -51,12 +52,13 @@ export default async function Navbar() {
     );
   }
 
+  // pt с безопасной зоной — на самой шапке, а не на body: липкая шапка
+  // прилипает к нулю вьюпорта, и с отступом на body её содержимое при
+  // прокрутке уезжало под часы и заряд на iPhone. Своим фоном она эту зону
+  // закрывает, а контент внутри остаётся ниже выреза.
   return (
-    // pt с безопасной зоной — на самой шапке, а не на body: липкая шапка
-    // прилипает к нулю вьюпорта, и с отступом на body её содержимое при
-    // прокрутке уезжало под часы и заряд на iPhone. Своим фоном она эту
-    // зону закрывает, а контент внутри остаётся ниже выреза.
-    <header className="glass sticky top-0 z-40 border-b border-white/[0.06] pt-[env(safe-area-inset-top)]">
+    <>
+      <header className="glass sticky top-0 z-40 border-b border-white/[0.06] pt-[env(safe-area-inset-top)]">
       <nav className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
         <SiteLogoLink />
 
@@ -73,14 +75,35 @@ export default async function Navbar() {
                 <UserPresenceBadge onlineCount={onlineCount} />
               </div>
             )}
-            <CalendarLink />
-            <TipsLink />
+            {/* Календарь и подсказки — со всех экранов кроме самых узких:
+                на телефоне их место занял поиск, а сами они доступны из
+                профиля. */}
+            <div className="hidden md:flex md:items-center md:gap-1">
+              <CalendarLink />
+              <TipsLink />
+            </div>
             <NotificationBell initial={notifications} />
+            {/* Иконка вместо слова: подпись «Профиль» занимала в шапке
+                больше места, чем колокольчик с календарём вместе взятые, а
+                человечек читается без пояснений. На телефоне ссылки тут нет
+                вовсе — профиль переехал в нижний док (MobileDock). */}
             <Link
               href="/profile"
-              className="press rounded-full px-3 py-2 text-sm text-gray-300 transition hover:bg-white/5 hover:text-white"
+              aria-label="Профиль"
+              title="Профиль"
+              className="press hidden h-9 w-9 place-items-center rounded-full text-gray-300 transition hover:bg-white/5 hover:text-white md:grid"
             >
-              Профиль
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className="h-5 w-5 fill-none stroke-current"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="8" r="3.5" />
+                <path d="M4.5 20a7.5 7.5 0 0 1 15 0" />
+              </svg>
             </Link>
           </div>
         ) : (
@@ -101,6 +124,11 @@ export default async function Navbar() {
           </div>
         )}
       </nav>
-    </header>
+      </header>
+
+      {/* Нижний док — только вошедшим и только на телефоне: гостю на форме
+        входа некуда по нему ходить. */}
+      {user && <MobileDock />}
+    </>
   );
 }

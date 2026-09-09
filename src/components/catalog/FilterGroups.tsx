@@ -4,6 +4,7 @@ import Checkbox from '@/components/Checkbox';
 import TriStateCheckbox from '@/components/catalog/TriStateCheckbox';
 import { EMPTY_TRI, type FilterOptionDef, type RangeGroupDef, type TriGroupDef } from '@/lib/catalogFilters';
 import { useCatalogFilters } from '@/components/catalog/CatalogFilterProvider';
+import SortDropdown from '@/components/catalog/SortDropdown';
 
 /**
  * Кирпичики панели фильтров, общие для десктопной раскрывающейся панели
@@ -174,29 +175,17 @@ const SORT_ICONS: Record<string, React.ReactNode> = {
 export function SortSelect() {
   const { sort, apply, config } = useCatalogFilters();
 
+  // Слово «Сортировка:» убрано: подпись занимала полстроки тулбара, повторяя
+  // то, что и так написано в самом контроле. Значок текущей сортировки въехал
+  // ВНУТРЬ кнопки — раньше он висел снаружи нативного select и не нажимался,
+  // хотя выглядел его частью.
   return (
-    // Слово «Сортировка:» заменено иконкой текущей сортировки: подпись
-    // занимала полстроки тулбара, повторяя то, что и так написано в самом
-    // селекте. Название сортировки при этом осталось на месте — видно, что
-    // выбрано, без раскрытия списка. Иконка вне <select> потому, что
-    // разметку внутри <option> браузеры не рисуют.
-    <label className="flex items-center gap-2 text-sm text-gray-400">
-      <span className="sr-only">Сортировка</span>
-      <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4 shrink-0">
-        {SORT_ICONS[sort]}
-      </svg>
-      <select
-        value={sort}
-        onChange={(e) => apply({ sort: e.target.value })}
-        className="rounded-lg bg-bg-soft px-3 py-1.5 text-sm text-gray-100 outline-none focus:ring-1 focus:ring-accent"
-      >
-        {config.sorts.map((s) => (
-          <option key={s.value} value={s.value}>
-            {s.label}
-          </option>
-        ))}
-      </select>
-    </label>
+    <SortDropdown
+      value={sort}
+      options={config.sorts}
+      icons={SORT_ICONS}
+      onChange={(value) => apply({ sort: value })}
+    />
   );
 }
 

@@ -1,4 +1,5 @@
 import CinemaCard from '@/components/CinemaCard';
+import AnimeListRow from '@/components/catalog/AnimeListRow';
 import Pagination from '@/components/Pagination';
 import { getCinemaCatalog, getCinemaEpisodesTotalMap } from '@/lib/videoseed-catalog';
 import { getEpisodeProgressMap } from '@/lib/watch/progressMap';
@@ -9,12 +10,15 @@ import {
   parseCinemaSort,
 } from '@/lib/cinemaFilters';
 import {
+  COMMON_PARAM,
   buildQuery,
   hasAnyFilter,
   parseFilters,
+  parseView,
   triIds,
   triValues,
   type CatalogFilters,
+  type CatalogView,
 } from '@/lib/catalogFilters';
 
 export const metadata = { title: 'Каталог кино — MediaWatch' };
@@ -36,8 +40,13 @@ function toSearchParams(raw: Record<string, string | string[] | undefined>): URL
   return params;
 }
 
-function pageHref(filters: CatalogFilters, sort: string, page: number): string {
-  const qs = buildQuery(filters, CINEMA_FILTER_CONFIG, { sort, page });
+function pageHref(
+  filters: CatalogFilters,
+  sort: string,
+  page: number,
+  view: CatalogView,
+): string {
+  const qs = buildQuery(filters, CINEMA_FILTER_CONFIG, { sort, page, view });
   return qs ? `/cinema/catalog?${qs}` : '/cinema/catalog';
 }
 
@@ -51,6 +60,7 @@ export default async function CinemaCatalogPage({
   const sort = parseCinemaSort(params.get(CINEMA_PARAM.sort));
   const pageParam = Number(params.get(CINEMA_PARAM.page));
   const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
+  const view = parseView(params.get(COMMON_PARAM.view));
 
   const genres = triIds(filters, 'genres');
   const countries = triIds(filters, 'countries');
@@ -132,23 +142,50 @@ export default async function CinemaCatalogPage({
 
   return (
     <div className="flex flex-col gap-6">
-      {/* .catalog-grid — то же, что у аниме: при открытой панели фильтров
-          карточки плавно мельчают вместе с колонкой (см. globals.css). */}
-      <div className="catalog-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-        {data.items.map((item) => (
-          <CinemaCard
-            key={item.id}
-            item={item}
-            currentEpisode={progressMap.get(item.id) ?? null}
-            episodesTotal={episodesTotalMap.get(item.id) ?? null}
-          />
-        ))}
-      </div>
+      {view === 'list' ? (
+        // Тот же компонент строки, что у аниме: отличаются только подписи в
+        // строке характеристик и куда ведёт ссылка.
+        <div className="flex flex-col gap-3">
+          {data.items.map((item) => (
+            <AnimeListRow
+              key={item.id}
+              anime={{
+                id: item.id,
+                href: `/cinema/${item.id}`,
+                title: item.title,
+                poster: item.poster,
+                posterFallback: item.posterFallback ?? null,
+                kindLabel: item.kind,
+                // Статуса у кино нет как понятия: Videoseed не сообщает,
+                // идёт сериал или закончился (см. lib/videoseed-catalog.ts).
+                statusLabel: null,
+                year: item.year,
+                episodesLabel: null,
+                score: item.rating !== null ? item.rating.toFixed(1) : null,
+                description: item.description ?? null,
+              }}
+            />
+          ))}
+        </div>
+      ) : (
+        /* .catalog-grid — то же, что у аниме: при открытой панели фильтров
+           карточки плавно мельчают вместе с колонкой (см. globals.css). */
+        <div className="catalog-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+          {data.items.map((item) => (
+            <CinemaCard
+              key={item.id}
+              item={item}
+              currentEpisode={progressMap.get(item.id) ?? null}
+              episodesTotal={episodesTotalMap.get(item.id) ?? null}
+            />
+          ))}
+        </div>
+      )}
 
       <Pagination
         page={page}
-        prevHref={page > 1 ? pageHref(filters, sort, page - 1) : null}
-        nextHref={data.hasMore ? pageHref(filters, sort, page + 1) : null}
+        prevHref={page > 1 ? pageHref(filters, sort, page - 1, view) : null}
+        nextHref={data.hasMore ? pageHref(filters, sort, page + 1, view) : null}
       />
     </div>
   );

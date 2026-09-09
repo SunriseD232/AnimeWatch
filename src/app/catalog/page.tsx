@@ -133,6 +133,7 @@ export default async function CatalogPage({
               key={a.id}
               anime={{
                 id: a.id,
+                href: `/anime/${a.id}`,
                 title: a.russian || a.name,
                 poster: a.image.original || a.image.preview || null,
                 kindLabel: kindLabel(a.kind),

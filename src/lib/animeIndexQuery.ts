@@ -205,7 +205,9 @@ async function queryIndex(params: AnimeCatalogParams): Promise<AnimeCatalogPage 
       query = query.order('popularity_rank', { ascending: true, nullsFirst: false });
       break;
     case 'name':
-      query = query.order('russian', { ascending: true, nullsFirst: false });
+      // По ключу сортировки, а не по сырому названию (миграция 0032):
+      // коллация Postgres ставит пунктуацию и цифры перед буквами.
+      query = query.order('title_sort', { ascending: true, nullsFirst: false });
       break;
     default:
       query = query.order('aired_on', { ascending: false, nullsFirst: false });

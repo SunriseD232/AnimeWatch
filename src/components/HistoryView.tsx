@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import type { WatchedEpisode } from '@/lib/types';
 import { fixPosterUrl, formatDateTime } from '@/lib/format';
+import PosterImage from '@/components/PosterImage';
+import { localPosterUrl } from '@/lib/posterPath';
 
 export default function HistoryView({ items }: { items: WatchedEpisode[] }) {
   if (items.length === 0) {
@@ -27,14 +29,17 @@ export default function HistoryView({ items }: { items: WatchedEpisode[] }) {
           className="card-lift flex items-center gap-3 rounded-xl bg-bg-card p-2.5 ring-1 ring-white/5 hover:ring-accent/60"
         >
           <div className="relative h-16 w-11 shrink-0 overflow-hidden rounded-lg bg-bg-soft">
+            {/* Сперва наша копия с диска — см. тот же приём в UserListView:
+                сохранённые в базе ссылки со временем протухают. */}
             {ep.poster_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={fixPosterUrl(ep.poster_url)!}
+              <PosterImage
+                sources={[
+                  localPosterUrl(ep.content_type === 'cinema' ? 'cinema' : 'anime', ep.shikimori_id),
+                  fixPosterUrl(ep.poster_url),
+                ]}
                 alt=""
-                loading="lazy"
-                referrerPolicy="no-referrer"
                 className="absolute inset-0 h-full w-full object-cover"
+                placeholderClassName="h-full w-full"
               />
             ) : null}
           </div>

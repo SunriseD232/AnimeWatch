@@ -31,6 +31,14 @@ const SETTLE_DELAY_MS = 650;
  * отпускание мыши над карточкой после настоящего перетаскивания открывало бы
  * её как обычный клик.
  */
+/**
+ * ВАЖНО про выравнивание: у карусели с scroll-snap ОБЯЗАН быть scroll-px,
+ * равный её px. Иначе браузер приклеивает первую карточку к началу
+ * прокручиваемой области, а она не учитывает padding — карусель молча
+ * оказывается прокрученной ровно на величину отступа, и первая карточка
+ * начинается не от линии заголовка, а от края экрана. Именно это и
+ * происходило: scrollLeft = 16 при padding-left = 16.
+ */
 export default function ScrollCarousel({ children, className }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const drag = useRef<{ startX: number; scrollLeft: number; pointerId: number } | null>(

@@ -144,7 +144,11 @@ export default function SearchBox() {
             );
           }
         }}
-        placeholder={isCinema ? 'Поиск фильмов и сериалов…' : 'Поиск аниме…'}
+        // Одно слово: раздел и так виден по переключателю над выдачей, а на
+        // телефоне «Поиск фильмов и сериалов…» не помещался в поле и
+        // обрезался многоточием посреди слова. Полная формулировка осталась
+        // в aria-label — для экранного диктора контекст важнее краткости.
+        placeholder="Поиск"
         aria-label={isCinema ? 'Поиск фильмов и сериалов' : 'Поиск аниме'}
         role="combobox"
         aria-expanded={showDropdown}
@@ -157,7 +161,7 @@ export default function SearchBox() {
         <ul
           id="search-suggestions"
           role="listbox"
-          className="absolute z-30 mt-2 w-full overflow-hidden rounded-2xl border border-white/10 bg-bg-card shadow-2xl"
+          className="glass absolute z-30 mt-2 w-full overflow-hidden rounded-2xl border border-white/10 shadow-2xl"
         >
           {suggestions.map((s, i) => (
             <li key={`${s.contentType}:${s.id}`} role="option" aria-selected={i === activeIndex}>
