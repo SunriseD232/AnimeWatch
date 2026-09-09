@@ -2,8 +2,8 @@
 
 import { useEffect, useRef } from 'react';
 import {
-  FILTERS_SIDE_BREAKPOINT,
   FiltersPanel,
+  filtersFitInMargin,
 } from '@/components/catalog/CatalogDesktopFilters';
 import { useCatalogFilters } from '@/components/catalog/CatalogFilterProvider';
 import type { FilterOptionDef } from '@/lib/animeFilters';
@@ -14,15 +14,15 @@ import type { FilterOptionDef } from '@/lib/animeFilters';
  *
  * Панель ВСЕГДА слева от выдачи. Меняется только то, откуда она берёт место:
  *
- *  - от 1920px — из поля страницы. Контент прижат к центру и не шире 1152px,
- *    так что слева остаётся 384px при нужных 228 (208 панель + 20 отступ).
- *    Панель absolute, в раскладке не участвует: выдача остаётся во всю ширину,
- *    карточки не меняются вовсе.
- *  - уже 1920px — настоящей колонкой внутри контента. Поля не хватает: при
- *    1536 (это FullHD при масштабе 125%) слева всего 192px. Колонка отнимает
- *    ширину у выдачи, и карточки честно мельчают — это и есть «места нет,
- *    поэтому уменьшаем». Раскрываться вниз, над выдачей, панель больше не
- *    умеет: её место — сбоку.
+ *  - от 1745x890 — из поля страницы. Контент прижат к центру и не шире
+ *    1152px, так что слева остаётся 296px при нужных 228 (208 панель + 20
+ *    отступ). Панель absolute, в раскладке не участвует: выдача остаётся во
+ *    всю ширину, карточки не меняются вовсе.
+ *  - меньше по любой из сторон — настоящей колонкой внутри контента. Поля не
+ *    хватает: при 1536 (это FullHD при масштабе 125%) слева всего 192px.
+ *    Колонка отнимает ширину у выдачи, и карточки честно мельчают — это и
+ *    есть «места нет, поэтому уменьшаем». Раскрываться в поток над выдачей
+ *    панель больше не умеет: её место — сбоку.
  *
  * Пара «панель + выдача» вместе занимает всю ширину контейнера, а он прижат
  * к центру страницы — то есть центрируются они именно вместе, как одно целое,
@@ -57,7 +57,7 @@ export default function CatalogArea({
       // страницы. Когда она занимает собственную колонку, это обычный
       // раскрытый блок, и захлопывать его от клика по странице — неожиданно:
       // ничего ведь не перекрыто.
-      if (window.innerWidth < FILTERS_SIDE_BREAKPOINT) return;
+      if (!filtersFitInMargin()) return;
       if (!rootRef.current?.contains(e.target as Node)) setFiltersOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
@@ -92,7 +92,7 @@ export default function CatalogArea({
               так что на sticky это не влияет. */}
           <aside
             aria-hidden={!filtersOpen}
-            className={`hidden shrink-0 transition-[width,margin-right] duration-[420ms] ease-[cubic-bezier(0.4,0,0.2,1)] lg:block min-[1920px]:absolute min-[1920px]:inset-y-0 min-[1920px]:right-full min-[1920px]:z-30 min-[1920px]:mr-5 min-[1920px]:w-52 ${
+            className={`hidden shrink-0 transition-[width,margin-right] duration-[420ms] ease-[cubic-bezier(0.4,0,0.2,1)] lg:block filters-side:absolute filters-side:inset-y-0 filters-side:right-full filters-side:z-30 filters-side:mr-5 filters-side:w-52 ${
               filtersOpen ? 'mr-5 w-52' : 'mr-0 w-0'
             }`}
           >

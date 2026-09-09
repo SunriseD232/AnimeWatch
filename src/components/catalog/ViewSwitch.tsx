@@ -29,31 +29,30 @@ export default function ViewSwitch() {
   }
 
   return (
-    <div className="flex items-center gap-2 text-sm text-gray-400">
-      Вид:
-      <div className="flex items-center gap-1">
-        <ViewButton label="Плитки" active={current === 'grid'} onClick={() => select('grid')}>
-          <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4 fill-current">
-            <rect x="2.5" y="2.5" width="6" height="6" rx="1.5" />
-            <rect x="11.5" y="2.5" width="6" height="6" rx="1.5" />
-            <rect x="2.5" y="11.5" width="6" height="6" rx="1.5" />
-            <rect x="11.5" y="11.5" width="6" height="6" rx="1.5" />
-          </svg>
-        </ViewButton>
+    // Подписи «Вид:» нет: обе иконки говорят сами за себя, а активная ещё и
+    // подсвечена акцентом. Название каждой — в title/aria-label кнопки.
+    <div className="flex items-center gap-1">
+      <ViewButton label="Плитки" active={current === 'grid'} onClick={() => select('grid')}>
+        <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4 fill-current">
+          <rect x="2.5" y="2.5" width="6" height="6" rx="1.5" />
+          <rect x="11.5" y="2.5" width="6" height="6" rx="1.5" />
+          <rect x="2.5" y="11.5" width="6" height="6" rx="1.5" />
+          <rect x="11.5" y="11.5" width="6" height="6" rx="1.5" />
+        </svg>
+      </ViewButton>
 
-        <ViewButton label="Список" active={current === 'list'} onClick={() => select('list')}>
-          <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4">
-            <rect x="2.5" y="3.5" width="4" height="4" rx="1" className="fill-current" />
-            <rect x="2.5" y="12.5" width="4" height="4" rx="1" className="fill-current" />
-            <path
-              d="M9 5h8.5M9 8h6M9 14h8.5M9 17h6"
-              className="fill-none stroke-current"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-            />
-          </svg>
-        </ViewButton>
-      </div>
+      <ViewButton label="Список" active={current === 'list'} onClick={() => select('list')}>
+        <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4">
+          <rect x="2.5" y="3.5" width="4" height="4" rx="1" className="fill-current" />
+          <rect x="2.5" y="12.5" width="4" height="4" rx="1" className="fill-current" />
+          <path
+            d="M9 5h8.5M9 8h6M9 14h8.5M9 17h6"
+            className="fill-none stroke-current"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
+        </svg>
+      </ViewButton>
     </div>
   );
 }

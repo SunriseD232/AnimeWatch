@@ -21,14 +21,29 @@ import type { FilterOptionDef } from '@/lib/animeFilters';
  * начинается на уровне первой карточки, а кнопка — строкой выше. Вложенной в
  * кнопку она этого не смогла бы.
  *
- * Ширина, с которой панель перестаёт отнимать место у выдачи. Контент прижат
- * к центру (max-w-6xl у <main> — 1152px), слева от него остаётся
- * (100vw - 1152) / 2. Панели нужно 208px плюс отступ 20px — то есть поля
- * хватает от 1920px. Ниже панель встаёт настоящей колонкой и ужимает
- * карточки; выше — уходит в свободное поле накладкой и не трогает выдачу
- * вовсе. Это же число зашито в классы min-[1920px] у CatalogArea.
+ * Размер окна, с которого панель перестаёт отнимать место у выдачи. Контент
+ * прижат к центру (max-w-6xl у <main> — 1152px), слева от него остаётся
+ * (100vw - 1152) / 2; панели нужно 208px плюс отступ 20px. Порог по высоте —
+ * наравне с шириной: на низком окне панель всё равно не помещается целиком.
+ *
+ * Ниже любого из порогов панель встаёт настоящей колонкой и ужимает карточки;
+ * выше — уходит в свободное поле накладкой и не трогает выдачу вовсе.
+ *
+ * Те же числа продублированы в брейкпоинте filters-side (tailwind.config.ts,
+ * оттуда классы filters-side:*) и в globals.css (сетка карточек). Менять
+ * только все три сразу.
  */
-export const FILTERS_SIDE_BREAKPOINT = 1920;
+export const FILTERS_SIDE_MIN_WIDTH = 1745;
+export const FILTERS_SIDE_MIN_HEIGHT = 890;
+
+/** Помещается ли панель в поле страницы прямо сейчас. Только для обработчиков
+ *  на клиенте — вёрстка те же условия берёт из CSS. */
+export function filtersFitInMargin(): boolean {
+  return (
+    window.innerWidth >= FILTERS_SIDE_MIN_WIDTH &&
+    window.innerHeight >= FILTERS_SIDE_MIN_HEIGHT
+  );
+}
 
 export function FiltersTrigger({
   open,
@@ -52,13 +67,15 @@ export function FiltersTrigger({
       type="button"
       onClick={onToggle}
       aria-expanded={open}
-      className="press flex items-center gap-2 text-sm font-medium text-white"
+      className="press flex items-center gap-2 text-sm font-bold text-white"
     >
-      {/* Иконка перетекает из трёх полосок в «ᐸ» поворотом с растворением.
-          Стрелка одна и всегда влево: на десктопе панель раскрывается только
-          сбоку — либо колонкой, либо в поле страницы. Раньше здесь была ещё
-          стрелка вниз, для узкого окна, где панель вставала в поток над
-          выдачей; такого режима больше нет. */}
+      {/* Иконка перетекает из трёх полосок в стрелку поворотом с
+          растворением. Направление зависит от того, откуда панель берёт
+          место: «ᐸ» — когда она уходит в свободное поле страницы и стоит
+          левее всего контента; «⌄» — когда поля нет и она раскрывается
+          колонкой ниже строки с кнопкой. Обе стрелки в разметке всегда,
+          нужную выбирает брейкпоинт — без JS, чтобы не зависеть от
+          гидратации. */}
       <span className="relative flex h-5 w-5 items-center justify-center">
         <svg
           viewBox="0 0 20 20"
@@ -72,11 +89,20 @@ export function FiltersTrigger({
         <svg
           viewBox="0 0 20 20"
           aria-hidden="true"
-          className={`absolute h-5 w-5 fill-none stroke-current stroke-2 transition-all duration-300 ${
+          className={`absolute hidden h-5 w-5 fill-none stroke-current stroke-2 transition-all duration-300 filters-side:block ${
             open ? 'rotate-0 scale-100 opacity-100' : 'rotate-90 scale-50 opacity-0'
           }`}
         >
           <path d="M12.5 4 6.5 10l6 6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <svg
+          viewBox="0 0 20 20"
+          aria-hidden="true"
+          className={`absolute h-5 w-5 fill-none stroke-current stroke-2 transition-all duration-300 filters-side:hidden ${
+            open ? 'rotate-0 scale-100 opacity-100' : '-rotate-90 scale-50 opacity-0'
+          }`}
+        >
+          <path d="M4 7.5 10 13.5l6-6" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </span>
       Фильтры
@@ -94,8 +120,8 @@ export function FiltersTrigger({
 /**
  * Сама панель — просто блок во всю ширину родителя. Где она окажется и как
  * себя поведёт при прокрутке, решает колонка вокруг неё (см. CatalogArea):
- * до 1920px это настоящая колонка слева от выдачи, от 1920px — накладка в
- * свободном поле страницы. И там, и там она узкая, поэтому группы внутри
+ * без свободного поля это настоящая колонка слева от выдачи, с полем —
+ * накладка в нём. И там, и там она узкая, поэтому группы внутри
  * идут одним столбиком.
  *
  * Своих absolute/sticky у панели быть НЕ должно: пока они тут были, панель
@@ -166,10 +192,9 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
   return (
     <div className="min-w-0">
       {/* Ровно тот же стиль, что у кнопки «Фильтры» в тулбаре
-          (text-sm font-medium text-white): панель — её продолжение, и
-          заголовки разделов должны читаться заодно с ней, а не спорить
-          размером. */}
-      <p className="mb-2 text-sm font-medium leading-5 text-white">{title}</p>
+          (text-sm font-bold text-white): панель — её продолжение, и заголовки
+          разделов должны читаться заодно с ней, а не спорить размером. */}
+      <p className="mb-2 text-sm font-bold leading-5 text-white">{title}</p>
       {children}
     </div>
   );

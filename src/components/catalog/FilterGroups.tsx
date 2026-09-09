@@ -199,12 +199,63 @@ export function GenreList({ genres }: { genres: FilterOptionDef[] }) {
   );
 }
 
+/** Иконки сортировок — по смыслу самой сортировки, а не абстрактные стрелки:
+ *  огонёк для свежего, звезда для оценки, кубок для популярности, «A» со
+ *  стрелкой для алфавита. Ключи — значения из ANIME_CATALOG_SORTS. */
+const SORT_ICONS: Record<string, React.ReactNode> = {
+  // Огонёк — «сначала новые», то, что сейчас горячее.
+  aired_on: (
+    <path
+      d="M7.4 12.4a2.1 2.1 0 0 0 2.1-2.1c0-1.1-.4-1.6-.8-2.4-.9-1.8-.2-3.4 1.6-5 .4 2.1 1.7 4.1 3.3 5.4 1.7 1.4 2.5 2.9 2.5 4.6a5.9 5.9 0 1 1-11.8 0c0-1 .4-1.9.8-2.5a2.1 2.1 0 0 0 2.3 2z"
+      className="fill-none stroke-current"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  ),
+  // Звезда — оценка.
+  ranked: (
+    <path
+      d="M10 2.4l2.2 4.5 5 .7-3.6 3.5.8 5-4.4-2.4-4.4 2.4.8-5L2.8 7.6l5-.7z"
+      className="fill-current"
+    />
+  ),
+  // Кубок — популярность, то есть «первое место по числу зрителей».
+  popularity: (
+    <g>
+      <path d="M6.6 2.8h6.8v3.9a3.4 3.4 0 0 1-6.8 0z" className="fill-current" />
+      <path
+        d="M6.6 4h-2a2.3 2.3 0 0 0 2.2 3.3M13.4 4h2a2.3 2.3 0 0 1-2.2 3.3M10 10.1v3.2"
+        className="fill-none stroke-current"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+      <path d="M6.8 17l.6-2.4h5.2l.6 2.4z" className="fill-current" />
+    </g>
+  ),
+  // «A» со стрелкой вниз — привычный значок сортировки по алфавиту.
+  name: (
+    <g className="fill-none stroke-current" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2.6 14.8L6 5.6l3.4 9.2M3.8 12h4.4" />
+      <path d="M14.6 5.4v9.2M12.2 12.2l2.4 2.4 2.4-2.4" />
+    </g>
+  ),
+};
+
 export function SortSelect({ sorts }: { sorts: readonly FilterOptionDef[] }) {
   const { sort, apply } = useCatalogFilters();
 
   return (
+    // Слово «Сортировка:» заменено иконкой текущей сортировки: подпись
+    // занимала полстроки тулбара, повторяя то, что и так написано в самом
+    // селекте. Название сортировки при этом осталось на месте — видно, что
+    // выбрано, без раскрытия списка. Иконка вне <select> потому, что
+    // разметку внутри <option> браузеры не рисуют.
     <label className="flex items-center gap-2 text-sm text-gray-400">
-      Сортировка:
+      <span className="sr-only">Сортировка</span>
+      <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4 shrink-0">
+        {SORT_ICONS[sort]}
+      </svg>
       <select
         value={sort}
         onChange={(e) => apply({ sort: e.target.value })}
