@@ -56,7 +56,14 @@ export default function AnimeListRow({ anime }: { anime: ListRowAnime }) {
 
   return (
     <div className="flex gap-4 rounded-2xl bg-bg-card p-3">
-      <Link href={`/anime/${anime.id}`} className="press relative aspect-[3/4] w-24 shrink-0 overflow-hidden rounded-xl bg-bg-soft sm:w-28">
+      {/* self-start обязателен: строка — это flex, а он по умолчанию тянет
+          детей на всю высоту (align-items: stretch). Растянутая высота
+          перебивала aspect-[3/4], и при раскрытии описания кнопкой «ещё…»
+          постер вытягивался вертикально, а object-cover срезал его по бокам. */}
+      <Link
+        href={`/anime/${anime.id}`}
+        className="press relative aspect-[3/4] w-24 shrink-0 self-start overflow-hidden rounded-xl bg-bg-soft sm:w-28"
+      >
         {poster ? (
           <Image
             src={poster}

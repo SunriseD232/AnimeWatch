@@ -107,13 +107,17 @@ async function PlannedCarousel() {
   } = await getCachedUser();
   if (!user) return null;
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('user_list')
     .select('*')
     .eq('content_type', 'anime')
     .eq('status', 'planned')
     .order('created_at', { ascending: false })
     .limit(12);
+
+  // Ошибку раньше игнорировали (`const { data }` без error), и секция просто
+  // молча исчезала — ровно так и потерялся весь блок «Вы хотели посмотреть».
+  if (error) console.error('[PlannedCarousel] запрос упал:', error.message);
 
   const items = (data ?? []) as UserListItem[];
   if (items.length === 0) return null;

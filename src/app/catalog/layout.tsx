@@ -34,21 +34,26 @@ async function CatalogFilters({ children }: { children: React.ReactNode }) {
 
   return (
     <CatalogFilterProvider defaultSort={DEFAULT_SORT}>
-      {/* order-* задают порядок внутри CatalogArea: панель фильтров он
-          рисует сам и ставит между тулбаром и выдачей (order-3). */}
-      <CatalogArea genres={options}>
-        <div className="order-1 flex items-center justify-between gap-3">
-          {/* Подсказка про клики переехала внутрь панели фильтров, к самим
-              чекбоксам: сверху она объясняла то, чего на экране уже нет. */}
-          <h1 className="text-xl font-bold">Каталог аниме</h1>
-          <CatalogMobileTrigger />
-        </div>
-
-        <div className="order-2">
+      {/* Заголовок — отдельным слотом, вне рельса панели: иначе панель
+          вставала бы на его уровень, а не на уровень кнопки «Фильтры».
+          order-* задают порядок внутри рельса: панель он ставит между
+          тулбаром и выдачей (order-2). */}
+      <CatalogArea
+        genres={options}
+        header={
+          <div className="flex items-center justify-between gap-3">
+            {/* Подсказка про клики переехала внутрь панели фильтров, к самим
+                чекбоксам: сверху она объясняла то, чего на экране уже нет. */}
+            <h1 className="text-xl font-bold">Каталог аниме</h1>
+            <CatalogMobileTrigger />
+          </div>
+        }
+      >
+        <div className="order-1">
           <AnimeGenrePanel sorts={ANIME_CATALOG_SORTS} />
         </div>
 
-        <div className="order-4">{children}</div>
+        <div className="order-3">{children}</div>
       </CatalogArea>
 
       <CatalogMobileDrawer genres={options} sorts={ANIME_CATALOG_SORTS} />
