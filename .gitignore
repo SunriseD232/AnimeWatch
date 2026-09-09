@@ -36,3 +36,4 @@ next-env.d.ts
 
 # Сборки деплоя: .next — симлинк на одну из них (см. scripts/deploy.sh)
 .releases/
+.current

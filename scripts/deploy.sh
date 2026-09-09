@@ -13,9 +13,17 @@ set -euo pipefail
 # с открытых inode'ов процессов PM2 и вводил в заблуждение кодом 200, а весь
 # CSS и JS отвечали 500. Так и случилось 2026-09-09, дважды.
 #
-# Теперь сборка идёт в отдельный каталог, а .next становится симлинком на
-# него — переключение атомарно (ln -sfn через временное имя + mv), откат
-# делается тем же переключением на прошлый каталог.
+# Теперь сборка идёт в отдельный каталог, а на готовую указывает симлинк
+# .current — переключение атомарно (ln -sfn через временное имя + mv), откат
+# делается тем же переключением на прошлый каталог. PM2 запускает
+# .current/standalone/server.js (см. ecosystem.config.js).
+#
+# Симлинк называется .current, а НЕ .next, намеренно. С именем .next его
+# подхватывал tsconfig (include: .next/types/**/*.ts) и видел сквозь него
+# сгенерированные типы ПРОШЛОЙ сборки, у которых относительные пути к
+# исходникам посчитаны от настоящего каталога, а не от симлинка — сборка
+# падала на «Cannot find module ../../../src/app/.../page.js». Проверено
+# вживую: первый же боевой прогон.
 
 cd "$(dirname "$0")/.."
 
@@ -88,18 +96,13 @@ cp -r node_modules/@node-wreq/linux-x64-gnu "$BUILD_DIR/standalone/node_modules/
 # переименовывается поверх старого. mv симлинка в пределах одной ФС —
 # атомарная операция, промежуточного состояния «каталога .next нет» не
 # возникает даже на долю секунды.
-echo "==> переключаю .next на новую сборку"
+echo "==> переключаю .current на новую сборку"
 PREV_TARGET=""
-if [ -L "$ROOT/.next" ]; then
-  PREV_TARGET="$(readlink -f "$ROOT/.next" || true)"
-elif [ -d "$ROOT/.next" ]; then
-  # Первый запуск после перехода на симлинки: убираем настоящий каталог.
-  echo "    (.next был обычным каталогом — переношу в $RELEASES/legacy)"
-  rm -rf "$RELEASES/legacy"
-  mv "$ROOT/.next" "$RELEASES/legacy"
+if [ -L "$ROOT/.current" ]; then
+  PREV_TARGET="$(readlink -f "$ROOT/.current" || true)"
 fi
-ln -sfn "$BUILD_DIR" "$ROOT/.next.tmp"
-mv -T "$ROOT/.next.tmp" "$ROOT/.next"
+ln -sfn "$BUILD_DIR" "$ROOT/.current.tmp"
+mv -T "$ROOT/.current.tmp" "$ROOT/.current"
 
 echo "==> pm2 restart mediawatch-web"
 pm2 restart mediawatch-web
@@ -120,8 +123,8 @@ if [ "$CODE" != "200" ]; then
   echo "!! сайт отвечает $CODE"
   if [ -n "$PREV_TARGET" ] && [ -d "$PREV_TARGET" ]; then
     echo "!! откатываюсь на $PREV_TARGET"
-    ln -sfn "$PREV_TARGET" "$ROOT/.next.tmp"
-    mv -T "$ROOT/.next.tmp" "$ROOT/.next"
+    ln -sfn "$PREV_TARGET" "$ROOT/.current.tmp"
+    mv -T "$ROOT/.current.tmp" "$ROOT/.current"
     pm2 restart mediawatch-web
     echo "!! откат выполнен, разбирайтесь со сборкой $BUILD_DIR"
   else
@@ -134,7 +137,7 @@ fi
 # Каждая — около 400 МБ, копить их бесконечно на 77-гигабайтном диске не надо.
 echo "==> убираю старые сборки (оставляю 3)"
 ls -1dt "$RELEASES"/*/ 2>/dev/null | tail -n +4 | while read -r old; do
-  [ "$(readlink -f "$old")" = "$(readlink -f "$ROOT/.next")" ] && continue
+  [ "$(readlink -f "$old")" = "$(readlink -f "$ROOT/.current")" ] && continue
   echo "    удаляю $old"
   rm -rf "$old"
 done
