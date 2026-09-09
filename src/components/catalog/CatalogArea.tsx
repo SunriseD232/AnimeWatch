@@ -6,7 +6,7 @@ import {
   filtersFitInMargin,
 } from '@/components/catalog/CatalogDesktopFilters';
 import { useCatalogFilters } from '@/components/catalog/CatalogFilterProvider';
-import type { FilterOptionDef } from '@/lib/animeFilters';
+import type { FilterOptionDef } from '@/lib/catalogFilters';
 
 /**
  * Каркас страницы каталога: заголовок и тулбар приходят слотами, выдача —
@@ -36,12 +36,14 @@ import type { FilterOptionDef } from '@/lib/animeFilters';
  * сетку рендерит сервер, а состояние панели живёт на клиенте.
  */
 export default function CatalogArea({
-  genres,
+  options,
   header,
   toolbar,
   children,
 }: {
-  genres: FilterOptionDef[];
+  /** Динамические списки пунктов по ключу группы (жанры, страны) — те, что
+   *  приходят из индекса, а не заданы в конфиге. */
+  options: Record<string, FilterOptionDef[]>;
   header: React.ReactNode;
   toolbar: React.ReactNode;
   children: React.ReactNode;
@@ -109,7 +111,7 @@ export default function CatalogArea({
                   пересобирается на каждом кадре. */}
               {filtersOpen && (
                 <div className="w-52">
-                  <FiltersPanel genres={genres} />
+                  <FiltersPanel options={options} />
                 </div>
               )}
             </div>

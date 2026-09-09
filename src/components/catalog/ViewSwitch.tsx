@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { PARAM, parseView, type CatalogView } from '@/lib/animeFilters';
+import { COMMON_PARAM, parseView, type CatalogView } from '@/lib/catalogFilters';
 
 /**
  * Переключатель вида выдачи: плитки или список.
@@ -17,13 +17,13 @@ export default function ViewSwitch() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const current = parseView(searchParams.get(PARAM.view));
+  const current = parseView(searchParams.get(COMMON_PARAM.view));
 
   function select(view: CatalogView) {
     if (view === current) return;
     const params = new URLSearchParams(searchParams.toString());
-    if (view === 'grid') params.delete(PARAM.view);
-    else params.set(PARAM.view, view);
+    if (view === 'grid') params.delete(COMMON_PARAM.view);
+    else params.set(COMMON_PARAM.view, view);
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }

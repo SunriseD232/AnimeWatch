@@ -2,14 +2,13 @@ import { Suspense } from 'react';
 import ModeSwitch from '@/components/ModeSwitch';
 import CatalogFilterProvider from '@/components/catalog/CatalogFilterProvider';
 import CatalogArea from '@/components/catalog/CatalogArea';
-import AnimeGenrePanel from '@/components/catalog/AnimeGenrePanel';
+import CatalogToolbar from '@/components/catalog/CatalogToolbar';
 import CatalogMobileDrawer from '@/components/catalog/CatalogMobileDrawer';
 import CatalogMobileTrigger from '@/components/catalog/CatalogMobileTrigger';
-import { ANIME_CATALOG_SORTS, getAnimeGenres, type AnimeCatalogSort } from '@/lib/shikimori';
+import { getAnimeGenres } from '@/lib/shikimori';
 import { getGenresFromIndex } from '@/lib/animeIndexQuery';
-import type { FilterOptionDef } from '@/lib/animeFilters';
-
-const DEFAULT_SORT: AnimeCatalogSort = 'aired_on';
+import { ANIME_FILTER_CONFIG } from '@/lib/animeFilters';
+import type { FilterOptionDef } from '@/lib/catalogFilters';
 
 /**
  * Жанры тянутся один раз и отдаются обоим потребителям — панели фильтров на
@@ -27,18 +26,19 @@ async function CatalogFilters({ children }: { children: React.ReactNode }) {
   } catch {
     genres = [];
   }
-  const options: FilterOptionDef[] = genres.map((g) => ({
+  const genreOptions: FilterOptionDef[] = genres.map((g) => ({
     value: String(g.id),
     label: g.russian,
   }));
+  const options = { genres: genreOptions };
 
   return (
-    <CatalogFilterProvider defaultSort={DEFAULT_SORT}>
+    <CatalogFilterProvider config={ANIME_FILTER_CONFIG}>
       {/* Заголовок и тулбар — отдельными слотами: панель занимает колонку
           только в ряду с карточками, поэтому её верх совпадает с верхом
           тайтлов, а не с «Каталогом аниме» и не с кнопкой «Фильтры». */}
       <CatalogArea
-        genres={options}
+        options={options}
         header={
           <div className="flex items-center justify-between gap-3">
             {/* Подсказка про клики переехала внутрь панели фильтров, к самим
@@ -47,12 +47,12 @@ async function CatalogFilters({ children }: { children: React.ReactNode }) {
             <CatalogMobileTrigger />
           </div>
         }
-        toolbar={<AnimeGenrePanel sorts={ANIME_CATALOG_SORTS} />}
+        toolbar={<CatalogToolbar />}
       >
         {children}
       </CatalogArea>
 
-      <CatalogMobileDrawer genres={options} sorts={ANIME_CATALOG_SORTS} />
+      <CatalogMobileDrawer options={options} />
     </CatalogFilterProvider>
   );
 }

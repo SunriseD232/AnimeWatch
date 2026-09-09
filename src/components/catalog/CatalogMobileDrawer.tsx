@@ -5,16 +5,11 @@ import CollapsibleSection from '@/components/catalog/CollapsibleSection';
 import { useCatalogFilters } from '@/components/catalog/CatalogFilterProvider';
 import {
   AnonsToggle,
-  EpisodesRange,
-  GenreList,
-  KindGroup,
-  RatingGroup,
+  RangeGroup,
   SortSelect,
-  StatusGroup,
-  YearRange,
-  useGroupCount,
+  TriGroupBody,
 } from '@/components/catalog/FilterGroups';
-import type { FilterOptionDef } from '@/lib/animeFilters';
+import type { FilterOptionDef } from '@/lib/catalogFilters';
 
 /**
  * Мобильная панель фильтров: выезжает справа поверх выдачи по кнопке-
@@ -31,19 +26,14 @@ import type { FilterOptionDef } from '@/lib/animeFilters';
  * содержимое не рендерят, см. CollapsibleSection.
  */
 export default function CatalogMobileDrawer({
-  genres,
-  sorts,
+  options,
 }: {
-  genres: FilterOptionDef[];
-  sorts: readonly FilterOptionDef[];
+  /** Динамические списки пунктов по ключу группы (жанры, страны). */
+  options: Record<string, FilterOptionDef[]>;
 }) {
-  const { drawerOpen, setDrawerOpen, dirty, hasFilters, apply, reset } = useCatalogFilters();
+  const { drawerOpen, setDrawerOpen, dirty, hasFilters, apply, reset, config, pending } =
+    useCatalogFilters();
   const panelRef = useRef<HTMLDivElement>(null);
-
-  const genresCount = useGroupCount('genres');
-  const ratingsCount = useGroupCount('ratings');
-  const kindsCount = useGroupCount('kinds');
-  const statusesCount = useGroupCount('statuses');
 
   // Escape закрывает — обычное ожидание от модальной шторки.
   useEffect(() => {
@@ -118,37 +108,32 @@ export default function CatalogMobileDrawer({
             перекрывает последнюю секцию списка. */}
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-[env(safe-area-inset-bottom)]">
           <div className="flex flex-wrap items-center gap-4 py-3">
-            <SortSelect sorts={sorts} />
+            <SortSelect />
             <AnonsToggle />
           </div>
 
-          <CollapsibleSection title="Жанры" count={genresCount}>
-            <GenreList genres={genres} />
-          </CollapsibleSection>
+          {/* Порядок секций — из конфига, тот же, что и на десктопе (см.
+              CatalogDesktopFilters): иначе фильтр на телефоне и на
+              компьютере со временем разъедутся. */}
+          {config.tri.map((def) => {
+            const items = def.options ?? options[def.key] ?? [];
+            if (items.length === 0) return null;
+            const state = pending.tri[def.key];
+            const count = state ? state.include.length + state.exclude.length : 0;
+            return (
+              <CollapsibleSection key={def.key} title={def.title} count={count}>
+                <TriGroupBody def={def} options={items} />
+              </CollapsibleSection>
+            );
+          })}
 
-          <CollapsibleSection title="Тип" count={kindsCount}>
-            <KindGroup />
-          </CollapsibleSection>
-
-          <CollapsibleSection title="Статус тайтла" count={statusesCount}>
-            <StatusGroup />
-          </CollapsibleSection>
-
-          {/* Возрастной рейтинг — последним, тот же порядок и на десктопе
-              (см. CatalogDesktopFilters). */}
-          <CollapsibleSection title="Возрастной рейтинг" count={ratingsCount}>
-            <RatingGroup />
-          </CollapsibleSection>
-
-          {/* Диапазоны — в конце, тот же порядок, что и на десктопе: это
-              единственные поля с вводом, остальное выбирается касанием. */}
-          <CollapsibleSection title="Количество эпизодов">
-            <EpisodesRange />
-          </CollapsibleSection>
-
-          <CollapsibleSection title="Год релиза">
-            <YearRange />
-          </CollapsibleSection>
+          {/* Диапазоны — в конце: это единственные поля с вводом, остальное
+              выбирается касанием. */}
+          {config.ranges.map((def) => (
+            <CollapsibleSection key={def.key} title={def.title}>
+              <RangeGroup def={def} />
+            </CollapsibleSection>
+          ))}
 
           <p className="py-3 text-xs leading-snug text-gray-500">
             Первое нажатие включает пункт, второе — исключает (крестик), третье снимает.

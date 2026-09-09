@@ -3,43 +3,50 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
-  EMPTY_FILTERS,
+  COMMON_PARAM,
   buildQuery,
   cycleTri,
+  emptyFilters,
   filtersEqual,
   hasAnyFilter,
   parseFilters,
-  type AnimeCatalogFilters,
-} from '@/lib/animeFilters';
+  type CatalogFilterConfig,
+  type CatalogFilters,
+} from '@/lib/catalogFilters';
 
 /**
- * Общее черновое состояние всех фильтров каталога аниме.
+ * Общее черновое состояние всех фильтров каталога — и аниме, и кино.
  *
- * Зачем контекст, а не состояние внутри одной панели: фильтры теперь живут в
- * ДВУХ местах разметки — жанры сверху, остальные группы в левой колонке, — а
+ * Зачем контекст, а не состояние внутри одной панели: фильтры живут в ДВУХ
+ * местах разметки — колонка на десктопе и выезжающая шторка на телефоне, — а
  * кнопка «Применить» должна быть одна на всех и применять их одним переходом.
- * Держать при этом два независимых черновика значило бы, что нажатие в
- * сайдбаре молча теряет невыпущенный выбор жанров (и наоборот).
+ * Держать при этом два независимых черновика значило бы, что нажатие в одном
+ * месте молча теряет невыпущенный выбор в другом.
  *
- * Применённое состояние по-прежнему живёт в адресной строке — черновик здесь
- * только до нажатия «Применить». Так сохраняется прежнее поведение каталога:
- * медленный запрос (AND/exclude по жанрам догружает полные карточки, см.
- * getAnimeCatalog) уходит один раз на весь набор, а не на каждый клик.
+ * Применённое состояние живёт в адресной строке — черновик здесь только до
+ * нажатия «Применить»: так тяжёлый запрос уходит один раз на весь набор, а не
+ * на каждый клик.
+ *
+ * Какие вообще есть группы, знает не провайдер, а конфиг (lib/animeFilters.ts,
+ * lib/cinemaFilters.ts). Провайдер и панель работают с ним как с данными —
+ * поэтому один и тот же интерфейс обслуживает два разных каталога.
  */
 
 interface CatalogFilterValue {
+  /** Описание групп: что рисовать и как это называется в URL. */
+  config: CatalogFilterConfig;
   /** Черновик — то, что пользователь накликал, но ещё не применил. */
-  pending: AnimeCatalogFilters;
+  pending: CatalogFilters;
   /** Применённое состояние (из URL) — с ним сравнивается черновик. */
-  applied: AnimeCatalogFilters;
+  applied: CatalogFilters;
   sort: string;
   showAnons: boolean;
   dirty: boolean;
   hasFilters: boolean;
-  setPending: (next: AnimeCatalogFilters) => void;
-  /** Переключить пункт трёхпозиционной группы: включить → исключить → снять. */
-  toggle: (group: TriGroup, value: string) => void;
-  setRange: (field: RangeField, value: number | null) => void;
+  setPending: (next: CatalogFilters) => void;
+  /** Переключить пункт группы: включить → исключить → снять. */
+  toggle: (group: string, value: string) => void;
+  setRange: (field: string, value: number | null) => void;
   /** Применить черновик (переход по URL). Сортировка и «анонсы» — быстрые
    *  сами по себе, поэтому применяются сразу, но вместе с текущим черновиком,
    *  чтобы не терять его молча. */
@@ -51,15 +58,12 @@ interface CatalogFilterValue {
   drawerOpen: boolean;
   setDrawerOpen: (open: boolean) => void;
   /** Десктопная панель фильтров. Состояние здесь, потому что от него зависит
-   *  не только сама панель: при открытой панели сетка карточек переходит на
-   *  более мелкие (см. CatalogArea и .catalog-grid в globals.css), а это уже
-   *  соседняя ветка разметки. */
+   *  не только сама панель: при открытой панели сетка карточек ужимается
+   *  (см. CatalogArea и .catalog-grid в globals.css), а это уже соседняя
+   *  ветка разметки. */
   filtersOpen: boolean;
   setFiltersOpen: (open: boolean) => void;
 }
-
-export type TriGroup = 'genres' | 'ratings' | 'kinds' | 'statuses';
-export type RangeField = 'episodesFrom' | 'episodesTo' | 'yearFrom' | 'yearTo';
 
 const Ctx = createContext<CatalogFilterValue | null>(null);
 
@@ -72,10 +76,10 @@ export function useCatalogFilters(): CatalogFilterValue {
 }
 
 export default function CatalogFilterProvider({
-  defaultSort,
+  config,
   children,
 }: {
-  defaultSort: string;
+  config: CatalogFilterConfig;
   children: React.ReactNode;
 }) {
   const router = useRouter();
@@ -83,11 +87,11 @@ export default function CatalogFilterProvider({
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
 
-  const applied = useMemo(() => parseFilters(searchParams), [searchParams]);
-  const sort = searchParams.get('sort') ?? defaultSort;
-  const showAnons = searchParams.get('anons') === '1';
+  const applied = useMemo(() => parseFilters(searchParams, config), [searchParams, config]);
+  const sort = searchParams.get(COMMON_PARAM.sort) ?? config.defaultSort;
+  const showAnons = searchParams.get(COMMON_PARAM.anons) === '1';
 
-  const [pending, setPending] = useState<AnimeCatalogFilters>(applied);
+  const [pending, setPending] = useState<CatalogFilters>(applied);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -95,14 +99,13 @@ export default function CatalogFilterProvider({
   // apply(): назад/вперёд в браузере, заход по ссылке с параметрами. После
   // собственной apply() значения уже совпадают и эффект ничего не меняет.
   useEffect(() => {
-    setPending(parseFilters(new URLSearchParams(queryString)));
-  }, [queryString]);
+    setPending(parseFilters(new URLSearchParams(queryString), config));
+  }, [queryString, config]);
 
   const apply = useCallback(
     (override?: { sort?: string; showAnons?: boolean }) => {
-      const qs = buildQuery(pending, {
+      const qs = buildQuery(pending, config, {
         sort: override?.sort ?? sort,
-        defaultSort,
         showAnons: override?.showAnons ?? showAnons,
         // Смена фильтров сбрасывает пагинацию: третьей страницы у нового
         // набора может не быть вовсе, и пользователь упёрся бы в «Дальше
@@ -111,36 +114,30 @@ export default function CatalogFilterProvider({
       });
       router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     },
-    [pending, sort, showAnons, defaultSort, pathname, router],
+    [pending, sort, showAnons, config, pathname, router],
   );
 
-  // Ключ здесь вычисляемый (group/field — объединения литералов), а spread с
-  // таким ключом TypeScript расширяет до индексной сигнатуры и теряет тип
-  // AnimeCatalogFilters. Поэтому присваивание через явную копию.
-  const toggle = useCallback((group: TriGroup, value: string) => {
-    setPending((prev) => {
-      const next: AnimeCatalogFilters = { ...prev };
-      next[group] = cycleTri(prev[group], value);
-      return next;
-    });
+  const toggle = useCallback((group: string, value: string) => {
+    setPending((prev) => ({
+      ...prev,
+      tri: { ...prev.tri, [group]: cycleTri(prev.tri[group] ?? { include: [], exclude: [] }, value) },
+    }));
   }, []);
 
-  const setRange = useCallback((field: RangeField, value: number | null) => {
-    setPending((prev) => {
-      const next: AnimeCatalogFilters = { ...prev };
-      next[field] = value;
-      return next;
-    });
+  const setRange = useCallback((field: string, value: number | null) => {
+    setPending((prev) => ({ ...prev, range: { ...prev.range, [field]: value } }));
   }, []);
 
   const reset = useCallback(() => {
-    setPending(EMPTY_FILTERS);
-    const qs = buildQuery(EMPTY_FILTERS, { sort, defaultSort, showAnons, page: 1 });
+    const empty = emptyFilters(config);
+    setPending(empty);
+    const qs = buildQuery(empty, config, { sort, showAnons, page: 1 });
     router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  }, [sort, defaultSort, showAnons, pathname, router]);
+  }, [sort, showAnons, config, pathname, router]);
 
   const value = useMemo<CatalogFilterValue>(
     () => ({
+      config,
       pending,
       applied,
       sort,
@@ -158,6 +155,7 @@ export default function CatalogFilterProvider({
       setFiltersOpen,
     }),
     [
+      config,
       pending,
       applied,
       sort,
@@ -180,7 +178,7 @@ export default function CatalogFilterProvider({
 }
 
 /** Одна кнопка «Применить» на все группы фильтров сразу. Липкая снизу —
- *  список фильтров в сайдбаре длинный, и кнопка у его конца была бы за
+ *  список фильтров в колонке длинный, и кнопка у его конца была бы за
  *  пределами экрана в момент, когда пользователь закончил выбирать.
  *
  *  Только для десктопа (lg:). На телефоне все контролы живут в выезжающей

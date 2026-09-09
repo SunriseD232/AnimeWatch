@@ -1,76 +1,113 @@
 import CinemaCard from '@/components/CinemaCard';
 import Pagination from '@/components/Pagination';
-import {
-  CINEMA_CATALOG_SORTS,
-  CINEMA_GENRES,
-  getCinemaCatalog,
-  getCinemaEpisodesTotalMap,
-  type CinemaCatalogSort,
-} from '@/lib/videoseed-catalog';
+import { getCinemaCatalog, getCinemaEpisodesTotalMap } from '@/lib/videoseed-catalog';
 import { getEpisodeProgressMap } from '@/lib/watch/progressMap';
+import { getCinemaCatalogFromIndex } from '@/lib/cinemaIndexQuery';
+import {
+  CINEMA_FILTER_CONFIG,
+  CINEMA_PARAM,
+  parseCinemaSort,
+} from '@/lib/cinemaFilters';
+import {
+  buildQuery,
+  hasAnyFilter,
+  parseFilters,
+  triIds,
+  triValues,
+  type CatalogFilters,
+} from '@/lib/catalogFilters';
 
 export const metadata = { title: 'Каталог кино — MediaWatch' };
 
-// Пул для сортировки/фильтра — до MAX_UPSTREAM_PAGES апстрим-страниц на
-// редкую комбинацию жанров (см. lib/videoseed-catalog.ts).
+// Запасной путь (без индекса) может тянуть до 30 апстрим-страниц Videoseed,
+// см. lib/videoseed-catalog.ts. Через индекс это один SQL-запрос.
 export const maxDuration = 60;
 
 const PAGE_SIZE = 24;
-const DEFAULT_SORT: CinemaCatalogSort = 'new';
 
-function parseGenres(value: string | undefined): string[] {
-  if (!value) return [];
-  return value
-    .split(',')
-    .map((v) => v.trim())
-    .filter((v) => CINEMA_GENRES.includes(v));
-}
-
-function isValidSort(value: string | undefined): value is CinemaCatalogSort {
-  return CINEMA_CATALOG_SORTS.some((s) => s.value === value);
-}
-
-function pageHref(
-  genresInclude: string[],
-  genresExclude: string[],
-  sort: CinemaCatalogSort,
-  page: number,
-): string {
+/** searchParams у страницы — обычный объект; фильтры разбираются общим
+ *  кодом с клиентом (lib/catalogFilters.ts), которому нужен URLSearchParams. */
+function toSearchParams(raw: Record<string, string | string[] | undefined>): URLSearchParams {
   const params = new URLSearchParams();
-  if (genresInclude.length > 0) params.set('genres', genresInclude.join(','));
-  if (genresExclude.length > 0) params.set('exclude', genresExclude.join(','));
-  if (sort !== DEFAULT_SORT) params.set('sort', sort);
-  params.set('page', String(page));
-  return `/cinema/catalog?${params.toString()}`;
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === 'string') params.set(key, value);
+    else if (Array.isArray(value) && value.length > 0) params.set(key, value[0]);
+  }
+  return params;
+}
+
+function pageHref(filters: CatalogFilters, sort: string, page: number): string {
+  const qs = buildQuery(filters, CINEMA_FILTER_CONFIG, { sort, page });
+  return qs ? `/cinema/catalog?${qs}` : '/cinema/catalog';
 }
 
 export default async function CinemaCatalogPage({
   searchParams,
 }: {
-  searchParams: { genres?: string; exclude?: string; sort?: string; page?: string };
+  searchParams: Record<string, string | string[] | undefined>;
 }) {
-  const genresInclude = parseGenres(searchParams.genres);
-  const genresExclude = parseGenres(searchParams.exclude);
-  const sort = isValidSort(searchParams.sort) ? searchParams.sort : DEFAULT_SORT;
-  const pageParam = Number(searchParams.page);
+  const params = toSearchParams(searchParams);
+  const filters = parseFilters(params, CINEMA_FILTER_CONFIG);
+  const sort = parseCinemaSort(params.get(CINEMA_PARAM.sort));
+  const pageParam = Number(params.get(CINEMA_PARAM.page));
   const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
 
-  let data;
-  try {
-    data = await getCinemaCatalog({
-      type: 'both',
-      genresInclude,
-      genresExclude,
-      sort,
-      page,
-      pageSize: PAGE_SIZE,
-    });
-  } catch (err) {
-    console.error('[cinema/catalog] getCinemaCatalog упал:', err instanceof Error ? err.message : err);
+  const genres = triIds(filters, 'genres');
+  const countries = triIds(filters, 'countries');
+  const filtered = hasAnyFilter(filters);
+
+  let data = await getCinemaCatalogFromIndex({
+    genresInclude: genres.include,
+    genresExclude: genres.exclude,
+    countriesInclude: countries.include,
+    countriesExclude: countries.exclude,
+    kinds: triValues(filters, 'kinds'),
+    yearFrom: filters.range.yearFrom,
+    yearTo: filters.range.yearTo,
+    sort,
+    page,
+    pageSize: PAGE_SIZE,
+  });
+
+  // Индекса нет (первый запуск, не отработал крон, отвалился Supabase).
+  // Запасной путь — прежний прямой запрос к Videoseed, но он умеет ровно две
+  // сортировки и фильтр по названиям жанров, а не по id. Поэтому подменяем
+  // его ТОЛЬКО когда фильтров нет: показать «отфильтровано» то, что на самом
+  // деле не отфильтровано, хуже, чем честно сказать про недоступность.
+  let degraded = false;
+  if (!data && !filtered) {
+    try {
+      data = await getCinemaCatalog({
+        type: 'both',
+        genresInclude: [],
+        genresExclude: [],
+        sort: sort === 'rating' ? 'rating' : 'new',
+        page,
+        pageSize: PAGE_SIZE,
+      });
+    } catch (err) {
+      console.error(
+        '[cinema/catalog] запасной путь тоже упал:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+  } else if (!data) {
+    degraded = true;
+  }
+
+  if (degraded) {
     return (
       <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
-        Не удалось загрузить каталог Videoseed. Попробуйте обновить страницу
-        позже.
+        Каталог сейчас недоступен вместе с фильтрами — идёт обновление базы.
+        Попробуйте обновить страницу через несколько минут.
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
+        Не удалось загрузить каталог. Попробуйте обновить страницу позже.
       </div>
     );
   }
@@ -80,18 +117,24 @@ export default async function CinemaCatalogPage({
       <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
         {page > 1
           ? 'Дальше ничего нет.'
-          : 'По этим фильтрам ничего не нашлось. Попробуйте убрать часть жанров.'}
+          : filtered
+            ? 'По этим фильтрам ничего не нашлось. Попробуйте ослабить условия — например, расширить диапазон лет или убрать часть жанров.'
+            : 'Ничего не нашлось.'}
       </div>
     );
   }
 
-  const hasPrev = page > 1;
-  const progressMap = await getEpisodeProgressMap('cinema', data.items.map((item) => item.id));
+  const progressMap = await getEpisodeProgressMap(
+    'cinema',
+    data.items.map((item) => item.id),
+  );
   const episodesTotalMap = await getCinemaEpisodesTotalMap([...progressMap.keys()]);
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+      {/* .catalog-grid — то же, что у аниме: при открытой панели фильтров
+          карточки плавно мельчают вместе с колонкой (см. globals.css). */}
+      <div className="catalog-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
         {data.items.map((item) => (
           <CinemaCard
             key={item.id}
@@ -104,8 +147,8 @@ export default async function CinemaCatalogPage({
 
       <Pagination
         page={page}
-        prevHref={hasPrev ? pageHref(genresInclude, genresExclude, sort, page - 1) : null}
-        nextHref={data.hasMore ? pageHref(genresInclude, genresExclude, sort, page + 1) : null}
+        prevHref={page > 1 ? pageHref(filters, sort, page - 1) : null}
+        nextHref={data.hasMore ? pageHref(filters, sort, page + 1) : null}
       />
     </div>
   );

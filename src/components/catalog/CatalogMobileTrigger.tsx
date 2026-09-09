@@ -1,7 +1,7 @@
 'use client';
 
 import { useCatalogFilters } from '@/components/catalog/CatalogFilterProvider';
-import { hasAnyFilter } from '@/lib/animeFilters';
+import { hasAnyFilter } from '@/lib/catalogFilters';
 
 /**
  * Кнопка «три полоски» в углу шапки каталога — открывает мобильную панель

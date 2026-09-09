@@ -2,15 +2,11 @@
 
 import { useCatalogFilters } from '@/components/catalog/CatalogFilterProvider';
 import {
-  EpisodesRange,
-  GenreList,
-  KindGroup,
-  RatingGroup,
-  StatusGroup,
-  YearRange,
-  useGroupCount,
+  RangeGroup,
+  TriGroupBody,
+  useTotalCount,
 } from '@/components/catalog/FilterGroups';
-import type { FilterOptionDef } from '@/lib/animeFilters';
+import type { FilterOptionDef } from '@/lib/catalogFilters';
 
 /**
  * Десктопные фильтры разнесены на две части: кнопка живёт в строке с
@@ -52,15 +48,9 @@ export function FiltersTrigger({
   open: boolean;
   onToggle: () => void;
 }) {
-  const { pending } = useCatalogFilters();
-  const genres = useGroupCount('genres');
-  const ratings = useGroupCount('ratings');
-  const kinds = useGroupCount('kinds');
-  const statuses = useGroupCount('statuses');
-  const ranges =
-    (pending.episodesFrom !== null || pending.episodesTo !== null ? 1 : 0) +
-    (pending.yearFrom !== null || pending.yearTo !== null ? 1 : 0);
-  const count = genres + ratings + kinds + statuses + ranges;
+  // Счётчик по всем группам конфига разом — перечислять их поимённо здесь
+  // значило бы забыть новую группу ровно в тот день, когда её добавят.
+  const count = useTotalCount();
 
   return (
     <button
@@ -132,42 +122,32 @@ export function FiltersTrigger({
  * сплошная заливка: при смене палитры в профиле панель меняется вместе со
  * всем остальным и не остаётся тёмным пятном.
  */
-export function FiltersPanel({ genres }: { genres: FilterOptionDef[] }) {
-  const { hasFilters, reset } = useCatalogFilters();
+export function FiltersPanel({ options }: { options: Record<string, FilterOptionDef[]> }) {
+  const { hasFilters, reset, config } = useCatalogFilters();
 
   return (
     <div className="animate-filters-panel w-full rounded-2xl bg-bg/80 p-3 backdrop-blur-xl">
       {/* Один столбик: панель всегда узкая (208px), раскладывать группы в
-          несколько колонок тут негде. Порядок — от того, чем пользуются
-          чаще: жанры, потом тип со статусом, рейтинг последним, а поля
-          ввода в самом конце. */}
+          несколько колонок тут негде. Порядок групп — из конфига, там же он
+          и объяснён: сперва то, чем пользуются чаще, поля с вводом последними. */}
       <div className="flex flex-col gap-5">
-        {/* Жанры переехали сюда из строки чипов над выдачей: пунктов в
-            актуальной таксономии 80, и наверху они отжимали бы у карточек
-            несколько экранов. */}
-        <Group title="Жанры">
-          <GenreList genres={genres} />
-        </Group>
+        {config.tri.map((def) => {
+          // Динамические списки (жанры, страны) приходят из индекса. Пока он
+          // не построен, их нет — и рисовать заголовок над пустотой не надо.
+          const items = def.options ?? options[def.key] ?? [];
+          if (items.length === 0) return null;
+          return (
+            <Group key={def.key} title={def.title}>
+              <TriGroupBody def={def} options={items} />
+            </Group>
+          );
+        })}
 
-        <Group title="Тип">
-          <KindGroup />
-        </Group>
-        <Group title="Статус тайтла">
-          <StatusGroup />
-        </Group>
-        <Group title="Возрастной рейтинг">
-          <RatingGroup />
-        </Group>
-
-        {/* Диапазоны — в конце: это единственные поля с вводом, остальное
-            выбирается мышью, и держать их первыми значило бы начинать список
-            с того, чем пользуются реже всего. */}
-        <Group title="Количество эпизодов">
-          <EpisodesRange />
-        </Group>
-        <Group title="Год релиза">
-          <YearRange />
-        </Group>
+        {config.ranges.map((def) => (
+          <Group key={def.key} title={def.title}>
+            <RangeGroup def={def} />
+          </Group>
+        ))}
       </div>
 
       <div className="mt-4 flex items-start justify-between gap-3">

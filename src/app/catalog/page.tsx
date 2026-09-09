@@ -6,13 +6,15 @@ import { getAnimeCatalogFromIndex } from '@/lib/animeIndexQuery';
 import AnimeListRow from '@/components/catalog/AnimeListRow';
 import { kindLabel, statusLabel } from '@/lib/animeLabels';
 import {
+  ANIME_FILTER_CONFIG,
   PARAM,
   buildQuery,
   hasAnyFilter,
   parseFilters,
-  parseNumericIds,
   parseView,
-  type AnimeCatalogFilters,
+  triIds,
+  triValues,
+  type CatalogFilters,
   type CatalogView,
 } from '@/lib/animeFilters';
 
@@ -47,13 +49,13 @@ function toSearchParams(raw: Record<string, string | string[] | undefined>): URL
 }
 
 function pageHref(
-  filters: AnimeCatalogFilters,
+  filters: CatalogFilters,
   sort: AnimeCatalogSort,
   page: number,
   showAnons: boolean,
   view: CatalogView,
 ): string {
-  const qs = buildQuery(filters, { sort, defaultSort: DEFAULT_SORT, page, showAnons, view });
+  const qs = buildQuery(filters, ANIME_FILTER_CONFIG, { sort, page, showAnons, view });
   return qs ? `/catalog?${qs}` : '/catalog';
 }
 
@@ -63,7 +65,7 @@ export default async function CatalogPage({
   searchParams: Record<string, string | string[] | undefined>;
 }) {
   const params = toSearchParams(searchParams);
-  const filters = parseFilters(params);
+  const filters = parseFilters(params, ANIME_FILTER_CONFIG);
 
   const sort = isValidSort(params.get(PARAM.sort) ?? undefined)
     ? (params.get(PARAM.sort) as AnimeCatalogSort)
@@ -73,20 +75,21 @@ export default async function CatalogPage({
   const showAnons = params.get(PARAM.anons) === '1';
   const view = parseView(params.get(PARAM.view));
 
+  const genres = triIds(filters, 'genres');
   const catalogParams = {
-    genresInclude: parseNumericIds(filters.genres.include.join(',')),
-    genresExclude: parseNumericIds(filters.genres.exclude.join(',')),
+    genresInclude: genres.include,
+    genresExclude: genres.exclude,
     sort,
     page,
     pageSize: PAGE_SIZE,
     excludeAnons: !showAnons,
-    episodesFrom: filters.episodesFrom,
-    episodesTo: filters.episodesTo,
-    yearFrom: filters.yearFrom,
-    yearTo: filters.yearTo,
-    ratings: filters.ratings,
-    kinds: filters.kinds,
-    statuses: filters.statuses,
+    episodesFrom: filters.range.episodesFrom,
+    episodesTo: filters.range.episodesTo,
+    yearFrom: filters.range.yearFrom,
+    yearTo: filters.range.yearTo,
+    ratings: triValues(filters, 'ratings'),
+    kinds: triValues(filters, 'kinds'),
+    statuses: triValues(filters, 'statuses'),
   };
 
   let data;
