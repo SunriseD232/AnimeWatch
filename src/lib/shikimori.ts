@@ -5,6 +5,7 @@
  */
 
 import { getYummyPostersMap } from './video/yummy';
+import { getLocalPosterIds, localPosterUrl } from './posterCacheQuery';
 import { mapWithConcurrency } from './concurrency';
 import { wordMatches } from './fuzzy';
 import { DEFAULT_KINDS, MAX_YEAR, MIN_YEAR, type TriState } from './animeFilters';
@@ -38,6 +39,10 @@ export interface ShikimoriAnimeShort {
    *  REST-ответы Shikimori описания в списках не содержат. Нужно списочному
    *  виду каталога. */
   description?: string | null;
+  /** Обложка с нашего диска, если она туда уже скачана (см. миграцию 0029).
+   *  Карточка пробует её первой, а ссылки выше остаются запасными — файла
+   *  может не быть у только что появившегося тайтла. */
+  localPoster?: string | null;
 }
 
 interface ShikimoriVideo {
@@ -130,21 +135,40 @@ export function imageUrl(path: string | undefined | null): string | null {
 }
 
 /**
- * Подменяет постеры на Yummy (api.yani.tv) там, где для тайтла есть точное
- * совпадение по shikimori_id — у Shikimori часто отдаёт плейсхолдер вместо
- * реального постера, у Yummy покрытие лучше. Один батч-запрос на весь список.
- * Тайтлы без совпадения остаются с оригинальным постером Shikimori.
+ * Раздаёт тайтлам лучшие доступные обложки — в порядке предпочтения:
+ *
+ *  1. Наш диск (миграция 0029): один короткий запрос к своему же nginx
+ *     вместо похода в чужой CDN, и никакой зависимости от его доступности.
+ *  2. Yummy (api.yani.tv): у Shikimori часть тайтлов с плейсхолдером вместо
+ *     обложки, у Yummy покрытие лучше. Один батч-запрос на весь список.
+ *  3. То, что пришло от Shikimori.
+ *
+ * Локальная ссылка кладётся ОТДЕЛЬНЫМ полем, а не подменяет image.original:
+ * карточка пробует её первой, но если файла вдруг нет (только что появившийся
+ * тайтл, кэш ещё не догнал), у неё остаются запасные — см. PosterImage.
  */
 async function withYummyPosters<T extends ShikimoriAnimeShort>(
   items: T[],
 ): Promise<T[]> {
   if (items.length === 0) return items;
-  const posters = await getYummyPostersMap(items.map((i) => i.id));
-  if (posters.size === 0) return items;
+
+  const ids = items.map((i) => i.id);
+  // Параллельно: оба источника независимы, а ждать их по очереди — лишние
+  // сотни миллисекунд на каждой странице.
+  const [posters, local] = await Promise.all([
+    getYummyPostersMap(ids).catch(() => new Map<number, string>()),
+    getLocalPosterIds('anime', ids),
+  ]);
+
+  if (posters.size === 0 && local.size === 0) return items;
+
   return items.map((item) => {
     const override = posters.get(item.id);
-    if (!override) return item;
-    return { ...item, image: { ...item.image, original: override } };
+    return {
+      ...item,
+      localPoster: local.has(item.id) ? localPosterUrl('anime', item.id) : null,
+      image: override ? { ...item.image, original: override } : item.image,
+    };
   });
 }
 

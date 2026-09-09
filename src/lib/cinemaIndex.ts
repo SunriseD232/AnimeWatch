@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { createServiceClient } from '@/lib/supabase/service';
+import { loadStoredPosterIds } from '@/lib/posterCache';
 
 /**
  * Построение локального индекса каталога кино (см. миграцию 0027).
@@ -311,12 +312,14 @@ interface IndexRow {
   country_ids: number[];
   rating: number | null;
   popularity: number | null;
+  poster_local: boolean;
 }
 
 function toRow(
   item: VsRawItem,
   batchId: string,
   ratings: Map<string, { rating: number | null; popularity: number | null }>,
+  storedPosters: Set<number>,
 ): IndexRow | null {
   const kpId = Number(item.id_kp);
   // Без kinopoisk_id тайтл бесполезен: по нему открывается плеер и пишется
@@ -355,6 +358,9 @@ function toRow(
     country_ids: parseIds(item.country_ids),
     rating: imdbId ? (ratings.get(imdbId)?.rating ?? null) : null,
     popularity: imdbId ? (ratings.get(imdbId)?.popularity ?? null) : null,
+    // Флаг наследуется от долгоживущего кэша обложек (миграция 0029): файлы
+    // перестройку переживают, и терять их на сутки незачем.
+    poster_local: storedPosters.has(kpId),
   };
 }
 
@@ -464,6 +470,7 @@ export async function rebuildCinemaIndex(): Promise<CinemaReindexResult> {
   }
 
   const ratings = await loadRatings(supabase);
+  const storedPosters = await loadStoredPosterIds(supabase, 'cinema');
 
   // ── Обход ──
   const seen = new Set<number>();
@@ -507,7 +514,7 @@ export async function rebuildCinemaIndex(): Promise<CinemaReindexResult> {
 
       const rows: IndexRow[] = [];
       for (const item of batch) {
-        const row = toRow(item, batchId, ratings);
+        const row = toRow(item, batchId, ratings, storedPosters);
         // Дубли: один и тот же kinopoisk_id встречается и у нескольких
         // записей апстрима, и между страницами, если он что-то переставил
         // прямо во время обхода. Первичный ключ бы на них упал.

@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { createServiceClient } from '@/lib/supabase/service';
+import { loadStoredPosterIds } from '@/lib/posterCache';
 
 /**
  * Построение локального индекса каталога аниме (см. миграцию 0025).
@@ -186,6 +187,7 @@ interface IndexRow {
   poster_original: string | null;
   poster_preview: string | null;
   genre_ids: number[];
+  poster_local: boolean;
 }
 
 /**
@@ -227,7 +229,12 @@ async function fetchPopularityRanks(): Promise<Map<number, number>> {
   return ranks;
 }
 
-function toRow(a: GqlAnime, batchId: string, ranks: Map<number, number>): IndexRow | null {
+function toRow(
+  a: GqlAnime,
+  batchId: string,
+  ranks: Map<number, number>,
+  storedPosters: Set<number>,
+): IndexRow | null {
   const id = Number(a.id);
   if (!Number.isFinite(id) || id <= 0) return null;
 
@@ -262,6 +269,9 @@ function toRow(a: GqlAnime, batchId: string, ranks: Map<number, number>): IndexR
     genre_ids: (a.genres ?? [])
       .map((g) => Number(g.id))
       .filter((n) => Number.isFinite(n) && n > 0),
+    // Флаг наследуется от долгоживущего кэша обложек (миграция 0029): файлы
+    // перестройку переживают, и терять их на сутки незачем.
+    poster_local: storedPosters.has(id),
   };
 }
 
@@ -355,6 +365,8 @@ export async function rebuildAnimeIndex(): Promise<ReindexResult> {
     );
   }
 
+  const storedPosters = await loadStoredPosterIds(supabase, 'anime');
+
   // ── Тайтлы ──
   let page = 1;
   let titles = 0;
@@ -366,7 +378,7 @@ export async function rebuildAnimeIndex(): Promise<ReindexResult> {
 
     const rows: IndexRow[] = [];
     for (const item of batch) {
-      const row = toRow(item, batchId, ranks);
+      const row = toRow(item, batchId, ranks, storedPosters);
       // Дубли между страницами возможны, если апстрим что-то переставил
       // прямо во время обхода; первичный ключ бы на них упал.
       if (row && !seen.has(row.shikimori_id)) {

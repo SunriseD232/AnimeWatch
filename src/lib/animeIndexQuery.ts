@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { DEFAULT_KINDS, type TriState } from '@/lib/animeFilters';
+import { localPosterUrl } from '@/lib/posterCacheQuery';
 import type { AnimeCatalogPage, AnimeCatalogParams, ShikimoriAnimeShort } from '@/lib/shikimori';
 
 /**
@@ -41,6 +42,7 @@ interface IndexRow {
   poster_original: string | null;
   poster_preview: string | null;
   description: string | null;
+  poster_local: boolean | null;
 }
 
 /** Индекс хранит ровно те поля, что нужны карточке, но остальное приложение
@@ -65,11 +67,14 @@ function toShort(row: IndexRow): ShikimoriAnimeShort {
     aired_on: row.aired_on,
     released_on: row.released_on,
     description: row.description,
+    // Обложка с нашего диска, если она туда скачана (см. миграцию 0029).
+    // Карточка пробует её первой; ссылки Shikimori остаются запасными.
+    localPoster: row.poster_local ? localPosterUrl('anime', row.shikimori_id) : null,
   };
 }
 
 const SELECT_COLUMNS =
-  'shikimori_id, name, russian, kind, status, episodes, episodes_aired, aired_on, released_on, score, poster_original, poster_preview, description';
+  'shikimori_id, name, russian, kind, status, episodes, episodes_aired, aired_on, released_on, score, poster_original, poster_preview, description, poster_local';
 
 /** `{a,b}` — литерал массива Postgres, его ждут операторы `cs`/`ov`. */
 function pgArray(values: (number | string)[]): string {
@@ -280,14 +285,15 @@ export async function getIndexedTitle(shikimoriId: number): Promise<IndexedTitle
     const supabase = createClient();
     const { data, error } = await supabase
       .from('anime_index')
-      .select('genre_ids, poster_original, poster_preview')
+      .select('genre_ids, poster_original, poster_preview, poster_local')
       .eq('batch_id', batchId)
       .eq('shikimori_id', shikimoriId)
       .maybeSingle();
 
     if (error || !data) return null;
 
-    const poster = (data.poster_original as string | null) ?? (data.poster_preview as string | null) ?? null;
+    const remote = (data.poster_original as string | null) ?? (data.poster_preview as string | null) ?? null;
+    const poster = data.poster_local ? localPosterUrl('anime', shikimoriId) : remote;
     const ids = (data.genre_ids ?? []) as number[];
     if (ids.length === 0) return { genres: [], poster };
 

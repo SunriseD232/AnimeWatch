@@ -73,6 +73,11 @@ export interface CinemaShort {
   id: number;
   title: string;
   poster: string | null;
+  /** Запасная ссылка на обложку. Заполняется только чтением из индекса
+   *  (lib/cinemaIndexQuery.ts): там основной становится наша копия с диска,
+   *  а сюда кладётся прежний путь через прокси — на случай, если файла ещё
+   *  нет. */
+  posterFallback?: string | null;
   year: number | null;
   kind: string | null;
   isSerial: boolean;

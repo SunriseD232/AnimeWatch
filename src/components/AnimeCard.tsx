@@ -41,12 +41,15 @@ export default function AnimeCard({
     <div className="card-lift group relative flex flex-col overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60">
       <Link href={`/anime/${anime.id}`} className="flex flex-1 flex-col">
         <div className="relative aspect-[2/3] w-full overflow-hidden bg-bg-soft">
-          {/* Две ссылки, а не одна: основную на главной подменяет Yummy
+          {/* Несколько ссылок, а не одна. Первая — наша копия с диска
+              (миграция 0029): короткий запрос к своему же серверу вместо
+              похода в чужой CDN. Дальше — то, что отдал апстрим: на главной
+              это Yummy
               (см. withYummyPosters в lib/shikimori.ts), и когда их CDN
               отдаёт 404, превью Shikimori для того же тайтла обычно живо.
               Раньше на этом месте оставалась битая картинка. */}
           <PosterImage
-            sources={[poster, imageUrl(anime.image?.preview)]}
+            sources={[anime.localPoster, poster, imageUrl(anime.image?.preview)]}
             alt={title}
             className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105"
             placeholderClassName="grid h-full w-full place-items-center text-gray-400"

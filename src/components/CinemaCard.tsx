@@ -57,7 +57,16 @@ export default function CinemaCard({
               Запасная ссылка — тот же постер без ресайза: ресайзер иногда
               спотыкается на битом исходнике, а отдать оригинал может. */}
           <PosterImage
-            sources={item.poster ? [`${item.poster}&w=480`, item.poster] : []}
+            sources={
+              // Локальная копия — уже готовый WebP нужной ширины, ей ?w= не
+              // нужен (и прокси её не обслуживает). Отличаем по пути: у
+              // прокси он всегда /api/proxy/raw?...
+              item.poster?.startsWith('/posters/')
+                ? [item.poster, item.posterFallback ? `${item.posterFallback}&w=480` : null]
+                : item.poster
+                  ? [`${item.poster}&w=480`, item.poster]
+                  : []
+            }
             alt={item.title}
             className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
             placeholderClassName="grid h-full w-full place-items-center text-gray-400"

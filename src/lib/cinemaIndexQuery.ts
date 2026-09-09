@@ -3,6 +3,7 @@ import { signImageUrl } from '@/lib/extract/proxy';
 import type { TriState } from '@/lib/catalogFilters';
 import type { CinemaShort } from '@/lib/videoseed-catalog';
 import { cinemaKindLabel, type CinemaSort } from '@/lib/cinemaFilters';
+import { localPosterUrl } from '@/lib/posterCacheQuery';
 
 /**
  * Чтение каталога кино из локального индекса (миграция 0027,
@@ -32,10 +33,11 @@ interface IndexRow {
   year: number | null;
   poster: string | null;
   rating: number | null;
+  poster_local: boolean | null;
 }
 
 const SELECT_COLUMNS =
-  'kp_id, title, original_title, kind, is_serial, year, poster, rating';
+  'kp_id, title, original_title, kind, is_serial, year, poster, rating, poster_local';
 
 /** `{a,b}` — литерал массива Postgres, его ждут операторы `cs`/`ov`. */
 function pgArray(values: (number | string)[]): string {
@@ -65,10 +67,17 @@ function safeSign(url: string): string | null {
 }
 
 function toShort(row: IndexRow): CinemaShort {
+  // Прежний путь — через наш прокси, который на КАЖДЫЙ запрос заново качает
+  // картинку с Videoseed и заново жмёт её через sharp. Локальная копия
+  // (миграция 0029) убирает и поход к апстриму, и пережатие.
+  const proxied = row.poster ? safeSign(row.poster) : null;
+  const local = row.poster_local ? localPosterUrl('cinema', row.kp_id) : null;
+
   return {
     id: row.kp_id,
     title: row.title ?? row.original_title ?? '',
-    poster: row.poster ? safeSign(row.poster) : null,
+    poster: local ?? proxied,
+    posterFallback: local ? proxied : null,
     year: row.year,
     // В CinemaShort.kind лежит подпись, а не код — так его выводит карточка.
     kind: cinemaKindLabel(row.kind),
