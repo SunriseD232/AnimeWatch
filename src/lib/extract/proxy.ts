@@ -353,9 +353,19 @@ async function wreqFetch(
   url: string,
   headers: Record<string, string>,
 ): Promise<UpstreamResponse> {
+  // headers: false — принципиально. С `true` node-wreq подставляет
+  // СОБСТВЕННЫЙ набор заголовков «как у Chrome» ВМЕСТО наших, и переданные
+  // здесь молча теряются. Пока Alloha проверяла только TLS-отпечаток, это
+  // было даже полезно; теперь её CDN требует пару `authorizations` /
+  // `accepts-controls` (их снимает экстрактор, см. vps-extractor/src/
+  // alloha.js), и без них ответ 403. Замерено вживую на одной и той же
+  // ссылке: headers:true → 403, headers:false → 200.
+  //
+  // Подмена TLS-отпечатка при этом никуда не девается — за неё отвечает
+  // profile, а не этот флаг.
   return wreqFetchImpl(url, {
     headers,
-    browser: { profile: 'chrome_147', http2: false, headers: true },
+    browser: { profile: 'chrome_147', http2: false, headers: false },
   });
 }
 
