@@ -120,7 +120,7 @@ export function FiltersPanel({ genres }: { genres: FilterOptionDef[] }) {
   const { hasFilters, reset } = useCatalogFilters();
 
   return (
-    <div className="w-full rounded-2xl bg-bg/80 p-3 backdrop-blur-xl">
+    <div className="animate-filters-panel w-full rounded-2xl bg-bg/80 p-3 backdrop-blur-xl">
       {/* В потоке панель занимает ШИРИНУ, а не высоту: пять групп в столбик
           на всю ширину контента — это почти 800px по вертикали, выдача
           уезжала бы за пределы экрана. Колонками получается около двухсот.
@@ -191,7 +191,11 @@ export function FiltersPanel({ genres }: { genres: FilterOptionDef[] }) {
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <p className="mb-2 text-sm font-medium text-gray-200">{title}</p>
+      {/* Тот же вес и цвет, что у заголовка «Каталог аниме» (text-xl
+          font-bold) — разделы должны читаться как заголовки, а не как
+          подписи. Размер на ступень меньше: в колонке шириной 208px
+          «Количество эпизодов» в text-xl переносится на три строки. */}
+      <p className="mb-2 text-base font-bold leading-7 text-gray-100">{title}</p>
       {children}
     </div>
   );

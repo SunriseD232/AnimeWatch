@@ -260,11 +260,19 @@ export async function getGenresFromIndex(): Promise<IndexedGenre[] | null> {
  * находит. Ровно та же рассинхронизация, из-за которой «Магия» не работала.
  *
  * null — индекса нет: страница тайтла тогда покажет жанры Shikimori обычным
- * текстом, без ссылок. Лучше некликабельные подписи, чем ссылки в никуда.
+ * текстом, без ссылок, и постер оттуда же. Лучше некликабельные подписи, чем
+ * ссылки в никуда.
  */
-export async function getTitleGenres(
-  shikimoriId: number,
-): Promise<{ id: number; russian: string }[] | null> {
+export interface IndexedTitle {
+  genres: { id: number; russian: string }[];
+  /** Постер из индекса. У Shikimori часть карточек отдаёт битую ссылку —
+   *  страница тайтла показывала заглушку «404», хотя в каталоге тот же тайтл
+   *  был с обложкой: каталог давно читает индекс, а страница тайтла ходила в
+   *  REST напрямую. */
+  poster: string | null;
+}
+
+export async function getIndexedTitle(shikimoriId: number): Promise<IndexedTitle | null> {
   try {
     const batchId = await getActiveBatchId();
     if (!batchId) return null;
@@ -272,26 +280,32 @@ export async function getTitleGenres(
     const supabase = createClient();
     const { data, error } = await supabase
       .from('anime_index')
-      .select('genre_ids')
+      .select('genre_ids, poster_original, poster_preview')
       .eq('batch_id', batchId)
       .eq('shikimori_id', shikimoriId)
       .maybeSingle();
 
-    const ids = (data?.genre_ids ?? []) as number[];
-    if (error || ids.length === 0) return null;
+    if (error || !data) return null;
+
+    const poster = (data.poster_original as string | null) ?? (data.poster_preview as string | null) ?? null;
+    const ids = (data.genre_ids ?? []) as number[];
+    if (ids.length === 0) return { genres: [], poster };
 
     const { data: names, error: namesError } = await supabase
       .from('anime_genres')
       .select('id, russian')
       .in('id', ids);
-    if (namesError || !names) return null;
+    if (namesError || !names) return { genres: [], poster };
 
     // Порядок как в самом тайтле, а не как вернула база: там он осмысленный
     // (основной жанр первым), у выборки по in() — произвольный.
     const byId = new Map(names.map((g) => [g.id as number, g.russian as string]));
-    return ids
-      .map((id) => ({ id, russian: byId.get(id) ?? '' }))
-      .filter((g) => g.russian !== '');
+    return {
+      genres: ids
+        .map((id) => ({ id, russian: byId.get(id) ?? '' }))
+        .filter((g) => g.russian !== ''),
+      poster,
+    };
   } catch {
     return null;
   }

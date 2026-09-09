@@ -57,9 +57,34 @@ export default function ExpandTitleButton({
       // Видимый значок остаётся 24×24 (WCAG-минимум впритык), но область
       // нажатия расширена до ~40×40 псевдоэлементом — карточки в основном
       // листают с телефона, а на границе минимума нет запаса на неточный тап.
-      className="press absolute bottom-1.5 right-1.5 z-10 grid h-6 w-6 place-items-center rounded-full bg-black/70 text-xs font-bold italic leading-none text-white backdrop-blur transition before:absolute before:inset-[-8px] before:content-[''] hover:bg-black/90"
+      className="press absolute bottom-1.5 right-1.5 z-10 grid h-6 w-6 place-items-center rounded-full bg-black/70 leading-none text-white backdrop-blur transition before:absolute before:inset-[-8px] before:content-[''] hover:bg-black/90"
     >
-      {expanded ? '×' : 'i'}
+      {/* Значки лежат друг на друге и меняются поворотом с растворением, а не
+          подменой символа: мгновенная замена «i» на «×» читалась как дефект
+          отрисовки.
+
+          Курсивная «i» смещена на пол-пикселя влево: наклон уводит её
+          видимый центр вправо, и в идеально отцентрованном боксе она
+          выглядела прижатой к правому краю кружка. Компенсация именно у
+          неё — у «×» наклона нет и смещать её не нужно. */}
+      <span className="relative block h-3.5 w-3.5">
+        <span
+          aria-hidden="true"
+          className={`absolute inset-0 grid -translate-x-[0.5px] place-items-center text-xs font-bold italic transition-all duration-200 ${
+            expanded ? 'rotate-90 scale-50 opacity-0' : 'rotate-0 scale-100 opacity-100'
+          }`}
+        >
+          i
+        </span>
+        <span
+          aria-hidden="true"
+          className={`absolute inset-0 grid place-items-center text-sm font-bold transition-all duration-200 ${
+            expanded ? 'rotate-0 scale-100 opacity-100' : '-rotate-90 scale-50 opacity-0'
+          }`}
+        >
+          ×
+        </span>
+      </span>
     </button>
   );
 }

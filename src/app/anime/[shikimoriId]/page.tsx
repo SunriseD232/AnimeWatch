@@ -17,7 +17,7 @@ import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
 import { KIND_LABELS, STATUS_LABELS } from '@/lib/animeLabels';
-import { getTitleGenres } from '@/lib/animeIndexQuery';
+import { getIndexedTitle } from '@/lib/animeIndexQuery';
 
 
 export default async function AnimePage({
@@ -39,7 +39,16 @@ export default async function AnimePage({
   }
 
   const title = anime.russian || anime.name;
-  const poster = imageUrl(anime.image?.original);
+  // Постер сперва из индекса: у Shikimori часть карточек отдаёт битую
+  // ссылку, и страница тайтла показывала «404», хотя в каталоге тот же тайтл
+  // был с обложкой — каталог давно читает индекс, а сюда ходил REST.
+  // Из локального индекса берём и жанры (чтобы id совпадали с фильтром
+  // каталога), и постер. Запрос дешёвый: одна строка по первичному ключу
+  // плюс выборка названий жанров.
+  const indexed = await getIndexedTitle(id);
+  const indexedGenres = indexed?.genres ?? null;
+
+  const poster = indexed?.poster ?? imageUrl(anime.image?.original);
   const total = episodeCount(anime);
   const description = stripBbCode(anime.description);
   const year = anime.aired_on ? anime.aired_on.slice(0, 4) : null;
@@ -53,11 +62,6 @@ export default async function AnimePage({
   const {
     data: { user },
   } = await userPromise;
-
-  // Жанры для кликабельных ссылок — из локального индекса, чтобы id
-  // совпадали с фильтром каталога (см. getTitleGenres). Запрос дешёвый:
-  // одна строка по первичному ключу плюс выборка названий.
-  const indexedGenres = await getTitleGenres(id);
 
   let progress: WatchProgress | null = null;
   let listItem: UserListItem | null = null;
@@ -170,7 +174,7 @@ export default async function AnimePage({
 
           {/* Жанры ссылками на каталог. Берём их из локального индекса, а не
               из карточки Shikimori: у той легаси-id, и ссылка открыла бы
-              фильтр, который ничего не находит (см. getTitleGenres). Индекса
+              фильтр, который ничего не находит (см. getIndexedTitle). Индекса
               нет — показываем подписи Shikimori без ссылок. */}
           {indexedGenres && indexedGenres.length > 0 ? (
             <div className="mt-2 flex flex-wrap gap-1.5">

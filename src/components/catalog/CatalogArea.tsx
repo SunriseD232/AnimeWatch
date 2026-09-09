@@ -74,8 +74,13 @@ export default function CatalogArea({
     >
       {children}
 
+      {/* -top-3 у рельса — ровно на внутренний отступ панели (p-3): без него
+          первый заголовок «Жанры» оказывался на 12px ниже заголовка
+          «Каталог аниме», и два заголовка рядом читались как сбитые. Правим
+          именно рельс, а не отступ липкой обёртки: у той свой top под шапкой,
+          и сдвиг там утащил бы панель под неё при прокрутке. */}
       {filtersOpen && (
-        <div className="order-3 min-[1600px]:absolute min-[1600px]:inset-y-0 min-[1600px]:right-full min-[1600px]:z-30 min-[1600px]:mr-5 min-[1600px]:w-52">
+        <div className="order-3 min-[1600px]:absolute min-[1600px]:inset-y-0 min-[1600px]:-top-3 min-[1600px]:right-full min-[1600px]:z-30 min-[1600px]:mr-5 min-[1600px]:w-52">
           {/* top под шапкой сайта: она sticky top-0 и высотой 67px, плюс
               небольшой зазор, чтобы панель не липла к ней вплотную.
 
