@@ -2471,8 +2471,30 @@ export default function OwnPlayer({
                     activeSubtitleIndex !== null ? 'text-white' : 'text-white/70',
                   ].join(' ')}
                 >
-                  <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
-                    <path d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm2.6 6.2c-.9 0-1.5.6-1.5 1.6s.6 1.6 1.5 1.6c.6 0 1-.2 1.4-.6l.9.9c-.6.6-1.4 1-2.3 1-1.8 0-3.1-1.2-3.1-2.9s1.3-2.9 3.1-2.9c.9 0 1.7.3 2.3 1l-.9.9c-.4-.4-.8-.6-1.4-.6zm7.4 0c-.9 0-1.5.6-1.5 1.6s.6 1.6 1.5 1.6c.6 0 1-.2 1.4-.6l.9.9c-.6.6-1.4 1-2.3 1-1.8 0-3.1-1.2-3.1-2.9s1.3-2.9 3.1-2.9c.9 0 1.7.3 2.3 1l-.9.9c-.4-.4-.8-.6-1.4-.6z" />
+                  {/* Буквы «CC» текстом, а не рисунком: две вырезанные из
+                      плашки закорючки на 20 пикселях читались как что угодно,
+                      только не как субтитры. Здесь надпись видно сразу. */}
+                  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+                    <rect
+                      x="2.6"
+                      y="5.6"
+                      width="18.8"
+                      height="12.8"
+                      rx="3"
+                      className="fill-none stroke-current"
+                      strokeWidth="1.8"
+                    />
+                    <text
+                      x="12"
+                      y="15.3"
+                      textAnchor="middle"
+                      fontSize="8.6"
+                      fontWeight="700"
+                      letterSpacing="0.3"
+                      className="fill-current"
+                    >
+                      CC
+                    </text>
                   </svg>
                   {/* Включённые субтитры видно по самой кнопке, не открывая
                       её: полоска под значком — тот же приём, что в плеерах
