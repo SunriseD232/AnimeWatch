@@ -29,11 +29,10 @@ import type { FilterOptionDef } from '@/lib/animeFilters';
  * тулбаром и выдачей) — слева места нет, и панель честно раздвигает контент
  * вниз.
  *
- * data-filters-open на корне — для сужения всей колонки каталога при открытой
- * панели (см. .catalog-shell в globals.css). Именно всей: переключатель
- * «Аниме / Фильмы и сериалы», заголовок, тулбар и выдача обязаны сужаться
- * заодно. Когда сужалась одна сетка, она расходилась по ширине с
- * переключателем над ней, и это читалось как сбитое выравнивание.
+ * data-filters-open на корне — для сетки карточек: при открытой панели она
+ * переходит на более мелкие и вмещает больше в ряд (см. .catalog-grid в
+ * globals.css). Через CSS, а не классы Tailwind у самой сетки, потому что
+ * сетку рендерит сервер, а состояние панели живёт на клиенте.
  */
 export default function CatalogArea({
   genres,
@@ -70,7 +69,7 @@ export default function CatalogArea({
   }, [filtersOpen, setFiltersOpen]);
 
   return (
-    <div data-filters-open={filtersOpen} className="catalog-shell flex flex-col gap-6">
+    <div data-filters-open={filtersOpen} className="flex flex-col gap-6">
       {header}
 
       <div ref={rootRef} className="relative flex flex-col gap-6">
