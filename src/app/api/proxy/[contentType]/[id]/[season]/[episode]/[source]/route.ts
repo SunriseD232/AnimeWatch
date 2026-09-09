@@ -97,12 +97,29 @@ const MAX_UPSTREAM_ATTEMPTS = 3;
  *  основной дорожки, ни для этих) — здесь просто меняем url, headers общие
  *  для всех дорожек одного /bnsi/-ответа (тот же embedOrigin). */
 function pickAudioTrackUrl(
-  resolved: { url: string; audioTracks?: { label: string; url: string }[] },
+  resolved: {
+    url: string;
+    audioTracks?: { label: string; url: string }[];
+    qualities?: { height: number; url: string }[];
+    qualitySwitch?: 'reload';
+  },
   audioIndex: number | undefined,
+  qualityHeight?: number,
 ): string {
   if (audioIndex != null) {
     const track = resolved.audioTracks?.[audioIndex];
+    // Доп. аудиодорожка идёт одной ссылкой, без карты качеств — выбранное
+    // качество к ней неприменимо, и это осознанно: у Alloha `quality` есть у
+    // каждой записи hlsSource, но тащить наружу матрицу «дорожка × качество»
+    // ради редкого сочетания не стоит усложнения.
     if (track) return track.url;
+  }
+  // Качества, которые нельзя смешивать в один манифест (Alloha): выбираем
+  // ссылку целиком, как отдельный .mpd у Aksor. Не нашли запрошенную высоту —
+  // отдаём url по умолчанию (там уже лучшее качество).
+  if (resolved.qualitySwitch === 'reload' && qualityHeight != null) {
+    const match = resolved.qualities?.find((q) => q.height === qualityHeight);
+    if (match) return match.url;
   }
   return resolved.url;
 }
@@ -193,7 +210,16 @@ async function handleGet(
   // чтобы hls.js/наш селектор качества видели обычный ABR-стрим. Aksor тоже
   // отдаёт качества по одному, но это DASH — обрабатывается отдельной веткой
   // ниже (без synthesizeMasterPlaylist — тот собирает HLS, а не DASH).
-  if (!resolved.isDash && resolved.qualities && resolved.qualities.length > 1) {
+  // qualitySwitch === 'reload' сюда не попадает намеренно: у таких вариантов
+  // сегменты подписаны под конкретный вариант, и собранный из них master
+  // ломает воспроизведение при первом же переключении уровня (Alloha, см.
+  // ResolvedStream.qualitySwitch). Они переключаются через ?q=.
+  if (
+    !resolved.isDash &&
+    resolved.qualitySwitch !== 'reload' &&
+    resolved.qualities &&
+    resolved.qualities.length > 1
+  ) {
     const text = synthesizeMasterPlaylist(resolved.qualities, resolved.headers);
     return new Response(text, {
       status: 200,
@@ -242,8 +268,18 @@ async function handleGet(
     return withDashQualities(dashProxied, currentDash.qualities);
   }
 
+  // ?q= нужен не только DASH-ветке: у источников с qualitySwitch: 'reload'
+  // качество тоже выбирается полной заменой ссылки.
+  const hlsQRaw = request.nextUrl.searchParams.get('q');
+  const hlsQuality =
+    hlsQRaw != null && Number.isFinite(Number(hlsQRaw)) ? Number(hlsQRaw) : undefined;
+
   let current = resolved;
-  let proxied = await fetchAndProxy(range, pickAudioTrackUrl(current, audioIndex), current.headers);
+  let proxied = await fetchAndProxy(
+    range,
+    pickAudioTrackUrl(current, audioIndex, hlsQuality),
+    current.headers,
+  );
 
   // Кэш мог протухнуть раньше своего TTL — подписанные CDN-ссылки живут
   // заметно меньше 15 минут (проверено вживую и у Videoseed — 404 у
@@ -258,7 +294,12 @@ async function handleGet(
       return NextResponse.json({ error: 'not_found' }, { status: 404 });
     }
     current = fresh;
-    if (!current.isDash && current.qualities && current.qualities.length > 1) {
+    if (
+      !current.isDash &&
+      current.qualitySwitch !== 'reload' &&
+      current.qualities &&
+      current.qualities.length > 1
+    ) {
       const text = synthesizeMasterPlaylist(current.qualities, current.headers);
       return new Response(text, {
         status: 200,
@@ -268,9 +309,17 @@ async function handleGet(
         },
       });
     }
-    proxied = await fetchAndProxy(range, pickAudioTrackUrl(current, audioIndex), current.headers);
+    proxied = await fetchAndProxy(
+      range,
+      pickAudioTrackUrl(current, audioIndex, hlsQuality),
+      current.headers,
+    );
   }
-  return proxied;
+  // Список высот наружу тем же заголовком, что у DASH: плеер строит по нему
+  // селектор качества, не полагаясь на уровни внутри манифеста (их там один).
+  return current.qualitySwitch === 'reload'
+    ? withDashQualities(proxied, current.qualities)
+    : proxied;
 }
 
 export async function GET(request: NextRequest, ctx: { params: RouteParams }) {

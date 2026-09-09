@@ -278,6 +278,11 @@ export default function OwnPlayer({
   // идёт через query-параметр ?q=, который меняет src и перезагружает
   // источник (как смена озвучки), а не через currentLevel без перезагрузки.
   const isDashSource = effectiveSource === 'aksor';
+  // Источники, у которых качество меняется ПОЛНОЙ заменой src, а не
+  // ABR-уровнем: Aksor (отдельные .mpd) и Alloha (отдельные подписанные
+  // playlist'ы, см. ResolvedStream.qualitySwitch). Список высот у обоих
+  // приходит заголовком X-Video-Qualities с HEAD-пробы.
+  const usesReloadQuality = effectiveSource === 'aksor' || effectiveSource === 'alloha';
   const [dashQualityHeight, setDashQualityHeight] = useState<number | null>(null);
   // Доп. аудиодорожка (см. ResolvedStream.audioTracks — сейчас Alloha, напр.
   // оригинал без перевода) — null = основная. Влияет на src так же, как
@@ -769,13 +774,31 @@ export default function OwnPlayer({
               .sort((a, b) => b.height - a.height);
             if (effectiveSource === 'alloha') {
               // У Alloha переключение ABR-уровня (и ручное, и автоматическое
-              // от hls.js при колебаниях сети) регулярно ломает
-              // воспроизведение — их CDN, похоже, валидирует подписанный URL
-              // сегмента только под тот вариант, что был выбран изначально.
-              // Фиксируем на лучшем доступном уровне сразу и не даём hls.js
-              // сменить его (нет свободного ABR = qualityLevels пуст —
-              // селектор не рендерится, ручной смены качества тоже нет).
+              // от hls.js при колебаниях сети) ломает воспроизведение — их
+              // CDN валидирует подписанный URL сегмента только под тот
+              // вариант, что был выбран изначально. Фиксируем уровень и не
+              // даём hls.js его сменить.
+              //
+              // Но качества у Alloha ЕСТЬ — просто каждое живёт по своей
+              // ссылке. Список приходит заголовком X-Video-Qualities, а
+              // переключение идёт полной заменой src через ?q= (см.
+              // changeQuality и qualitySwitch: 'reload' у extractor'а).
+              // Раньше селектор тут просто не рисовался, и качество у Alloha
+              // выбрать было нельзя вовсе.
               if (levels.length > 0) hls.currentLevel = levels[0].index;
+              const heights = (dashQualitiesRef.current ?? '')
+                .split(',')
+                .map((h) => Number(h))
+                .filter((h) => Number.isFinite(h) && h > 0)
+                .sort((a, b) => b - a);
+              if (heights.length > 1) {
+                const reloadLevels = heights.map((height, index) => ({ index, height }));
+                setQualityLevels(reloadLevels);
+                const activeHeight = dashQualityHeight ?? heights[0];
+                const activeIndex = reloadLevels.findIndex((l) => l.height === activeHeight);
+                setCurrentLevel(activeIndex >= 0 ? activeIndex : 0);
+                return;
+              }
             } else if (effectiveSource === 'videoseed') {
               // 2026-09-03: пробовали вернуть настоящий авто-ABR (см. историю
               // коммита) в предположении, что зависания были ЦЕЛИКОМ из-за
@@ -1622,22 +1645,34 @@ export default function OwnPlayer({
         index,
         height: qualityLevels[index]?.height ?? null,
       });
-      if (hlsRef.current) {
+      // hls.js умеет переключать уровень на лету только там, где варианты
+      // лежат в одном манифесте. У Aksor и Alloha это не так — см.
+      // usesReloadQuality.
+      if (hlsRef.current && !usesReloadQuality) {
         hlsRef.current.currentLevel = index;
         setCurrentLevel(index);
         return;
       }
-      // DASH (Aksor): качество — отдельный манифест (?q=<height>), а не
-      // ABR-уровень внутри одного, как у hls.js — меняем src через
-      // dashQualityHeight, что перезапускает резолв (как смена озвучки),
-      // сохраняя позицию через seekTargetRef (см. фикс выше).
+      // Aksor (отдельные .mpd) и Alloha (отдельные подписанные playlist'ы):
+      // качество — другой источник целиком (?q=<height>), а не ABR-уровень
+      // внутри одного. Меняем src через dashQualityHeight, что перезапускает
+      // резолв (как смена озвучки), сохраняя позицию через seekTargetRef.
       const lvl = qualityLevels[index];
       if (!lvl) return;
       seekTargetRef.current = currentTime > 1 ? currentTime : resumeFrom;
       setDashQualityHeight(lvl.height);
       setCurrentLevel(index);
     },
-    [qualityLevels, currentTime, resumeFrom, effectiveSource, shikimoriId, season, episode],
+    [
+      qualityLevels,
+      currentTime,
+      resumeFrom,
+      effectiveSource,
+      usesReloadQuality,
+      shikimoriId,
+      season,
+      episode,
+    ],
   );
 
   // Смена доп. аудиодорожки (Alloha) — как DASH-качество выше: полная

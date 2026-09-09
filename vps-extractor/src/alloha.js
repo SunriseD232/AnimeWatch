@@ -183,13 +183,16 @@ function firstMirror(value) {
 /** Лучшее (максимальная высота) качество из карты {высота: URL} одной
  *  записи hlsSource — используется и для основной дорожки, и для каждой
  *  дополнительной в audioTracks (см. buildResolvedStream). */
-function bestQualityUrl(qualityMap) {
-  if (!qualityMap || typeof qualityMap !== 'object') return null;
-  const qualities = Object.entries(qualityMap)
+function qualityList(qualityMap) {
+  if (!qualityMap || typeof qualityMap !== 'object') return [];
+  return Object.entries(qualityMap)
     .map(([height, url]) => ({ height: Number(height), url: firstMirror(url) }))
     .filter((q) => Number.isFinite(q.height) && q.url)
     .sort((a, b) => b.height - a.height);
-  return qualities[0]?.url ?? null;
+}
+
+function bestQualityUrl(qualityMap) {
+  return qualityList(qualityMap)[0]?.url ?? null;
 }
 
 /**
@@ -232,11 +235,25 @@ function buildResolvedStream(bnsiData, embedOrigin) {
     })
     .filter(Boolean);
 
+  // Качества основной дорожки. Каждое — САМОСТОЯТЕЛЬНАЯ подписанная ссылка,
+  // а не ABR-вариант внутри одного манифеста, поэтому отдаём их вместе с
+  // qualitySwitch: 'reload'. Этот маркер запрещает приложению собирать из них
+  // многоуровневый master (synthesizeMasterPlaylist) — именно он и ломал
+  // воспроизведение: их CDN валидирует подписанный URL сегмента только под
+  // изначально выбранный вариант, и переключение уровня на лету упирается в
+  // бесконечный retry-луп (было вживую, React error #185).
+  //
+  // Переключение идёт полной заменой источника через ?q=<высота> — ровно как
+  // у Aksor с его отдельными .mpd и как у audioTracks ниже с ?audio=. Один
+  // раз выбрали вариант — дальше играем только его.
+  const qualities = qualityList(hlsSource[0]?.quality);
+
   return {
     url,
     headers: { Referer: `${embedOrigin}/`, Origin: embedOrigin },
     isHls: true,
-    // НЕ отдаём qualities наружу, хотя bnsi даёт их несколько на дорожку.
+    ...(qualities.length > 1 ? { qualities, qualitySwitch: 'reload' } : {}),
+    // Раньше qualities не отдавались вовсе.
     // OwnPlayer.tsx (см. её же комментарий у effectiveSource === 'alloha')
     // уже давно и осознанно не даёт hls.js переключать ABR-уровень именно
     // для Alloha — их CDN валидирует подписанный URL сегмента только под

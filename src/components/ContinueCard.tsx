@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import PosterImage from '@/components/PosterImage';
+import { localPosterUrl } from '@/lib/posterPath';
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
@@ -74,16 +76,25 @@ export default function ContinueCard({
     <div className="card-lift group relative overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60">
       <Link href={watchHref}>
         <div className="relative aspect-video w-full overflow-hidden bg-bg-soft">
+          {/* Сперва наша копия с диска (миграция 0029), потом сохранённая в
+              базе ссылка. Второе — главная причина 404 на главной: в
+              watch_progress лежит ссылка, записанная в момент просмотра, и
+              часть таких давно протухла (Shikimori заменил постер, подпись
+              прокси у кино истекла). Флага «есть локально» здесь нет —
+              данные идут из своей таблицы, не из индекса, — поэтому пробуем
+              оптимистично: промах стоит один быстрый 404 к своему же nginx. */}
           {progress.poster_url ? (
-            // Постер бывает с Shikimori (аниме) или Kodik/Кинопоиска (кино) —
-            // обычный <img>, чтобы не заводить allowlist доменов next/image.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={fixPosterUrl(progress.poster_url)!}
+            <PosterImage
+              sources={[
+                localPosterUrl(
+                  progress.content_type === 'cinema' ? 'cinema' : 'anime',
+                  progress.shikimori_id,
+                ),
+                fixPosterUrl(progress.poster_url),
+              ]}
               alt={progress.anime_title}
-              loading="lazy"
-              referrerPolicy="no-referrer"
               className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+              placeholderClassName="grid h-full w-full place-items-center text-gray-400"
             />
           ) : (
             <div className="grid h-full w-full place-items-center text-gray-400">

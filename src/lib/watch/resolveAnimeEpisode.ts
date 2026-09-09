@@ -62,11 +62,20 @@ export async function resolveAnimeEpisodeSources({
     kodikFallback: embed.fallback,
     episodesTotal: embed.episodesTotal,
     yummyTranslations: yummy?.translations ?? [],
-    // Доступность конкретного торрента по Kitsu id известна только в момент
-    // резолва (см. realdebridResolve.ts) — вкладку добавляем всегда, а не
-    // найдётся источник, «Наш плеер» покажет обычную ошибку, как для любого
-    // другого несработавшего экстракта.
-    realdebridTranslations: [{ id: -1, title: 'Real-Debrid', embedUrl: '', source: 'realdebrid' }],
+    // Real-Debrid по умолчанию СКРЫТ от пользователя.
+    //
+    // Раньше вкладка добавлялась всегда: доступность конкретного торрента по
+    // Kitsu id известна только в момент резолва (см. realdebridResolve.ts), и
+    // рассуждение было «не найдётся — покажем обычную ошибку». На практике
+    // это давало пункт, который у большинства тайтлов просто не работает, —
+    // пользователь тыкает в него и получает ошибку вместо видео.
+    //
+    // Код пути оставлен целиком: включается переменной REALDEBRID_ENABLED=1,
+    // если у аккаунта появится рабочая подписка и торренты начнут находиться.
+    realdebridTranslations:
+      process.env.REALDEBRID_ENABLED === '1'
+        ? [{ id: -1, title: 'Real-Debrid', embedUrl: '', source: 'realdebrid' as const }]
+        : [],
     skipOpening: yummy?.skipOpening ?? null,
     skipEnding: yummy?.skipEnding ?? null,
   };

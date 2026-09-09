@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import PosterImage from '@/components/PosterImage';
+import { localPosterUrl } from '@/lib/posterPath';
 import { useRef, useState } from 'react';
 import ExpandTitleButton from '@/components/ExpandTitleButton';
 import { fixPosterUrl } from '@/lib/format';
@@ -31,14 +33,15 @@ export default function PlannedCard({
     <div className="card-lift group relative flex flex-col overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60">
       <Link href={href} className="flex flex-1 flex-col">
         <div className="relative aspect-[2/3] w-full overflow-hidden bg-bg-soft">
+          {/* Сперва наша копия с диска — та же причина, что в ContinueCard:
+              в user_list лежит ссылка, записанная при добавлении тайтла, и
+              часть таких уже отдаёт 404. */}
           {posterUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={fixPosterUrl(posterUrl)!}
+            <PosterImage
+              sources={[localPosterUrl(contentType, shikimoriId), fixPosterUrl(posterUrl)]}
               alt={title}
-              loading="lazy"
-              referrerPolicy="no-referrer"
               className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105"
+              placeholderClassName="grid h-full w-full place-items-center text-gray-400"
             />
           ) : (
             <div className="grid h-full w-full place-items-center text-gray-400">

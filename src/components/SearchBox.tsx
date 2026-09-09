@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { SearchSuggestion } from '@/app/api/search/suggest/route';
 import { logEvent } from '@/lib/clientLog';
 
@@ -21,6 +22,8 @@ export default function SearchBox() {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const rootRef = useRef<HTMLFormElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [box, setBox] = useState<{ top: number; left: number; width: number } | null>(null);
 
   // На страницах кино и в результатах поиска кино держим кино-режим.
   const isCinema =
@@ -97,6 +100,30 @@ export default function SearchBox() {
 
   const showDropdown = open && value.trim().length >= 2 && suggestions.length > 0;
 
+  // Геометрия поля: список выносится порталом в body и позиционируется по
+  // ней. Иначе он лежал бы внутри шапки, а у элемента с backdrop-filter
+  // потомки размывают ЕГО, а не страницу под ним — размытия не было видно
+  // вовсе. Тот же элемент становится containing block для fixed, так что
+  // координаты тоже считались бы от шапки.
+  const measure = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    // -1px: список прирастает к полю без шва, перекрывая его нижнюю границу.
+    setBox({ top: r.bottom - 1, left: r.left, width: r.width });
+  }, []);
+
+  useEffect(() => {
+    if (!showDropdown) return;
+    measure();
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, { passive: true });
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure);
+    };
+  }, [showDropdown, measure]);
+
   return (
     <form
       ref={rootRef}
@@ -162,6 +189,7 @@ export default function SearchBox() {
         // в aria-label — для экранного диктора контекст важнее краткости.
         placeholder="Поиск"
         aria-label={isCinema ? 'Поиск фильмов и сериалов' : 'Поиск аниме'}
+        ref={inputRef}
         role="combobox"
         aria-expanded={showDropdown}
         aria-controls="search-suggestions"
@@ -178,16 +206,18 @@ export default function SearchBox() {
         ].join(' ')}
       />
 
-      {showDropdown && (
-        <ul
-          id="search-suggestions"
-          role="listbox"
-          // Без отступа и с прямым верхом: список — продолжение поля, а не
-          // отдельная карточка рядом с ним. У самого поля в этот момент
-          // скругляется только верх (см. INPUT_OPEN_CLS), и вместе они
-          // читаются одной раскрытой панелью.
-          className="glass-panel absolute z-30 -mt-px w-full overflow-hidden rounded-b-2xl border border-t-0 border-white/10 shadow-2xl"
-        >
+      {showDropdown &&
+        box &&
+        createPortal(
+          <ul
+            id="search-suggestions"
+            role="listbox"
+            // Прирастает к полю без зазора и с прямым верхом: список —
+            // продолжение поля, а не отдельная карточка рядом с ним. У самого
+            // поля в этот момент скругляется только верх.
+            style={{ top: box.top, left: box.left, width: box.width }}
+            className="glass-panel fixed z-50 overflow-hidden rounded-b-2xl border border-t-0 border-white/10 shadow-2xl"
+          >
           {suggestions.map((s, i) => (
             <li key={`${s.contentType}:${s.id}`} role="option" aria-selected={i === activeIndex}>
               <Link
@@ -250,8 +280,9 @@ export default function SearchBox() {
               <span aria-hidden="true">→</span>
             </Link>
           </li>
-        </ul>
-      )}
+          </ul>,
+          document.body,
+        )}
     </form>
   );
 }

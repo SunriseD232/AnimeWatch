@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { createClient } from '@/lib/supabase/client';
 import type { AppNotification } from '@/lib/types';
 
@@ -205,8 +206,14 @@ export default function NotificationBell({
         )}
       </button>
 
-      {open && box && (
-        <div
+      {open &&
+        box &&
+        // Портал в body. Внутри шапки эта панель размывала бы саму шапку, а
+        // не страницу под собой: у элемента с backdrop-filter потомки видят
+        // его собственный фон. Он же делается containing block для fixed —
+        // координаты считались бы от шапки, а не от окна.
+        createPortal(
+          <div
           // fixed, а не absolute: позиция считается от шапки, чтобы список
           // начинался строго под ней. Ширина ограничена окном — на телефоне
           // колокольчик стоит не у самого края, и список шириной 90vw уезжал
@@ -307,8 +314,9 @@ export default function NotificationBell({
               )
             )}
           </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
