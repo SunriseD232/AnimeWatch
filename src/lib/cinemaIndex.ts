@@ -383,7 +383,9 @@ async function loadRatings(
       const rating = Number((r as { rating: number | null }).rating);
       if (Number.isFinite(rating)) out.set((r as { imdb_id: string }).imdb_id, rating);
     }
-    if (data.length < PAGE) break;
+    // Выходим только на пустой странице: PostgREST на части страниц отдаёт
+    // меньше запрошенного, и «пришло меньше — значит конец» обрывало чтение
+    // на середине (проверено вживую на списке imdb_id).
   }
 
   return out;
