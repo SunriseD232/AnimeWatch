@@ -695,6 +695,11 @@ export default function OwnPlayer({
     if (!next) return false;
 
     translationOverrideRef.current = { key, title: next.title, abandonedId: translationId };
+    // Согласуем и «текущую» озвучку. Без этого на СЛЕДУЮЩЕЙ серии эффект
+    // выбора тянул бы нас обратно на битую (он читает этот реф), а родитель —
+    // на подставленную, и они бы толкались бесконечно. Практический смысл
+    // тот же, что у ручного переключения: раз ушли — идём дальше с этой.
+    activeTranslationTitleRef.current = next.title;
     logEvent('player.translation_fallback', {
       shikimoriId,
       season,
@@ -1976,18 +1981,29 @@ export default function OwnPlayer({
   // Ручная смена озвучки — переносим текущую позицию (src меняется вместе с
   // translationId, что уже само по себе перезапускает эффект резолва).
   const changeTranslation = useCallback(
-    (id: number) => {
+    (id: number, opts?: { explicit?: boolean }) => {
       seekTargetRef.current = currentTime > 1 ? currentTime : resumeFrom;
       // Запоминаем title сразу здесь — при явном выборе пользователя, а не
       // жду синхронного пересчёта activeTranslation на следующем рендере
       // (см. коммент у объявления activeTranslationTitleRef выше).
       const picked = translations.find((t) => t.id === id);
       if (picked) activeTranslationTitleRef.current = picked.title;
-      // Явный выбор отменяет вынужденную замену и снимает пометку «уже
-      // не загрузилась» с выбранного: пользователь просит попробовать
-      // именно это, и отказывать ему по прошлому опыту неправильно.
-      translationOverrideRef.current = null;
-      failedTranslationsRef.current.ids.delete(id);
+      // Явный выбор отменяет вынужденную замену и снимает пометку «уже не
+      // загрузилась» с выбранного: пользователь просит попробовать именно
+      // это, и отказывать ему по прошлому опыту неправильно.
+      //
+      // Синхронизация пропа (explicit: false) этого НЕ делает, и это
+      // принципиально. Родитель узнаёт о нашей замене на рендер позже и
+      // присылает обратно старое значение; когда такое эхо снимало пометки,
+      // потолок в три автозамены не набирался никогда — плеер бесконечно
+      // ходил между двумя озвучками, страница падала с «Maximum update depth
+      // exceeded» (воспроизведено на проде 2026-09-10). На саму запрошенную
+      // озвучку пометка не влияет: её всё равно пробуют, пометка лишь
+      // исключает её из КАНДИДАТОВ на замену.
+      if (opts?.explicit !== false) {
+        translationOverrideRef.current = null;
+        failedTranslationsRef.current.ids.delete(id);
+      }
       logEvent('player.change_translation', {
         shikimoriId,
         season,
@@ -2025,7 +2041,7 @@ export default function OwnPlayer({
       override.abandonedId = null;
       return;
     }
-    changeTranslation(selectedTranslationId);
+    changeTranslation(selectedTranslationId, { explicit: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTranslationId, translations]);
 
