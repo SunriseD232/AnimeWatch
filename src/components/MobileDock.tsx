@@ -37,7 +37,10 @@ export default function MobileDock() {
       aria-label="Основная навигация"
       className="glass fixed inset-x-0 bottom-0 z-40 border-t border-white/[0.06] pb-[env(safe-area-inset-bottom)] md:hidden"
     >
-      <div className="mx-auto flex max-w-md items-stretch justify-around px-2">
+      {/* Одинаковая высота у всех трёх: боковые пункты — значок плюс
+          подпись, средний — только кнопка. Без общей высоты кнопка «плей»
+          растягивала док и сидела выше подписей. */}
+      <div className="mx-auto flex h-16 max-w-md items-center justify-around px-2">
         <DockLink href={catalogHref} label="Каталог" active={isCatalog}>
           <svg viewBox="0 0 24 24" aria-hidden="true" className="h-6 w-6 fill-none stroke-current" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="3" width="7" height="7" rx="2" />
@@ -53,16 +56,19 @@ export default function MobileDock() {
           href="/"
           aria-label="На главную"
           aria-current={isHome ? 'page' : undefined}
-          className="press flex shrink-0 items-center justify-center px-4 py-2"
+          className="press flex h-full shrink-0 items-center justify-center px-4"
         >
           <span
             className={[
-              'grid h-11 w-11 place-items-center rounded-2xl transition',
+              'grid h-12 w-12 place-items-center rounded-2xl transition',
               isHome ? 'bg-accent text-white' : 'bg-accent/15 text-accent',
             ].join(' ')}
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true" className="h-6 w-6 fill-current">
-              <path d="M9 7.5v9a1 1 0 0 0 1.53.85l7.2-4.5a1 1 0 0 0 0-1.7l-7.2-4.5A1 1 0 0 0 9 7.5Z" />
+            {/* Треугольник во всю плитку: на 24-й сетке он занимал меньше
+                половины ширины и на сплошном акцентном фоне читался мелкой
+                точкой — в отличие от логотипа в шапке, где он крупный. */}
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="h-7 w-7 fill-current">
+              <path d="M7.5 5.6v12.8a1.2 1.2 0 0 0 1.84 1.02l10.05-6.4a1.2 1.2 0 0 0 0-2.04L9.34 4.58A1.2 1.2 0 0 0 7.5 5.6Z" />
             </svg>
           </span>
         </Link>
@@ -94,7 +100,7 @@ function DockLink({
       href={href}
       aria-current={active ? 'page' : undefined}
       className={[
-        'press flex flex-1 flex-col items-center gap-0.5 px-2 py-2 text-[11px] font-medium transition',
+        'press flex h-full flex-1 flex-col items-center justify-center gap-1 px-2 text-[11px] font-medium leading-none transition',
         active ? 'text-accent' : 'text-gray-400 hover:text-gray-200',
       ].join(' ')}
     >

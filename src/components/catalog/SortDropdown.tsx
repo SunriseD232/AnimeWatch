@@ -84,7 +84,7 @@ export default function SortDropdown({
         <ul
           role="listbox"
           aria-labelledby="sort-label"
-          className="glass animate-filters-panel absolute left-0 z-30 mt-2 min-w-full overflow-hidden whitespace-nowrap rounded-2xl border border-white/10 shadow-2xl"
+          className="glass-panel animate-filters-panel absolute left-0 z-30 mt-2 min-w-full overflow-hidden whitespace-nowrap rounded-2xl border border-white/10 shadow-2xl"
         >
           {options.map((o) => {
             const active = o.value === value;

@@ -32,7 +32,19 @@ export default function SearchBox() {
     return `/search?${query.toString()}`;
   };
 
+  // Раньше здесь был второй debounce, который каждые 400 мс уводил на
+  // /search прямо во время набора. Из-за него страница дёргалась на каждой
+  // букве, а выпадающий список подсказок было не разглядеть: он появлялся
+  // одновременно с переходом на отдельную страницу и тут же исчезал вместе с
+  // ней. Теперь набор только показывает подсказки; на полную страницу
+  // результатов уводит Enter или пункт «Показать все результаты».
+  //
+  // Исключение — сама /search: там строка поиска и есть страница, и
+  // продолжать печатать, не видя, как меняется выдача, странно.
+  const onSearchPage = pathname === '/search';
+
   useEffect(() => {
+    if (!onSearchPage) return;
     const trimmed = value.trim();
     const handle = setTimeout(() => {
       if (trimmed.length === 0) return;
@@ -40,7 +52,7 @@ export default function SearchBox() {
     }, 400);
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  }, [value, onSearchPage]);
 
   useEffect(() => {
     const trimmed = value.trim();
@@ -154,14 +166,27 @@ export default function SearchBox() {
         aria-expanded={showDropdown}
         aria-controls="search-suggestions"
         aria-autocomplete="list"
-        className="w-full rounded-full border border-white/10 bg-bg-card py-2 pl-10 pr-4 text-base text-gray-100 placeholder:text-gray-400 transition focus:border-accent/60 focus:outline-none focus:ring-2 focus:ring-accent/40"
+        // Пока список открыт, поле теряет нижние скругления и подсказки
+        // прирастают к нему снизу — вместе получается одна раскрытая панель,
+        // а не поле и отдельная карточка под ним. Кольцо фокуса в этот
+        // момент тоже убираем: оно обводило бы только верхнюю половину.
+        className={[
+          'w-full border border-white/10 bg-bg-card py-2 pl-10 pr-4 text-base text-gray-100 placeholder:text-gray-400 transition focus:border-accent/60 focus:outline-none',
+          showDropdown
+            ? 'rounded-t-2xl rounded-b-none border-b-white/10'
+            : 'rounded-full focus:ring-2 focus:ring-accent/40',
+        ].join(' ')}
       />
 
       {showDropdown && (
         <ul
           id="search-suggestions"
           role="listbox"
-          className="glass absolute z-30 mt-2 w-full overflow-hidden rounded-2xl border border-white/10 shadow-2xl"
+          // Без отступа и с прямым верхом: список — продолжение поля, а не
+          // отдельная карточка рядом с ним. У самого поля в этот момент
+          // скругляется только верх (см. INPUT_OPEN_CLS), и вместе они
+          // читаются одной раскрытой панелью.
+          className="glass-panel absolute z-30 -mt-px w-full overflow-hidden rounded-b-2xl border border-t-0 border-white/10 shadow-2xl"
         >
           {suggestions.map((s, i) => (
             <li key={`${s.contentType}:${s.id}`} role="option" aria-selected={i === activeIndex}>
@@ -204,6 +229,27 @@ export default function SearchBox() {
               </Link>
             </li>
           ))}
+
+          {/* Выход на полную выдачу — последним пунктом списка. Раньше туда
+              уводило само печатание, теперь это осознанное действие: либо
+              Enter, либо эта строка. */}
+          <li>
+            <Link
+              href={buildHref(value.trim())}
+              onClick={() => {
+                setOpen(false);
+                logEvent('search.submit', {
+                  q: value.trim(),
+                  type: isCinema ? 'cinema' : 'anime',
+                  via: 'dropdown',
+                });
+              }}
+              className="flex items-center justify-between gap-2 border-t border-white/10 px-3 py-2.5 text-sm font-medium text-accent transition hover:bg-white/5"
+            >
+              Показать все результаты
+              <span aria-hidden="true">→</span>
+            </Link>
+          </li>
         </ul>
       )}
     </form>

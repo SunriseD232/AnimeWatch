@@ -274,3 +274,55 @@ export async function getCinemaCountriesFromIndex(): Promise<IndexedRef[] | null
     return null;
   }
 }
+
+/**
+ * Похожие тайтлы по жанру — для страницы тайтла.
+ *
+ * До индекса это делалось через getCinemaCatalog, то есть до тридцати
+ * страниц Videoseed по 50 записей НА КАЖДЫЙ просмотр карточки, с отбором
+ * подстрокой по строке жанров. Теперь один запрос к своей базе.
+ *
+ * Жанр приходит названием (страница тайтла берёт его из ответа Videoseed),
+ * поэтому сперва переводим название в id по справочнику.
+ */
+export async function getSimilarFromIndex(
+  genreName: string,
+  excludeId: number,
+  limit = 12,
+): Promise<CinemaShort[] | null> {
+  try {
+    const batchId = await getActiveBatchId();
+    if (!batchId) return null;
+
+    const supabase = createClient();
+    const { data: genre } = await supabase
+      .from('cinema_genres')
+      .select('id')
+      .eq('name', genreName)
+      .maybeSingle();
+
+    const genreId = (genre as { id: number } | null)?.id;
+    if (!genreId) return null;
+
+    const { data, error } = await supabase
+      .from('cinema_index')
+      .select(SELECT_COLUMNS)
+      .eq('batch_id', batchId)
+      .contains('genre_ids', [genreId])
+      .neq('kp_id', excludeId)
+      // По сглаженному рейтингу, а не по сырому: иначе в «похожем» оказались
+      // бы фильмы с 10.00 от двух голосов (см. миграцию 0030).
+      .order('rating_weighted', { ascending: false, nullsFirst: false })
+      .order('kp_id', { ascending: true })
+      .limit(limit);
+
+    if (error || !data) return null;
+    return (data as unknown as IndexRow[]).map(toShort);
+  } catch (err) {
+    console.error(
+      '[cinemaIndexQuery] похожие не собрались, откат на Videoseed:',
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+}

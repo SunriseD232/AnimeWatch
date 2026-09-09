@@ -71,7 +71,7 @@ export default function UserPresenceBadge({ onlineCount }: { onlineCount: number
       </button>
 
       {open && (
-        <div className="glass absolute right-0 z-30 mt-2 w-80 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl border border-white/10 shadow-2xl">
+        <div className="glass-panel absolute right-0 z-30 mt-2 w-80 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl border border-white/10 shadow-2xl">
           {loading && !summary ? (
             <p className="px-4 py-6 text-center text-sm text-gray-400">Загрузка…</p>
           ) : (

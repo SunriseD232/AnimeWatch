@@ -7,7 +7,7 @@ import ModeSwitch from '@/components/ModeSwitch';
 import Pagination from '@/components/Pagination';
 import PlannedCard from '@/components/PlannedCard';
 import ScrollCarousel from '@/components/ScrollCarousel';
-import { CardGridSkeleton } from '@/components/Skeletons';
+import { CardGridSkeleton, CarouselSkeleton } from '@/components/Skeletons';
 import { getAnime, getNewAnime, getPopularRanked } from '@/lib/shikimori';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
@@ -87,7 +87,7 @@ async function ContinueWatching() {
   // Горизонтальная карусель: последние просмотренные листаются вбок.
   // Помимо родной полосы прокрутки — колесо мыши и драг (см. ScrollCarousel).
   return (
-    <ScrollCarousel className="-mx-4 flex snap-x scroll-px-4 gap-3 overflow-x-auto px-4 pb-2">
+    <ScrollCarousel className="flex snap-x gap-3 overflow-x-auto pb-2">
       {progress.map((p) => (
         <div key={p.id} className="w-56 shrink-0 snap-start sm:w-72">
           <ContinueCard progress={p} />
@@ -125,7 +125,7 @@ async function PlannedCarousel() {
   return (
     <section className="animate-rise flex flex-col gap-4" style={{ animationDelay: '40ms' }}>
       <h2 className="text-xl font-bold">Вы хотели посмотреть</h2>
-      <ScrollCarousel className="-mx-4 flex snap-x scroll-px-4 gap-3 overflow-x-auto px-4 pb-2">
+      <ScrollCarousel className="flex snap-x gap-3 overflow-x-auto pb-2">
         {items.map((i) => (
           <div key={i.id} className="w-28 shrink-0 snap-start sm:w-[134px]">
             <PlannedCard
@@ -212,14 +212,16 @@ export default function HomePage({
 
       <section className="animate-rise flex flex-col gap-4">
         <h1 className="text-xl font-bold">Продолжить просмотр</h1>
-        <Suspense fallback={<CardGridSkeleton count={4} />}>
+        <Suspense fallback={<CarouselSkeleton count={4} />}>
           <ContinueWatching />
         </Suspense>
       </section>
 
-      {/* Пустой список (гость/нет planned-тайтлов) — PlannedCarousel сам
-          вернёт null, секция не появится вообще, скелетон тут ни к чему. */}
-      <Suspense fallback={null}>
+      {/* Скелетон узкими карточками — по форме самой секции. Она может
+          вовсе не появиться (гость или нет planned-тайтлов, PlannedCarousel
+          вернёт null), но пустое место на её месте лучше, чем рывок
+          подъезжающего блока: у гостя скелетон мелькнёт один кадр. */}
+      <Suspense fallback={<CarouselSkeleton count={6} wide={false} />}>
         <PlannedCarousel />
       </Suspense>
 

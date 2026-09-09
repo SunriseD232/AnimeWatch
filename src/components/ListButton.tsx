@@ -155,7 +155,7 @@ export default function ListButton({
       </button>
 
       {open && (
-        <div className="glass absolute z-20 mt-2 w-48 overflow-hidden rounded-2xl border border-white/10 shadow-2xl">
+        <div className="glass-panel absolute z-20 mt-2 w-48 overflow-hidden rounded-2xl border border-white/10 shadow-2xl">
           {STATUS_OPTIONS.map((o) => (
             <button
               key={o.value}

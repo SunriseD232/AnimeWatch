@@ -7,6 +7,7 @@ import DownloadButton from '@/components/DownloadButton';
 import ListButton from '@/components/ListButton';
 import TrailerButton from '@/components/TrailerButton';
 import { getCinemaById, getCinemaCatalog, type CinemaShort } from '@/lib/videoseed-catalog';
+import { getSimilarFromIndex } from '@/lib/cinemaIndexQuery';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
@@ -24,18 +25,27 @@ import { createVideoSource } from '@/lib/video/kodik';
 async function SimilarCinemaTitles({ id, genre }: { id: number; genre: string | null }) {
   if (!genre) return null;
   let similar: CinemaShort[] = [];
-  try {
-    const catalogPage = await getCinemaCatalog({
-      type: 'both',
-      genresInclude: [genre],
-      genresExclude: [],
-      sort: 'rating',
-      page: 1,
-      pageSize: 13,
-    });
-    similar = catalogPage.items.filter((s) => s.id !== id).slice(0, 12);
-  } catch {
-    similar = [];
+
+  // Сперва локальный индекс: один запрос к своей базе вместо тридцати
+  // страниц Videoseed по 50 записей на каждый просмотр карточки. Индекса
+  // нет — работаем по-старому, чтобы блок не пропал совсем.
+  const indexed = await getSimilarFromIndex(genre, id, 12);
+  if (indexed) {
+    similar = indexed;
+  } else {
+    try {
+      const catalogPage = await getCinemaCatalog({
+        type: 'both',
+        genresInclude: [genre],
+        genresExclude: [],
+        sort: 'rating',
+        page: 1,
+        pageSize: 13,
+      });
+      similar = catalogPage.items.filter((s) => s.id !== id).slice(0, 12);
+    } catch {
+      similar = [];
+    }
   }
   if (similar.length === 0) return null;
   return (

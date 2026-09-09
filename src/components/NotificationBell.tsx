@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { AppNotification } from '@/lib/types';
 
@@ -36,6 +36,32 @@ export default function NotificationBell({
   const [items, setItems] = useState(initial);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState<{ top: number; right: number } | null>(null);
+
+  // Список кладём ПОД шапку, а не под кнопку. Колокольчик стоит внутри
+  // шапки, и список, отсчитанный от него, начинался на несколько пикселей
+  // выше её нижней границы — накладывался на собственную шапку. Позицию
+  // меряем: высота шапки зависит от безопасной зоны устройства.
+  const measure = useCallback(() => {
+    const header = document.querySelector('header');
+    const anchor = rootRef.current;
+    if (!anchor) return;
+    const a = anchor.getBoundingClientRect();
+    setBox({
+      top: (header ? header.getBoundingClientRect().bottom : a.bottom) + 8,
+      right: Math.max(12, window.innerWidth - a.right),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, { passive: true });
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure);
+    };
+  }, [open, measure]);
 
   const unread = items.filter((n) => !n.read_at).length;
 
@@ -140,13 +166,25 @@ export default function NotificationBell({
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          // Замер ДО показа, а не в эффекте после. Не спозиционированный
+          // fixed-блок шириной 320px, отрисованный на первом кадре, вылезал
+          // за правый край, страница получала горизонтальную прокрутку — и
+          // замер возвращал координаты, сдвинутые на её величину. Список
+          // улетал за левый край экрана.
+          if (!open) measure();
+          setOpen((v) => !v);
+        }}
         aria-label="Уведомления"
         aria-haspopup="menu"
         aria-expanded={open}
-        className="press relative grid h-9 w-9 place-items-center rounded-full text-gray-300 hover:bg-white/5 hover:text-white"
+        // На телефоне колокольчик ростом с поисковую строку (она py-2 при
+        // text-base, то есть 42px): рядом с ней кнопка в 36px выглядела
+        // приплюснутой и была мельче зоны уверенного попадания пальцем.
+        // На широких экранах шапка плотнее, и там прежние 36px уместнее.
+        className="press relative grid h-[42px] w-[42px] place-items-center rounded-full text-gray-300 hover:bg-white/5 hover:text-white md:h-9 md:w-9"
       >
-        <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5">
+        <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6 md:h-5 md:w-5">
           <path
             d="M12 3a5 5 0 0 0-5 5v3.2c0 .5-.16 1-.46 1.4L5 15h14l-1.54-2.4c-.3-.4-.46-.9-.46-1.4V8a5 5 0 0 0-5-5Z"
             stroke="currentColor"
@@ -167,13 +205,14 @@ export default function NotificationBell({
         )}
       </button>
 
-      {open && (
+      {open && box && (
         <div
-          // max-w от ширины окна, а не 90vw: на телефоне колокольчик стоит
-          // не у самого края, и список шириной 90vw уезжал левым краем за
-          // границу экрана. Здесь ширина ограничена так, чтобы между списком
-          // и краями оставалось по 12px, откуда бы он ни открывался.
-          className="glass absolute right-0 z-30 mt-2 w-80 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl border border-white/10 shadow-2xl"
+          // fixed, а не absolute: позиция считается от шапки, чтобы список
+          // начинался строго под ней. Ширина ограничена окном — на телефоне
+          // колокольчик стоит не у самого края, и список шириной 90vw уезжал
+          // левым краем за границу экрана.
+          style={{ top: box.top, right: box.right }}
+          className="glass-panel fixed z-50 w-80 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl border border-white/10 shadow-2xl"
         >
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
             <span className="text-sm font-semibold">Уведомления</span>

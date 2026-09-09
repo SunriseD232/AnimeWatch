@@ -224,6 +224,17 @@ body {
   -webkit-backdrop-filter: blur(20px) saturate(180%);
 }
 
+/* То же стекло, но плотнее — для выпадающих списков.
+   .glass рассчитано на шапку: она лежит поверх ровного фона страницы, и
+   0.72 там читается как лёгкая дымка. Дропдаун же падает на постеры, и
+   сквозь него просвечивали чужие обложки вперемешку с текстом. 0.94 плюс
+   то же размытие: тот же материал, но читать по нему можно. */
+.glass-panel {
+  background: rgb(var(--bg-card) / 0.94);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+}
+
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
