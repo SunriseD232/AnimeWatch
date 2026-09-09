@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
+import { useTranslationFallback } from '@/components/useTranslationFallback';
 import {
   KODIK_EVENTS,
   parseEpisode,
@@ -380,6 +381,22 @@ export default function Player({
     },
     [shikimoriId, activeSeason, activeEpisode, player],
   );
+
+  // Подбор замены, когда выбранная озвучка не открылась (см. хук). Ключ —
+  // сезон и серия: пометки «не открылась» действуют в пределах одной серии.
+  //   Сентинел Real-Debrid (id: -1) в кандидаты не берём: это не озвучка, а
+  //   заглушка, добавляемая в список безусловно (см. resolveCinemaEpisode.ts),
+  //   и подставлять её вместо не открывшейся дорожки бессмысленно.
+  const fallbackTracks = useMemo(
+    () => ownPlayerTranslations.filter((t) => t.id > 0),
+    [ownPlayerTranslations],
+  );
+  const pickAnotherTranslation = useTranslationFallback({
+    tracks: fallbackTracks,
+    episodeKey: `${activeSeason}:${activeEpisode}`,
+    onPick: setOwnPlayerTranslationId,
+    onSwitched: () => toast('Данное сочетание не нашлось, выбрано доступное', 'error'),
+  });
 
   const next = computeStep(seasonsList, activeSeason, activeEpisode, 1);
   const prev = computeStep(seasonsList, activeSeason, activeEpisode, -1);
@@ -1085,6 +1102,7 @@ export default function Player({
           currentTimeRef.current = t;
           if (d) durationRef.current = d;
         },
+        onTranslationUnavailable: pickAnotherTranslation,
         onTranslationChange: (translation) => {
           activeOwnPlayerTranslationRef.current = translation;
           setOwnPlayerTranslationId(translation?.id ?? null);

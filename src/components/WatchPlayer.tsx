@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
+import { useTranslationFallback } from '@/components/useTranslationFallback';
 import HlsPlayer from '@/components/HlsPlayer';
 import KodikPlayer from '@/components/KodikPlayer';
 import YummyPlayer from '@/components/YummyPlayer';
@@ -199,6 +200,15 @@ export default function WatchPlayer({
     ...realdebridTranslations,
   ];
   const hasOwnPlayer = ownPlayerTranslations.length > 0;
+
+  // Подбор замены, когда выбранная озвучка не открылась (см. хук). Пометки
+  // «не открылась» живут в пределах серии, поэтому ключ — её номер.
+  const pickAnotherTranslation = useTranslationFallback({
+    tracks: ownPlayerTranslations,
+    episodeKey: String(activeEpisode),
+    onPick: setOwnPlayerTranslationId,
+    onSwitched: () => toast('Данное сочетание не нашлось, выбрано доступное', 'error'),
+  });
 
   const playingRef = useRef(false);
   // Актуальная позиция активного плеера — для переноса при смене источника.
@@ -698,6 +708,7 @@ export default function WatchPlayer({
           bumpPosition(t);
           if (d) durationRef.current = d;
         },
+        onTranslationUnavailable: pickAnotherTranslation,
         onTranslationChange: (translation) => {
           // Аниме сверяется по title, не id — video_id Yummy нестабилен
           // между сериями (см. миграцию 0008 и коммент у объявления ref).

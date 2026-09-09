@@ -72,3 +72,33 @@ export async function getLocalPosterMap(
 
   return out;
 }
+
+/**
+ * Подставить локальные обложки в готовый список кино.
+ *
+ * Каталог кино берёт обложки из индекса, где для каждого тайтла есть флаг
+ * poster_local (см. lib/cinemaIndexQuery.ts), и потому отдаёт наши файлы с
+ * диска — они летят за 40–70 мс. А «Новинки» и «Популярное» на главной идут
+ * мимо индекса, прямо в Videoseed, и получают ссылки на их хост: те же
+ * картинки, но за 330–340 мс каждая, по десятку на экран. Здесь тот же
+ * список прогоняется через кэш обложек и получает наши ссылки.
+ *
+ * Прежний адрес остаётся запасным: файл мог не скачаться, а карточка сама
+ * переключится на резерв (см. components/PosterImage.tsx).
+ *
+ * Не бросает никогда: не получилось — вернём список как был.
+ */
+export async function withLocalPosters<
+  T extends { id: number; poster: string | null; posterFallback?: string | null },
+>(items: T[]): Promise<T[]> {
+  if (items.length === 0) return items;
+
+  const local = await getLocalPosterIds('cinema', items.map((i) => i.id));
+  if (local.size === 0) return items;
+
+  return items.map((item) =>
+    local.has(item.id)
+      ? { ...item, poster: localPosterUrl('cinema', item.id), posterFallback: item.poster }
+      : item,
+  );
+}

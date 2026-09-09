@@ -19,6 +19,7 @@ import { getTmdbSeriesOngoing } from '@/lib/tmdb';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
 import { getEpisodeProgressMap } from '@/lib/watch/progressMap';
+import { withLocalPosters } from '@/lib/posterCacheServer';
 import { getLocalPosterMap } from '@/lib/posterCacheServer';
 
 export const metadata = { title: 'Фильмы и сериалы — MediaWatch' };
@@ -209,18 +210,23 @@ async function DiscoverGrid({ tab, page }: { tab: string; page: number }) {
   }
 
   const hasPrev = page > 1;
-  const progressMap = await getEpisodeProgressMap('cinema', data.items.map((item) => item.id));
+  // Обложки — наши, с диска: Videoseed отдаёт свои за 330–340 мс каждую, по
+  // десятку на экран (см. withLocalPosters).
+  const items = await withLocalPosters(data.items);
+  const progressMap = await getEpisodeProgressMap('cinema', items.map((item) => item.id));
   const episodesTotalMap = await getCinemaEpisodesTotalMap([...progressMap.keys()]);
 
   return (
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-        {data.items.map((item) => (
+        {items.map((item, i) => (
           <CinemaCard
             key={item.id}
             item={item}
             currentEpisode={progressMap.get(item.id) ?? null}
             episodesTotal={episodesTotalMap.get(item.id) ?? null}
+            // Первый ряд — вне очереди: это и есть то, что видно сразу.
+            priority={i < 6}
           />
         ))}
       </div>

@@ -105,6 +105,24 @@ interface Props {
    *  (Yummy) вынуждено сверяется по title — id там нестабилен между сериями,
    *  см. миграцию 0008. */
   onTranslationChange?: (translation: { id: number; title: string } | null) => void;
+  /**
+   * Озвучка не открылась: проверочный запрос вернул ошибку.
+   *
+   * Решение, чем её заменить, принимает РОДИТЕЛЬ, а не мы, и это
+   * принципиально. Текущая озвучка живёт в двух местах сразу — в нашем
+   * состоянии и в `selectedTranslationId` у родителя, — и они догоняют друг
+   * друга с задержкой в один рендер. Когда замену пробовал делать сам плеер
+   * (было 2026-09-10), он становился третьим писателем: родитель присылал
+   * обратно прежнее значение, плеер снова уходил с него, и так до
+   * бесконечности — в сети чередование двух источников, на экране падение
+   * страницы с «Maximum update depth exceeded». Здесь писатель остаётся
+   * один — родитель, — а к нам новое значение приходит обычным путём, через
+   * тот же проп.
+   *
+   * Возврат true означает «замена будет» — тогда мы не показываем экран
+   * ошибки, а продолжаем ждать: новый проп вот-вот приедет.
+   */
+  onTranslationUnavailable?: (id: number) => boolean;
 }
 
 const VOLUME_KEY = 'aw:ownPlayerVolume';
@@ -165,21 +183,12 @@ function storeTrackPrefs(patch: Partial<TrackPrefs>): void {
 }
 
 
-type SettingsView =
-  | 'root'
-  | 'quality'
-  | 'audio'
-  | 'audioTrack'
-  | 'subtitles'
-  | 'subtitleStyle'
-  | 'speed';
+type SettingsView = 'root' | 'quality' | 'audio' | 'audioTrack' | 'speed';
 
 const SETTINGS_VIEW_TITLES: Record<Exclude<SettingsView, 'root'>, string> = {
   quality: 'Качество',
   audio: 'Озвучка',
   audioTrack: 'Аудиодорожка',
-  subtitles: 'Субтитры',
-  subtitleStyle: 'Оформление субтитров',
   speed: 'Скорость',
 };
 
@@ -336,11 +345,14 @@ export default function OwnPlayer({
   onTimeUpdate,
   onPipChange,
   onTranslationChange,
+  onTranslationUnavailable,
 }: Props) {
   const onPipChangeRef = useRef(onPipChange);
   onPipChangeRef.current = onPipChange;
   const onTranslationChangeRef = useRef(onTranslationChange);
   onTranslationChangeRef.current = onTranslationChange;
+  const onTranslationUnavailableRef = useRef(onTranslationUnavailable);
+  onTranslationUnavailableRef.current = onTranslationUnavailable;
   // Выбор озвучки: сперва пробуем сохранённую по id (только кино — там он
   // стабилен, см. Props.savedTranslationId), затем по названию (аниме —
   // video_id Yummy меняется от серии к серии, см. миграцию 0008), иначе
@@ -644,6 +656,13 @@ export default function OwnPlayer({
   // страницу).
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsView, setSettingsView] = useState<SettingsView>('root');
+  // Субтитры — отдельная кнопка рядом с настройками, а не строчка в их меню.
+  // Ими пользуются несравнимо чаще, чем качеством или скоростью, а оформление
+  // (цвет, обводка, фон, размер) вообще было некуда положить: панель
+  // существовала, но перехода на неё в меню не было ни одного, то есть
+  // настройки были недостижимы.
+  const [subsOpen, setSubsOpen] = useState(false);
+  const [subsView, setSubsView] = useState<'tracks' | 'style'>('tracks');
 
   // --- Прогресс просмотра ---------------------------------------------------
   const getState = useCallback(() => {
@@ -795,6 +814,8 @@ export default function OwnPlayer({
   useEffect(() => {
     setSettingsOpen(false);
     setSettingsView('root');
+    setSubsOpen(false);
+    setSubsView('tracks');
   }, [episode, season]);
 
   // Сбрасываем стрик подряд неудачных переподключений (см.
@@ -865,6 +886,11 @@ export default function OwnPlayer({
             episode,
             status: res.status,
           });
+          // Родитель может подобрать другую озвучку — тогда экран ошибки не
+          // нужен, сейчас приедет новый src (см. Props.onTranslationUnavailable).
+          if (translationId != null && onTranslationUnavailableRef.current?.(translationId)) {
+            return;
+          }
           setLoadState(res.status === 404 ? 'unavailable' : 'failed');
           return;
         }
@@ -2149,6 +2175,7 @@ export default function OwnPlayer({
         onClick={(e) => {
           setSettingsOpen(false);
           setSettingsView('root');
+          setSubsOpen(false);
           // Возвращаем фокус контейнеру после клика по чему угодно внутри
           // плеера (кнопке, ползунку) — иначе после, например, паузы/смены
           // громкости мышью фокус остаётся на самой кнопке/инпуте, и
@@ -2397,6 +2424,161 @@ export default function OwnPlayer({
               }}
             />
 
+            {subtitles.length > 0 && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSubsOpen((v) => !v);
+                    setSubsView('tracks');
+                    setSettingsOpen(false);
+                  }}
+                  aria-label="Субтитры"
+                  aria-pressed={activeSubtitleIndex !== null}
+                  title={
+                    activeSubtitleIndex === null
+                      ? 'Субтитры выключены'
+                      : `Субтитры: ${subtitles[activeSubtitleIndex]?.label ?? ''}`
+                  }
+                  className={[
+                    'rounded-md p-1.5 transition hover:bg-white/10',
+                    subsOpen ? 'bg-white/10' : '',
+                    activeSubtitleIndex !== null ? 'text-white' : 'text-white/70',
+                  ].join(' ')}
+                >
+                  <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
+                    <path d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm2.6 6.2c-.9 0-1.5.6-1.5 1.6s.6 1.6 1.5 1.6c.6 0 1-.2 1.4-.6l.9.9c-.6.6-1.4 1-2.3 1-1.8 0-3.1-1.2-3.1-2.9s1.3-2.9 3.1-2.9c.9 0 1.7.3 2.3 1l-.9.9c-.4-.4-.8-.6-1.4-.6zm7.4 0c-.9 0-1.5.6-1.5 1.6s.6 1.6 1.5 1.6c.6 0 1-.2 1.4-.6l.9.9c-.6.6-1.4 1-2.3 1-1.8 0-3.1-1.2-3.1-2.9s1.3-2.9 3.1-2.9c.9 0 1.7.3 2.3 1l-.9.9c-.4-.4-.8-.6-1.4-.6z" />
+                  </svg>
+                  {/* Включённые субтитры видно по самой кнопке, не открывая
+                      её: полоска под значком — тот же приём, что в плеерах
+                      YouTube и Netflix, узнаётся без подписи. */}
+                  {activeSubtitleIndex !== null && (
+                    <span
+                      aria-hidden="true"
+                      className="mx-auto mt-0.5 block h-0.5 w-4 rounded-full bg-accent"
+                    />
+                  )}
+                </button>
+
+                {subsOpen && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute bottom-full right-0 z-20 mb-2 max-h-80 w-64 overflow-y-auto rounded-xl bg-black/90 p-1 text-sm text-white ring-1 ring-white/10 backdrop-blur"
+                  >
+                    {subsView === 'tracks' ? (
+                      <>
+                        <RadioOption
+                          label="Отключить"
+                          active={activeSubtitleIndex === null}
+                          onClick={() => {
+                            setActiveSubtitleIndex(null);
+                            // Запоминаем и «выключено» тоже: иначе на
+                            // следующей серии субтитры вернулись бы сами.
+                            storeTrackPrefs({ subtitle: null });
+                            setSubsOpen(false);
+                          }}
+                        />
+                        {subtitles.map((sub, i) => (
+                          <RadioOption
+                            key={i}
+                            label={sub.label}
+                            active={activeSubtitleIndex === i}
+                            onClick={() => {
+                              setActiveSubtitleIndex(i);
+                              storeTrackPrefs({ subtitle: sub.label });
+                              setSubsOpen(false);
+                            }}
+                          />
+                        ))}
+                        <div className="my-1 h-px bg-white/10" />
+                        <SettingsRow
+                          label="Оформление"
+                          value=""
+                          onClick={() => setSubsView('style')}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setSubsView('tracks')}
+                          className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left font-medium hover:bg-white/10"
+                        >
+                          <svg
+                            viewBox="0 0 20 20"
+                            aria-hidden="true"
+                            className="h-4 w-4 fill-none stroke-current stroke-2"
+                          >
+                            <path d="M12 4l-5 6 5 6" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                          Оформление субтитров
+                        </button>
+                        <div className="flex flex-col gap-3 px-2 py-2">
+                          <StyleColor
+                            label="Цвет текста"
+                            value={subtitleStyle.color}
+                            onChange={(color) => updateSubtitleStyle({ color })}
+                          />
+                          <StyleSlider
+                            label="Размер"
+                            value={subtitleStyle.size}
+                            min={60}
+                            max={200}
+                            step={10}
+                            format={(v) => `${v}%`}
+                            onChange={(size) => updateSubtitleStyle({ size })}
+                          />
+                          <StyleSlider
+                            label="Прозрачность текста"
+                            value={Math.round(subtitleStyle.opacity * 100)}
+                            min={20}
+                            max={100}
+                            step={5}
+                            format={(v) => `${v}%`}
+                            onChange={(v) => updateSubtitleStyle({ opacity: v / 100 })}
+                          />
+                          <StyleSlider
+                            label="Обводка"
+                            value={subtitleStyle.outline}
+                            min={0}
+                            max={6}
+                            step={1}
+                            format={(v) => (v === 0 ? 'нет' : `${v}px`)}
+                            onChange={(outline) => updateSubtitleStyle({ outline })}
+                          />
+                          <StyleColor
+                            label="Цвет фона"
+                            value={subtitleStyle.background}
+                            onChange={(background) => updateSubtitleStyle({ background })}
+                          />
+                          <StyleSlider
+                            label="Прозрачность фона"
+                            value={Math.round(subtitleStyle.backgroundOpacity * 100)}
+                            min={0}
+                            max={100}
+                            step={5}
+                            format={(v) => (v === 0 ? 'нет фона' : `${v}%`)}
+                            onChange={(v) => updateSubtitleStyle({ backgroundOpacity: v / 100 })}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              storeSubtitleStyle(DEFAULT_SUBTITLE_STYLE);
+                              setSubtitleStyle(DEFAULT_SUBTITLE_STYLE);
+                            }}
+                            className="press rounded-md px-2 py-1.5 text-left text-xs font-medium text-accent hover:bg-white/10"
+                          >
+                            Сбросить оформление
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="relative">
               <button
                 type="button"
@@ -2449,17 +2631,6 @@ export default function OwnPlayer({
                           label="Аудиодорожка"
                           value={audioTrackIndex === null ? 'Основная' : (audioTracks[audioTrackIndex]?.label ?? '—')}
                           onClick={() => setSettingsView('audioTrack')}
-                        />
-                      )}
-                      {subtitles.length > 0 && (
-                        <SettingsRow
-                          label="Субтитры"
-                          value={
-                            activeSubtitleIndex === null
-                              ? 'Отключить'
-                              : (subtitles[activeSubtitleIndex]?.label ?? '')
-                          }
-                          onClick={() => setSettingsView('subtitles')}
                         />
                       )}
                       <SettingsRow
@@ -2560,95 +2731,6 @@ export default function OwnPlayer({
                             />
                           ))}
                         </>
-                      )}
-
-                      {settingsView === 'subtitles' && (
-                        <>
-                          <RadioOption
-                            label="Отключить"
-                            active={activeSubtitleIndex === null}
-                            onClick={() => {
-                              setActiveSubtitleIndex(null);
-                              // Запоминаем и «выключено» тоже: иначе на
-                              // следующей серии субтитры вернулись бы сами.
-                              storeTrackPrefs({ subtitle: null });
-                              setSettingsOpen(false);
-                            }}
-                          />
-                          {subtitles.map((s, i) => (
-                            <RadioOption
-                              key={i}
-                              label={s.label}
-                              active={activeSubtitleIndex === i}
-                              onClick={() => {
-                                setActiveSubtitleIndex(i);
-                                storeTrackPrefs({ subtitle: s.label });
-                                setSettingsOpen(false);
-                              }}
-                            />
-                          ))}
-                        </>
-                      )}
-
-                      {settingsView === 'subtitleStyle' && (
-                        <div className="flex flex-col gap-3 px-2 py-2">
-                          <StyleColor
-                            label="Цвет текста"
-                            value={subtitleStyle.color}
-                            onChange={(color) => updateSubtitleStyle({ color })}
-                          />
-                          <StyleSlider
-                            label="Размер"
-                            value={subtitleStyle.size}
-                            min={60}
-                            max={200}
-                            step={10}
-                            format={(v) => `${v}%`}
-                            onChange={(size) => updateSubtitleStyle({ size })}
-                          />
-                          <StyleSlider
-                            label="Прозрачность текста"
-                            value={Math.round(subtitleStyle.opacity * 100)}
-                            min={20}
-                            max={100}
-                            step={5}
-                            format={(v) => `${v}%`}
-                            onChange={(v) => updateSubtitleStyle({ opacity: v / 100 })}
-                          />
-                          <StyleSlider
-                            label="Обводка"
-                            value={subtitleStyle.outline}
-                            min={0}
-                            max={6}
-                            step={1}
-                            format={(v) => (v === 0 ? 'нет' : `${v}px`)}
-                            onChange={(outline) => updateSubtitleStyle({ outline })}
-                          />
-                          <StyleColor
-                            label="Цвет фона"
-                            value={subtitleStyle.background}
-                            onChange={(background) => updateSubtitleStyle({ background })}
-                          />
-                          <StyleSlider
-                            label="Прозрачность фона"
-                            value={Math.round(subtitleStyle.backgroundOpacity * 100)}
-                            min={0}
-                            max={100}
-                            step={5}
-                            format={(v) => (v === 0 ? 'нет фона' : `${v}%`)}
-                            onChange={(v) => updateSubtitleStyle({ backgroundOpacity: v / 100 })}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              storeSubtitleStyle(DEFAULT_SUBTITLE_STYLE);
-                              setSubtitleStyle(DEFAULT_SUBTITLE_STYLE);
-                            }}
-                            className="press rounded-md px-2 py-1.5 text-left text-xs font-medium text-accent hover:bg-white/10"
-                          >
-                            Сбросить оформление
-                          </button>
-                        </div>
                       )}
 
                       {settingsView === 'speed' &&
