@@ -418,6 +418,29 @@ export default function OwnPlayer({
     queryStr ? `?${queryStr}` : ''
   }`;
 
+  // Просить ли сервер переизвлечь ссылку заново (?fresh=1), а не отдавать из
+  // своего 15-минутного кэша resolved_streams.
+  //
+  // Зачем. Подписанные CDN-ссылки апстрима живут КОРОЧЕ нашего кэша. Тогда
+  // получается худший из возможных раскладов: мастер-плейлист мы отдаём из
+  // кэша с кодом 200, проверочный HEAD проходит, плеер рисуется как рабочий —
+  // а вложенные ссылки внутри манифеста у CDN уже протухли и отвечают 403
+  // (наш /api/proxy/raw заворачивает это в 502). Видео не начинается, и
+  // ОБНОВЛЕНИЕ СТРАНИЦЫ НЕ ПОМОГАЕТ: тот же кэш, тот же протухший манифест.
+  // Воспроизведено на проде 2026-09-10: «Адский рай 2», серия 3, Alloha —
+  // мастер 200, все дорожки 502 по три попытки на каждую.
+  //
+  // Переизвлечение стоит запуска Chromium в очереди на VPS, поэтому просим
+  // его не на первой же осечке: первая перезагрузка лечит обычный сетевой
+  // сбой, а вот если и она не помогла — дело почти наверняка в протухшей
+  // ссылке.
+  //
+  // Реф, а НЕ часть src, намеренно. Попади «fresh» в сам src — его смена
+  // сбрасывала бы reconnectFailureStreakRef (эффект на [src] ниже), лимит
+  // попыток не набирался бы никогда, и плеер молотил бы бесконечно. Это те
+  // же грабли, о которых предупреждает комментарий у того эффекта.
+  const wantFreshRef = useRef(false);
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<HlsType | null>(null);
@@ -608,6 +631,14 @@ export default function OwnPlayer({
     ids: new Set(),
   });
 
+  // Сколько раз подряд разрешено подменить озвучку в одной серии. Ограничение
+  // не косметическое: у «Адского рая 2» в списке 38 переводов, и если серии
+  // у нас нет ВОВСЕ (источник отвечает 404 на любую), без потолка плеер
+  // молча простучал бы все 38 по очереди — вместо честного «серии нет»
+  // человек смотрел бы на бесконечную загрузку. Двух-трёх попыток хватает на
+  // реальный случай: битые одно-два сочетания, остальные живые.
+  const FALLBACK_LIMIT = 3;
+
   // Вынужденная замена озвучки ТОЛЬКО для этой серии. Держим отдельно от
   // activeTranslationTitleRef и localStorage намеренно: выбор пользователя —
   // это выбор пользователя, и из-за одной битой серии он не должен
@@ -628,6 +659,7 @@ export default function OwnPlayer({
       failed.ids = new Set();
     }
     failed.ids.add(translationId);
+    if (failed.ids.size > FALLBACK_LIMIT) return false;
 
     const current = translations.find((t) => t.id === translationId);
     // «Озвучка AniLibria · Alloha» → база «Озвучка AniLibria», источник
@@ -742,7 +774,7 @@ export default function OwnPlayer({
       storeTrackPrefs({ translation: resolved.title });
     }
     setTranslationId(resolved?.id ?? null);
-  }, [episode, translations, initialTranslationTitle, warnComboMissing]);
+  }, [season, episode, translations, initialTranslationTitle, warnComboMissing]);
 
   // --- Громкость: восстановление/сохранение ---------------------------------
   // Читаем сохранённое значение сразу (до монтирования <video> — он рисуется
@@ -838,7 +870,17 @@ export default function OwnPlayer({
   // и лимит никогда бы не достигался.
   useEffect(() => {
     reconnectFailureStreakRef.current = 0;
+    // Новая серия/озвучка/качество — прошлые неудачи к ней отношения не
+    // имеют, начинаем с обычного (кэшируемого) запроса.
+    wantFreshRef.current = false;
   }, [src]);
+
+  /** Адрес, который реально запрашиваем: тот же src плюс ?fresh=1, когда
+   *  прошлая попытка не помогла (см. wantFreshRef выше). */
+  const requestUrl = useCallback(
+    () => (wantFreshRef.current ? `${src}${src.includes('?') ? '&' : '?'}fresh=1` : src),
+    [src],
+  );
 
   // --- Определение типа потока (HLS/mp4) и подключение источника -----------
   useEffect(() => {
@@ -875,7 +917,7 @@ export default function OwnPlayer({
       let contentType: string | null = null;
       let ok = false;
       try {
-        const res = await fetch(src, { method: 'HEAD', signal: controller.signal });
+        const res = await fetch(requestUrl(), { method: 'HEAD', signal: controller.signal });
         ok = res.ok;
         contentType = res.headers.get('content-type');
         dashQualitiesRef.current = res.headers.get('x-video-qualities');
@@ -1139,10 +1181,10 @@ export default function OwnPlayer({
                 break;
             }
           });
-          hls.loadSource(src);
+          hls.loadSource(requestUrl());
           hls.attachMedia(video);
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-          video.src = src; // Safari/iOS — нативный HLS, свой выбор качества
+          video.src = requestUrl(); // Safari/iOS — нативный HLS, свой выбор качества
         }
       } else if (isDash) {
         const { MediaPlayer } = await import('dashjs');
@@ -1165,9 +1207,9 @@ export default function OwnPlayer({
           const activeIndex = levels.findIndex((l) => l.height === activeHeight);
           setCurrentLevel(activeIndex >= 0 ? activeIndex : 0);
         }
-        player.initialize(video, src, true);
+        player.initialize(video, requestUrl(), true);
       } else {
-        video.src = src;
+        video.src = requestUrl();
       }
     })();
 
@@ -1859,7 +1901,7 @@ export default function OwnPlayer({
     setCurrentTime(t);
   }, []);
 
-  const retry = useCallback(() => {
+  const retry = useCallback((opts?: { fresh?: boolean }) => {
     logEvent('player.retry', {
       source: effectiveSource,
       shikimoriId,
@@ -1868,6 +1910,10 @@ export default function OwnPlayer({
       fromTime: currentTime,
     });
     seekTargetRef.current = currentTime > 1 ? currentTime : resumeFrom;
+    // Первая перезагрузка — обычная: сетевой сбой лечится ею и не стоит
+    // запуска Chromium на VPS. Не помогла — значит ссылка протухла у
+    // апстрима, и надо переизвлекать (см. wantFreshRef).
+    wantFreshRef.current = opts?.fresh ?? reconnectFailureStreakRef.current >= 1;
     setReloadKey((k) => k + 1);
   }, [currentTime, resumeFrom, effectiveSource, shikimoriId, season, episode]);
   // retry() пересоздаётся на каждый тик currentTime (см. deps выше) — hls.js
@@ -2096,7 +2142,11 @@ export default function OwnPlayer({
             // пользователь сам решил попробовать ещё раз, это не тот же
             // автоматический цикл, который уже исчерпал себя молча.
             reconnectFailureStreakRef.current = 0;
-            retry();
+            // Человек жмёт «Повторить», уже увидев тупик — автоматические
+            // попытки к этому моменту исчерпаны. Ещё один заход по тому же
+            // кэшу почти наверняка даст ту же ошибку, поэтому сразу просим
+            // переизвлечь ссылку заново (см. wantFreshRef).
+            retry({ fresh: true });
           }}
           className="press rounded-full bg-accent px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
         >
