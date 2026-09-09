@@ -476,6 +476,20 @@ export default function OwnPlayer({
   // долбёжки сервера и клиента.
   const reconnectFailureStreakRef = useRef(0);
   const RECONNECT_FAILURE_LIMIT = 3;
+  // Подряд идущие НЕфатальные неудачи загрузки уровня/сегмента, без единого
+  // успешно буферизованного куска между ними.
+  //
+  // Зачем отдельно от фатальных. hls.js считает неудачу загрузки варианта
+  // НЕфатальной и просто перебирает соседние — если протух весь манифест
+  // (все подписанные ссылки внутри отвечают 403), живых вариантов нет ни
+  // одного, и фатальная ошибка не наступает НИКОГДА. Плеер молча крутится,
+  // эскалация не срабатывает, переизвлечение не запускается. Проверено
+  // вживую на проде 2026-09-10 («Адский рай 2», серия 3, Alloha): 35
+  // неудачных запросов подряд и ни одной фатальной ошибки. Пачка неудач без
+  // прогресса — тот же симптом, что и фатальная сетевая ошибка, и лечится
+  // тем же: полным переподключением с ?fresh=1.
+  const loadErrorBurstRef = useRef(0);
+  const LOAD_ERROR_BURST_LIMIT = 5;
   // Content-Type из проверочного HEAD (см. эффект резолва ниже) — переносится
   // во второй эффект (подключение к <video>), чтобы не запрашивать HEAD дважды.
   const upstreamContentTypeRef = useRef<string | null>(null);
@@ -1133,8 +1147,31 @@ export default function OwnPlayer({
               setLoadState('failed');
             }
           };
+          // Успешно легший в буфер кусок — значит поток жив, прошлые осечки
+          // были случайными: обнуляем пачку (см. loadErrorBurstRef выше).
+          hls.on(Hls.Events.FRAG_BUFFERED, () => {
+            loadErrorBurstRef.current = 0;
+          });
           hls.on(Hls.Events.ERROR, (_evt, data) => {
-            if (cancelled || !data.fatal) return;
+            if (cancelled) return;
+            if (!data.fatal) {
+              if (/LoadError|LoadTimeOut/.test(data.details ?? '')) {
+                loadErrorBurstRef.current += 1;
+                // Ровно на пороге, а не «>=»: иначе каждая следующая осечка
+                // из той же пачки дёргала бы переподключение заново.
+                if (loadErrorBurstRef.current === LOAD_ERROR_BURST_LIMIT) {
+                  logEvent('player.load_error_burst', {
+                    source: effectiveSource,
+                    shikimoriId,
+                    season,
+                    episode,
+                    details: data.details,
+                  });
+                  escalateOrGiveUp();
+                }
+              }
+              return;
+            }
             logEvent('player.hls_fatal_error', {
               source: effectiveSource,
               shikimoriId,
@@ -1910,9 +1947,12 @@ export default function OwnPlayer({
       fromTime: currentTime,
     });
     seekTargetRef.current = currentTime > 1 ? currentTime : resumeFrom;
-    // Первая перезагрузка — обычная: сетевой сбой лечится ею и не стоит
-    // запуска Chromium на VPS. Не помогла — значит ссылка протухла у
-    // апстрима, и надо переизвлекать (см. wantFreshRef).
+    // Полное переподключение — уже не первая попытка: до него hls.js дважды
+    // пробует поднять поток сам (startLoad/recoverMediaError, см. обработчик
+    // ERROR). Раз и это не помогло, дешёвый повтор по тому же кэшу почти
+    // наверняка бесполезен — просим переизвлечь ссылку (см. wantFreshRef).
+    // escalateOrGiveUp увеличивает стрик ДО вызова retry, поэтому здесь он
+    // уже >= 1.
     wantFreshRef.current = opts?.fresh ?? reconnectFailureStreakRef.current >= 1;
     setReloadKey((k) => k + 1);
   }, [currentTime, resumeFrom, effectiveSource, shikimoriId, season, episode]);
