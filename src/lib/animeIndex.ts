@@ -19,7 +19,13 @@ import { createServiceClient } from '@/lib/supabase/service';
  * продолжают видеть прошлую партию, а мусорные строки удаляются.
  */
 
-const GRAPHQL_URL = 'https://shikimori.one/api/graphql';
+// ВАЖНО: именно shikimori.io, как и у REST-клиента (см. комментарий про
+// переезд домена в lib/shikimori.ts). shikimori.one с продакшен-VPS не
+// открывается ВООБЩЕ — connect timeout, а не редирект, — и ночная
+// перестройка падала на первом же запросе с «fetch failed». С машины
+// разработчика .one при этом отвечает, поэтому локально всё выглядело
+// исправным; проверено на сервере вживую.
+const GRAPHQL_URL = 'https://shikimori.io/api/graphql';
 const USER_AGENT = 'MediaWatch MVP';
 
 /** GraphQL Shikimori больше 50 за запрос не отдаёт. */
