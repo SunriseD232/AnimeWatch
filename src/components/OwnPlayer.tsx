@@ -657,7 +657,16 @@ export default function OwnPlayer({
   // activeTranslationTitleRef и localStorage намеренно: выбор пользователя —
   // это выбор пользователя, и из-за одной битой серии он не должен
   // подменяться на все последующие.
-  const translationOverrideRef = useRef<{ key: string; title: string } | null>(null);
+  // abandonedId — id, С которого ушли. Родитель узнаёт о замене отдельным
+  // эффектом и на один рендер отстаёт, поэтому снаружи к нам ещё раз придёт
+  // старое значение; гасим ровно это одно эхо (см. эффект внешнего выбора
+  // ниже) и сразу забываем, чтобы осознанный повторный выбор пользователя
+  // прошёл как обычно.
+  const translationOverrideRef = useRef<{
+    key: string;
+    title: string;
+    abandonedId: number | null;
+  } | null>(null);
 
   /**
    * Битая озвучка — молча перейти на соседнюю вместо тупика.
@@ -685,7 +694,7 @@ export default function OwnPlayer({
       (base ? untried.find((t) => t.title.split(' · ')[0] === base) : undefined) ?? untried[0];
     if (!next) return false;
 
-    translationOverrideRef.current = { key, title: next.title };
+    translationOverrideRef.current = { key, title: next.title, abandonedId: translationId };
     logEvent('player.translation_fallback', {
       shikimoriId,
       season,
@@ -2004,6 +2013,18 @@ export default function OwnPlayer({
   useEffect(() => {
     if (selectedTranslationId == null || selectedTranslationId === translationId) return;
     if (!translations.some((t) => t.id === selectedTranslationId)) return;
+    // Эхо озвучки, с которой мы только что вынужденно ушли (см.
+    // fallbackTranslation). Без этой проверки родитель возвращал бы нас на
+    // заведомо битую озвучку, мы снова уходили бы с неё — и так до
+    // бесконечности. Проверено вживую на проде: страница падала с «Maximum
+    // update depth exceeded», в сети — бесконечное чередование двух
+    // источников. Гасим одно эхо и забываем: если пользователь ОСОЗНАННО
+    // выберет ту же озвучку ещё раз, это пройдёт как обычный выбор.
+    const override = translationOverrideRef.current;
+    if (override && override.abandonedId === selectedTranslationId) {
+      override.abandonedId = null;
+      return;
+    }
     changeTranslation(selectedTranslationId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTranslationId, translations]);
