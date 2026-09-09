@@ -3,6 +3,13 @@ const { withSentryConfig } = require('@sentry/nextjs');
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Каталог сборки задаётся снаружи (scripts/deploy.sh). Живой сайт работает
+  // из .next, а `next build` первым делом СТИРАЕТ свой distDir — собирая
+  // прямо в .next, деплой гарантированно кладёт прод на всё время сборки, а
+  // при её падении оставляет лежать совсем (случалось дважды 2026-09-09).
+  // Поэтому деплой собирает в .releases/<метка> и переключает .next
+  // симлинком уже на готовое. Локально переменной нет — обычный .next.
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   // Самостоятельный хостинг на VPS (не Vercel) — standalone-сборка держит в
   // рантайме только реально нужные файлы/зависимости (.next/standalone),
   // а не полный node_modules — заметно меньше памяти на процесс `node
