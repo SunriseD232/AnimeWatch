@@ -10,6 +10,9 @@ interface Props {
 /** Пикселей движения курсора, после которых жест считается драгом, а не кликом. */
 const DRAG_THRESHOLD = 6;
 
+/** Пауза без колеса, после которой лента доводится до ближайшей карточки. */
+const SETTLE_DELAY_MS = 1500;
+
 /**
  * Обёртка для горизонтальных каруселей («Продолжить просмотр» и т.п.).
  * Родная полоса прокрутки (см. .overflow-x-auto в globals.css) остаётся —
@@ -173,7 +176,10 @@ export default function ScrollCarousel({ children, className }: Props) {
       e.preventDefault();
 
       if (settleTimer) clearTimeout(settleTimer);
-      settleTimer = setTimeout(settle, 140);
+      // Полторы секунды, а не «сразу как перестали крутить»: доводка,
+      // срабатывающая через 140 мс, перехватывала ленту прямо посреди серии
+      // щелчков — пользователь ещё крутит, а она уже тащит к карточке.
+      settleTimer = setTimeout(settle, SETTLE_DELAY_MS);
     };
 
     el.addEventListener('wheel', onWheel, { passive: false });

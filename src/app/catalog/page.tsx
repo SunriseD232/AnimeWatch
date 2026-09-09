@@ -3,13 +3,17 @@ import Pagination from '@/components/Pagination';
 import { ANIME_CATALOG_SORTS, getAnimeCatalog, type AnimeCatalogSort } from '@/lib/shikimori';
 import { getEpisodeProgressMap } from '@/lib/watch/progressMap';
 import { getAnimeCatalogFromIndex } from '@/lib/animeIndexQuery';
+import AnimeListRow from '@/components/catalog/AnimeListRow';
+import { kindLabel, statusLabel } from '@/lib/animeLabels';
 import {
   PARAM,
   buildQuery,
   hasAnyFilter,
   parseFilters,
   parseNumericIds,
+  parseView,
   type AnimeCatalogFilters,
+  type CatalogView,
 } from '@/lib/animeFilters';
 
 export const metadata = { title: 'Каталог аниме — MediaWatch' };
@@ -42,8 +46,9 @@ function pageHref(
   sort: AnimeCatalogSort,
   page: number,
   showAnons: boolean,
+  view: CatalogView,
 ): string {
-  const qs = buildQuery(filters, { sort, defaultSort: DEFAULT_SORT, page, showAnons });
+  const qs = buildQuery(filters, { sort, defaultSort: DEFAULT_SORT, page, showAnons, view });
   return qs ? `/catalog?${qs}` : '/catalog';
 }
 
@@ -61,6 +66,7 @@ export default async function CatalogPage({
   const pageParam = Number(params.get(PARAM.page));
   const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
   const showAnons = params.get(PARAM.anons) === '1';
+  const view = parseView(params.get(PARAM.view));
 
   const catalogParams = {
     genresInclude: parseNumericIds(filters.genres.include.join(',')),
@@ -112,16 +118,42 @@ export default async function CatalogPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="catalog-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-        {data.items.map((a) => (
-          <AnimeCard key={a.id} anime={a} currentEpisode={progressMap.get(a.id) ?? null} />
-        ))}
-      </div>
+      {view === 'list' ? (
+        <div className="flex flex-col gap-3">
+          {data.items.map((a) => (
+            <AnimeListRow
+              key={a.id}
+              anime={{
+                id: a.id,
+                title: a.russian || a.name,
+                poster: a.image.original || a.image.preview || null,
+                kindLabel: kindLabel(a.kind),
+                statusLabel: statusLabel(a.status),
+                year: a.aired_on ? Number(a.aired_on.slice(0, 4)) : null,
+                // «эп.» показываем только у вышедшего: у анонса числа серий
+                // ещё нет, и «0 эп.» было бы не информацией, а шумом.
+                episodesLabel:
+                  a.status !== 'anons' && (a.episodes || a.episodes_aired)
+                    ? `${a.episodes || a.episodes_aired} эп.`
+                    : null,
+                score: a.score,
+                description: a.description ?? null,
+              }}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="catalog-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+          {data.items.map((a) => (
+            <AnimeCard key={a.id} anime={a} currentEpisode={progressMap.get(a.id) ?? null} />
+          ))}
+        </div>
+      )}
 
       <Pagination
         page={page}
-        prevHref={hasPrev ? pageHref(filters, sort, page - 1, showAnons) : null}
-        nextHref={data.hasMore ? pageHref(filters, sort, page + 1, showAnons) : null}
+        prevHref={hasPrev ? pageHref(filters, sort, page - 1, showAnons, view) : null}
+        nextHref={data.hasMore ? pageHref(filters, sort, page + 1, showAnons, view) : null}
       />
     </div>
   );

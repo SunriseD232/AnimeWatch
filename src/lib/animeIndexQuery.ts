@@ -40,6 +40,7 @@ interface IndexRow {
   score: number | null;
   poster_original: string | null;
   poster_preview: string | null;
+  description: string | null;
 }
 
 /** Индекс хранит ровно те поля, что нужны карточке, но остальное приложение
@@ -63,11 +64,12 @@ function toShort(row: IndexRow): ShikimoriAnimeShort {
     episodes_aired: row.episodes_aired,
     aired_on: row.aired_on,
     released_on: row.released_on,
+    description: row.description,
   };
 }
 
 const SELECT_COLUMNS =
-  'shikimori_id, name, russian, kind, status, episodes, episodes_aired, aired_on, released_on, score, poster_original, poster_preview';
+  'shikimori_id, name, russian, kind, status, episodes, episodes_aired, aired_on, released_on, score, poster_original, poster_preview, description';
 
 /** `{a,b}` — литерал массива Postgres, его ждут операторы `cs`/`ov`. */
 function pgArray(values: (number | string)[]): string {
@@ -243,6 +245,53 @@ export async function getGenresFromIndex(): Promise<IndexedGenre[] | null> {
 
     if (error || !data || data.length === 0) return null;
     return data as IndexedGenre[];
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Жанры одного тайтла — для кликабельных ссылок на его странице.
+ *
+ * Берём из индекса, а не из полной карточки Shikimori, ПОТОМУ ЧТО ID должны
+ * совпадать с теми, которыми фильтрует каталог. У REST-карточки жанры
+ * легаси-таксономии (там «Триллер» это 41), у индекса — актуальной (117), и
+ * ссылка с легаси-id открыла бы каталог с фильтром, который ничего не
+ * находит. Ровно та же рассинхронизация, из-за которой «Магия» не работала.
+ *
+ * null — индекса нет: страница тайтла тогда покажет жанры Shikimori обычным
+ * текстом, без ссылок. Лучше некликабельные подписи, чем ссылки в никуда.
+ */
+export async function getTitleGenres(
+  shikimoriId: number,
+): Promise<{ id: number; russian: string }[] | null> {
+  try {
+    const batchId = await getActiveBatchId();
+    if (!batchId) return null;
+
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('anime_index')
+      .select('genre_ids')
+      .eq('batch_id', batchId)
+      .eq('shikimori_id', shikimoriId)
+      .maybeSingle();
+
+    const ids = (data?.genre_ids ?? []) as number[];
+    if (error || ids.length === 0) return null;
+
+    const { data: names, error: namesError } = await supabase
+      .from('anime_genres')
+      .select('id, russian')
+      .in('id', ids);
+    if (namesError || !names) return null;
+
+    // Порядок как в самом тайтле, а не как вернула база: там он осмысленный
+    // (основной жанр первым), у выборки по in() — произвольный.
+    const byId = new Map(names.map((g) => [g.id as number, g.russian as string]));
+    return ids
+      .map((id) => ({ id, russian: byId.get(id) ?? '' }))
+      .filter((g) => g.russian !== '');
   } catch {
     return null;
   }

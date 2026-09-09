@@ -87,7 +87,7 @@ export default function CatalogArea({
               экрана панель всегда короче рельса, липнет под шапкой, а у
               нижней границы выдачи уезжает вместе с ней. Своя прокрутка
               появляется только когда панель реально не влезает в экран. */}
-          <div className="min-[1600px]:sticky min-[1600px]:top-[4.5rem] min-[1600px]:max-h-[calc(100vh-5.5rem)] min-[1600px]:overflow-y-auto">
+          <div className="no-scrollbar min-[1600px]:sticky min-[1600px]:top-[4.5rem] min-[1600px]:max-h-[calc(100vh-5.5rem)] min-[1600px]:overflow-y-auto">
             <FiltersPanel genres={genres} />
           </div>
         </div>

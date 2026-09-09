@@ -34,6 +34,10 @@ export interface ShikimoriAnimeShort {
   episodes_aired: number;
   aired_on: string | null;
   released_on: string | null;
+  /** Заполняется только локальным индексом (см. lib/animeIndexQuery.ts) —
+   *  REST-ответы Shikimori описания в списках не содержат. Нужно списочному
+   *  виду каталога. */
+  description?: string | null;
 }
 
 interface ShikimoriVideo {

@@ -2,6 +2,7 @@
 
 import { AnonsToggle, SortSelect } from '@/components/catalog/FilterGroups';
 import { FiltersTrigger } from '@/components/catalog/CatalogDesktopFilters';
+import ViewSwitch from '@/components/catalog/ViewSwitch';
 import { useCatalogFilters } from '@/components/catalog/CatalogFilterProvider';
 import type { FilterOptionDef } from '@/lib/animeFilters';
 
@@ -23,6 +24,7 @@ export default function AnimeGenrePanel({ sorts }: { sorts: readonly FilterOptio
   return (
     <div className="hidden flex-wrap items-center gap-4 lg:flex">
       <FiltersTrigger open={filtersOpen} onToggle={() => setFiltersOpen(!filtersOpen)} />
+      <ViewSwitch />
       <SortSelect sorts={sorts} />
       <AnonsToggle />
     </div>

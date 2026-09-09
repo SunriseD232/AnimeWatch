@@ -138,15 +138,6 @@ export function FiltersPanel({ genres }: { genres: FilterOptionDef[] }) {
           Порядок чтения сохранён, рейтинг последний — и здесь, и в режиме
           столбика сбоку (от 1600px), где колонки схлопываются в одну. */}
       <div className="grid grid-cols-2 items-start gap-x-8 gap-y-6 xl:grid-cols-3 min-[1600px]:flex min-[1600px]:flex-col min-[1600px]:gap-5">
-        <div className="flex flex-col gap-5">
-          <Group title="Количество эпизодов">
-            <EpisodesRange />
-          </Group>
-          <Group title="Год релиза">
-            <YearRange />
-          </Group>
-        </div>
-
         {/* Жанры переехали сюда из строки чипов над выдачей: пунктов в
             актуальной таксономии 80, и наверху они отжимали бы у карточек
             несколько экранов. */}
@@ -161,10 +152,20 @@ export function FiltersPanel({ genres }: { genres: FilterOptionDef[] }) {
           <Group title="Статус тайтла">
             <StatusGroup />
           </Group>
-          {/* Возрастной рейтинг — последним, тот же порядок и на телефоне
-              (см. CatalogMobileDrawer). */}
           <Group title="Возрастной рейтинг">
             <RatingGroup />
+          </Group>
+        </div>
+
+        {/* Диапазоны — в конце: это единственные поля с вводом, остальное
+            выбирается мышью, и держать их первыми значило бы начинать список
+            с того, чем пользуются реже всего. */}
+        <div className="flex flex-col gap-5">
+          <Group title="Количество эпизодов">
+            <EpisodesRange />
+          </Group>
+          <Group title="Год релиза">
+            <YearRange />
           </Group>
         </div>
       </div>

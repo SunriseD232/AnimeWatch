@@ -89,7 +89,19 @@ export const PARAM = {
   sort: 'sort',
   page: 'page',
   anons: 'anons',
+  view: 'view',
 } as const;
+
+/** Вид выдачи каталога. В URL, а не в localStorage: страницу рендерит
+ *  сервер, и он должен знать вид ещё до отдачи разметки — иначе список
+ *  сначала мелькнёт плитками. Заодно ссылка остаётся делимой. */
+export type CatalogView = 'grid' | 'list';
+
+export const DEFAULT_VIEW: CatalogView = 'grid';
+
+export function parseView(value: string | null | undefined): CatalogView {
+  return value === 'list' ? 'list' : 'grid';
+}
 
 export interface AnimeCatalogFilters {
   genres: TriState;
@@ -180,7 +192,13 @@ function swapIfInverted(from: number | null, to: number | null): [number | null,
  *  лучше кэшируется. */
 export function buildQuery(
   filters: AnimeCatalogFilters,
-  extra: { sort?: string; defaultSort?: string; page?: number; showAnons?: boolean },
+  extra: {
+    sort?: string;
+    defaultSort?: string;
+    page?: number;
+    showAnons?: boolean;
+    view?: CatalogView;
+  },
 ): string {
   const params = new URLSearchParams();
   const setList = (key: string, values: string[]) => {
@@ -204,6 +222,7 @@ export function buildQuery(
   setList(PARAM.statusExclude, filters.statuses.exclude);
 
   if (extra.sort && extra.sort !== extra.defaultSort) params.set(PARAM.sort, extra.sort);
+  if (extra.view && extra.view !== DEFAULT_VIEW) params.set(PARAM.view, extra.view);
   if (extra.showAnons) params.set(PARAM.anons, '1');
   if (extra.page && extra.page > 1) params.set(PARAM.page, String(extra.page));
 

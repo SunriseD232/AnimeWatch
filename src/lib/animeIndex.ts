@@ -70,8 +70,31 @@ interface GqlAnime {
   airedOn: { date: string | null; year: number | null } | null;
   releasedOn: { date: string | null } | null;
   score: number | null;
+  description: string | null;
   poster: { originalUrl: string | null; previewUrl: string | null } | null;
   genres: { id: string }[] | null;
+}
+
+/**
+ * Описание у Shikimori приходит в их собственной разметке: [[ссылка]] на
+ * другую сущность, [b]...[/b], [character=123]имя[/character] и прочее.
+ * В карточке каталога нужен чистый текст — иначе пользователь читает
+ * квадратные скобки вперемешку с сюжетом.
+ */
+function stripShikimoriMarkup(raw: string | null): string | null {
+  if (!raw) return null;
+  const text = raw
+    // [[id|подпись]] — оставляем подпись, [[Синигами]] — само слово.
+    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
+    .replace(/\[\[([^\]]+)\]\]/g, '$1')
+    // Остальные теги ([b], [character=123], [/i] и прочие) просто снимаем,
+    // оставляя то, что между ними. Парного сопоставления с обратной ссылкой
+    // тут сознательно нет: оно ничего не добавляет — внутренний текст
+    // сохраняется и так, — зато легко ломается при правках.
+    .replace(/\[\/?\w+(?:=[^\]]*)?\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text.length > 0 ? text : null;
 }
 
 async function gql<T>(query: string): Promise<T> {
@@ -124,7 +147,7 @@ const ANIME_FIELDS = `
   id name russian kind status rating episodes episodesAired
   airedOn { date year }
   releasedOn { date }
-  score
+  score description
   poster { originalUrl previewUrl }
   genres { id }
 `;
@@ -158,6 +181,7 @@ interface IndexRow {
   released_on: string | null;
   aired_year: number | null;
   score: number | null;
+  description: string | null;
   popularity_rank: number | null;
   poster_original: string | null;
   poster_preview: string | null;
@@ -231,6 +255,7 @@ function toRow(a: GqlAnime, batchId: string, ranks: Map<number, number>): IndexR
     // пишем null, иначе сортировка по рейтингу поднимала бы такие тайтлы
     // наравне с честными нулями (которых не бывает).
     score: a.score && a.score > 0 ? a.score : null,
+    description: stripShikimoriMarkup(a.description),
     popularity_rank: ranks.get(id) ?? null,
     poster_original: a.poster?.originalUrl ?? null,
     poster_preview: a.poster?.previewUrl ?? null,

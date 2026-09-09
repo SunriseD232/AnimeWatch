@@ -126,14 +126,6 @@ export default function CatalogMobileDrawer({
             <GenreList genres={genres} />
           </CollapsibleSection>
 
-          <CollapsibleSection title="Количество эпизодов">
-            <EpisodesRange />
-          </CollapsibleSection>
-
-          <CollapsibleSection title="Год релиза">
-            <YearRange />
-          </CollapsibleSection>
-
           <CollapsibleSection title="Тип" count={kindsCount}>
             <KindGroup />
           </CollapsibleSection>
@@ -146,6 +138,16 @@ export default function CatalogMobileDrawer({
               (см. CatalogDesktopFilters). */}
           <CollapsibleSection title="Возрастной рейтинг" count={ratingsCount}>
             <RatingGroup />
+          </CollapsibleSection>
+
+          {/* Диапазоны — в конце, тот же порядок, что и на десктопе: это
+              единственные поля с вводом, остальное выбирается касанием. */}
+          <CollapsibleSection title="Количество эпизодов">
+            <EpisodesRange />
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Год релиза">
+            <YearRange />
           </CollapsibleSection>
 
           <p className="py-3 text-xs leading-snug text-gray-500">

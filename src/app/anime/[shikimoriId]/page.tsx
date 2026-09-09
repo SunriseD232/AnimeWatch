@@ -16,21 +16,9 @@ import {
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
+import { KIND_LABELS, STATUS_LABELS } from '@/lib/animeLabels';
+import { getTitleGenres } from '@/lib/animeIndexQuery';
 
-const KIND_LABELS: Record<string, string> = {
-  tv: 'ТВ-сериал',
-  movie: 'Фильм',
-  ova: 'OVA',
-  ona: 'ONA',
-  special: 'Спешл',
-  music: 'Клип',
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  anons: 'Анонс',
-  ongoing: 'Онгоинг',
-  released: 'Вышло',
-};
 
 export default async function AnimePage({
   params,
@@ -65,6 +53,11 @@ export default async function AnimePage({
   const {
     data: { user },
   } = await userPromise;
+
+  // Жанры для кликабельных ссылок — из локального индекса, чтобы id
+  // совпадали с фильтром каталога (см. getTitleGenres). Запрос дешёвый:
+  // одна строка по первичному ключу плюс выборка названий.
+  const indexedGenres = await getTitleGenres(id);
 
   let progress: WatchProgress | null = null;
   let listItem: UserListItem | null = null;
@@ -174,6 +167,35 @@ export default async function AnimePage({
               </span>
             )}
           </div>
+
+          {/* Жанры ссылками на каталог. Берём их из локального индекса, а не
+              из карточки Shikimori: у той легаси-id, и ссылка открыла бы
+              фильтр, который ничего не находит (см. getTitleGenres). Индекса
+              нет — показываем подписи Shikimori без ссылок. */}
+          {indexedGenres && indexedGenres.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {indexedGenres.map((g) => (
+                <Link
+                  key={g.id}
+                  href={`/catalog?genres=${g.id}`}
+                  className="press rounded-md bg-bg-card px-2 py-1 text-xs text-gray-300 transition hover:bg-accent/15 hover:text-accent"
+                >
+                  {g.russian}
+                </Link>
+              ))}
+            </div>
+          ) : anime.genres && anime.genres.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {anime.genres.map((g) => (
+                <span
+                  key={g.id}
+                  className="rounded-md bg-bg-card px-2 py-1 text-xs text-gray-400"
+                >
+                  {g.russian}
+                </span>
+              ))}
+            </div>
+          ) : null}
 
           <div className="mt-1 flex flex-wrap items-center gap-3">
             {isAnons ? (
