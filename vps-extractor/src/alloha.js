@@ -118,9 +118,29 @@ async function fetchBnsiData(browser, rawEmbedUrl) {
         });
     });
 
+    // ВРЕМЕННАЯ ДИАГНОСТИКА (ALLOHA_DEBUG_CDN=1). Разбираем, почему
+    // подписанные ссылки vkvideo.cloud отдают 403 всем: и нашему серверу, и
+    // постороннему IP, и настоящему Chrome. Экстрактор читает ссылку из
+    // JSON /bnsi/ и сам её НИКОГДА не запрашивает — значит мы ни разу не
+    // видели, что на самом деле шлёт их плеер. Пишем в лог каждый запрос
+    // страницы к CDN вместе с заголовками.
+    const debugCdn = process.env.ALLOHA_DEBUG_CDN === '1';
+    if (debugCdn) {
+      page.on('response', (res) => {
+        if (!/vkvideo\.cloud/i.test(res.url())) return;
+        console.error(`[alloha-debug] ОТВЕТ CDN ${res.status()} ${res.url().slice(0, 110)}`);
+      });
+    }
+
     await page.setRequestInterception(true);
     page.on('request', (request) => {
       const url = request.url();
+      if (debugCdn && /vkvideo\.cloud/i.test(url)) {
+        console.error(
+          `[alloha-debug] ЗАПРОС CDN ${request.method()} ${url.slice(0, 110)} заголовки=` +
+            JSON.stringify(request.headers()),
+        );
+      }
       if (url === WRAPPER_URL) {
         request
           .respond({
@@ -155,6 +175,21 @@ async function fetchBnsiData(browser, rawEmbedUrl) {
       return null;
     }
     if (!bnsiData) return null; // ответ пришёл, но не распарсился — см. лог выше
+
+    if (debugCdn) {
+      // Куки, которые страница получила для домена CDN. Если ссылка привязана
+      // к сессии, они тут будут — и тогда решение в том, чтобы отдавать их
+      // вместе с ссылкой (см. headers в результате извлечения).
+      try {
+        const cookies = await page.cookies('https://vkvideo.cloud/', embedUrl);
+        console.error(
+          `[alloha-debug] КУКИ (${cookies.length}): ` +
+            JSON.stringify(cookies.map((c) => `${c.domain}${c.path} ${c.name}`)),
+        );
+      } catch (err) {
+        console.error('[alloha-debug] куки прочитать не вышло:', err.message);
+      }
+    }
 
     return { data: bnsiData, embedOrigin: new URL(embedUrl).origin, status: bnsiStatus };
   } catch (err) {
