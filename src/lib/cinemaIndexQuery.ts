@@ -190,7 +190,10 @@ async function queryIndex(params: CinemaIndexParams): Promise<CinemaIndexPage | 
       query = query.order('popularity', { ascending: false, nullsFirst: false });
       break;
     case 'rating':
-      query = query.order('rating', { ascending: false, nullsFirst: false });
+      // Сортируем по СГЛАЖЕННОМУ рейтингу (см. миграцию 0030): по сырому
+      // первую страницу занимали безвестные фильмы с 10.00 от двух голосов.
+      // На карточке при этом показывается настоящая оценка TMDB.
+      query = query.order('rating_weighted', { ascending: false, nullsFirst: false });
       break;
     case 'name':
       query = query.order('title', { ascending: true, nullsFirst: false });

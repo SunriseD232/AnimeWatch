@@ -51,6 +51,33 @@ const MISS_BACKOFF_DAYS = 30;
 const MAX_MISS_BACKOFF = 6;
 
 /**
+ * Байесовское сглаживание рейтинга для СОРТИРОВКИ (см. миграцию 0030).
+ *
+ * Без него «По рейтингу» выдавала первыми безвестные фильмы 1984-1998 годов
+ * с ровно 10.00 — идеальным баллом от двух-трёх голосов; таких в базе 698
+ * штук, и они занимали всю первую страницу. Просто отбросить их порогом
+ * нельзя: у 11,6 тысячи тайтлов меньше пяти голосов, и целый пласт каталога
+ * пропал бы из сортировки.
+ *
+ * VOTE_WEIGHT — «вес доверия» в голосах, MEAN_RATING — средняя оценка по
+ * каталогу среди тайтлов с 50+ голосами (посчитана по факту). Тайтл с двумя
+ * голосами и десяткой получает 6.60, с пятью тысячами голосов и 8.5 —
+ * остаётся 8.48.
+ *
+ * На карточке при этом показывается НАСТОЯЩАЯ оценка TMDB: подменять её
+ * сглаженной значило бы врать про рейтинг.
+ */
+const VOTE_WEIGHT = 50;
+const MEAN_RATING = 6.464;
+
+function weightedRating(rating: number | null, votes: number | null): number | null {
+  if (rating === null) return null;
+  const v = votes ?? 0;
+  const weighted = (v / (v + VOTE_WEIGHT)) * rating + (VOTE_WEIGHT / (v + VOTE_WEIGHT)) * MEAN_RATING;
+  return Math.round(weighted * 100) / 100;
+}
+
+/**
  * PostgREST отдаёт максимум 1000 строк за запрос.
  *
  * ВАЖНО про циклы чтения ниже — две грабли сразу, обе поймал вживую:
@@ -96,6 +123,8 @@ interface TmdbFindResult {
 interface RatingRow {
   imdb_id: string;
   rating: number | null;
+  /** Сглаженный рейтинг — только для сортировки, см. weightedRating. */
+  rating_weighted: number | null;
   votes: number | null;
   popularity: number | null;
   tmdb_id: number | null;
@@ -340,6 +369,7 @@ export async function refreshCinemaRatings(budget = DEFAULT_BUDGET): Promise<Rat
       rows.push({
         imdb_id: imdbId,
         rating: res.rating,
+        rating_weighted: weightedRating(res.rating, res.votes),
         votes: res.votes,
         popularity: res.popularity,
         tmdb_id: res.tmdbId,

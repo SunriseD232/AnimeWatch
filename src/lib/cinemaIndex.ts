@@ -311,6 +311,7 @@ interface IndexRow {
   genre_ids: number[];
   country_ids: number[];
   rating: number | null;
+  rating_weighted: number | null;
   popularity: number | null;
   poster_local: boolean;
 }
@@ -318,7 +319,7 @@ interface IndexRow {
 function toRow(
   item: VsRawItem,
   batchId: string,
-  ratings: Map<string, { rating: number | null; popularity: number | null }>,
+  ratings: Map<string, { rating: number | null; weighted: number | null; popularity: number | null }>,
   storedPosters: Set<number>,
 ): IndexRow | null {
   const kpId = Number(item.id_kp);
@@ -357,6 +358,7 @@ function toRow(
     genre_ids: genreIds,
     country_ids: parseIds(item.country_ids),
     rating: imdbId ? (ratings.get(imdbId)?.rating ?? null) : null,
+    rating_weighted: imdbId ? (ratings.get(imdbId)?.weighted ?? null) : null,
     popularity: imdbId ? (ratings.get(imdbId)?.popularity ?? null) : null,
     // Флаг наследуется от долгоживущего кэша обложек (миграция 0029): файлы
     // перестройку переживают, и терять их на сутки незачем.
@@ -368,14 +370,14 @@ function toRow(
  *  сборке партии. Читаем страницами: PostgREST отдаёт максимум 1000 за раз. */
 async function loadRatings(
   supabase: ReturnType<typeof createServiceClient>,
-): Promise<Map<string, { rating: number | null; popularity: number | null }>> {
-  const out = new Map<string, { rating: number | null; popularity: number | null }>();
+): Promise<Map<string, { rating: number | null; weighted: number | null; popularity: number | null }>> {
+  const out = new Map<string, { rating: number | null; weighted: number | null; popularity: number | null }>();
   const PAGE = 1000;
 
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from('cinema_ratings')
-      .select('imdb_id, rating, popularity')
+      .select('imdb_id, rating, rating_weighted, popularity')
       // Строки, где нет ни того, ни другого, в партии бесполезны.
       .or('rating.not.is.null,popularity.not.is.null')
       // order() обязателен: без него Postgres не обещает порядок между
@@ -393,11 +395,18 @@ async function loadRatings(
     if (!data || data.length === 0) break;
 
     for (const r of data) {
-      const row = r as { imdb_id: string; rating: number | null; popularity: number | null };
+      const row = r as {
+        imdb_id: string;
+        rating: number | null;
+        rating_weighted: number | null;
+        popularity: number | null;
+      };
       const rating = Number(row.rating);
+      const weighted = Number(row.rating_weighted);
       const popularity = Number(row.popularity);
       out.set(row.imdb_id, {
         rating: Number.isFinite(rating) ? rating : null,
+        weighted: Number.isFinite(weighted) ? weighted : null,
         popularity: Number.isFinite(popularity) ? popularity : null,
       });
     }
