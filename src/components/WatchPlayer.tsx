@@ -130,6 +130,14 @@ export default function WatchPlayer({
   );
   const [kodikFallback, setKodikFallback] = useState(initialKodikFallback);
   const [yummyTranslations, setYummyTranslations] = useState(initialYummyTranslations);
+  // К какой серии относится список выше. Номер серии меняется СИНХРОННО по
+  // клику, а список приезжает с сервера позже — и всё это время у плеера на
+  // руках чужие озвучки: id у Yummy на каждую серию свои (см. миграцию
+  // 0008). Плеер, не зная об этом, успевал спросить у сервера озвучку
+  // ПРОШЛОЙ серии, получить честное «нет такой» и подменить выбор
+  // пользователя. Так и терялись «Субтитры · Alloha» на каждом переключении:
+  // в логах прода — два probe_failed 404 подряд и две подмены за ними.
+  const [translationsEpisode, setTranslationsEpisode] = useState(episode);
   const [realdebridTranslations, setRealDebridTranslations] = useState(initialRealDebridTranslations);
   const [skipOpening, setSkipOpening] = useState(initialSkipOpening);
   const [skipEnding, setSkipEnding] = useState(initialSkipEnding);
@@ -181,6 +189,13 @@ export default function WatchPlayer({
   useEffect(() => {
     setActiveEpisode(episode);
   }, [episode]);
+
+  // Маршрут сменился — сервер отдал список озвучек этой серии вместе со
+  // страницей, значит список снова свежий (см. translationsEpisode выше).
+  useEffect(() => {
+    setYummyTranslations(initialYummyTranslations);
+    setTranslationsEpisode(episode);
+  }, [episode, initialYummyTranslations]);
 
   // При навигации по маршруту сервер отдаёт новый Kodik-embed — обновляем iframe.
   useEffect(() => {
@@ -560,6 +575,7 @@ export default function WatchPlayer({
         setKodikInitialTranslationId(data.kodikInitialTranslationId);
         setKodikFallback(data.kodikFallback);
         setYummyTranslations(data.yummyTranslations);
+        setTranslationsEpisode(targetEpisode);
         setRealDebridTranslations(data.realdebridTranslations);
         setSkipOpening(data.skipOpening);
         setSkipEnding(data.skipEnding);
@@ -697,6 +713,7 @@ export default function WatchPlayer({
             ? Math.floor(livePositionRef.current)
             : resumeFrom,
         translations: ownPlayerTranslations,
+        translationsStale: translationsEpisode !== activeEpisode,
         initialTranslationTitle: savedTranslationTitle,
         selectedTranslationId: ownPlayerTranslationId,
         skipOpening,

@@ -56,6 +56,12 @@ interface Props {
   /** Доступные озвучки (эмбеды Alloha из списка переводов Yummy для этой
    *  серии) — селектор в левом верхнем углу плеера. */
   translations: YummyTranslation[];
+  /** true — список выше ещё от ПРОШЛОЙ серии: номер серии сменился
+   *  синхронно по клику, а список приезжает с сервера позже (см.
+   *  translationsEpisode в WatchPlayer). Пока так, поток не запрашиваем:
+   *  id у Yummy на каждую серию свои, и сервер честно ответил бы «нет такой
+   *  озвучки», а мы приняли бы это за «недоступна» и подменили выбор. */
+  translationsStale?: boolean;
   /** Озвучка, сохранённая с прошлого раза (по названию — id Yummy не
    *  стабилен между сериями, см. миграцию 0008). null — берём первую. */
   initialTranslationTitle: string | null;
@@ -337,6 +343,7 @@ export default function OwnPlayer({
   isAuthed,
   resumeFrom,
   translations,
+  translationsStale = false,
   initialTranslationTitle,
   savedTranslationId,
   selectedTranslationId,
@@ -472,7 +479,8 @@ export default function OwnPlayer({
   // false — переходный рендер при смене серии, запрашивать поток рано (см.
   // эффект подключения источника ниже).
   const translationReady =
-    translationId == null || translations.some((t) => t.id === translationId);
+    !translationsStale &&
+    (translationId == null || translations.some((t) => t.id === translationId));
 
   // Просить ли сервер переизвлечь ссылку заново (?fresh=1), а не отдавать из
   // своего 15-минутного кэша resolved_streams.
@@ -771,7 +779,9 @@ export default function OwnPlayer({
   // так что от нестабильной ссылки translations на каждый рендер это не
   // зациклится.
   useEffect(() => {
-    if (translations.length === 0) return;
+    // Список ещё от прошлой серии — восстанавливать по нему нечего: подписи
+    // те же, а id чужие (см. Props.translationsStale).
+    if (translationsStale || translations.length === 0) return;
 
     // В этой серии уже есть явный выбор — он и главный. Восстановление по
     // подписи существует ради ПЕРЕХОДА между сериями, а не ради того, чтобы
@@ -807,7 +817,7 @@ export default function OwnPlayer({
       storeTrackPrefs({ translation: resolved.title });
     }
     setTranslationId(resolved?.id ?? null);
-  }, [episode, translations, initialTranslationTitle, warnComboMissing]);
+  }, [episode, season, translations, translationsStale, initialTranslationTitle, warnComboMissing]);
 
   // --- Громкость: восстановление/сохранение ---------------------------------
   // Читаем сохранённое значение сразу (до монтирования <video> — он рисуется
