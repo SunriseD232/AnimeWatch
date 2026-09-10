@@ -389,19 +389,36 @@ export default function OwnPlayer({
   // озвучка, чем та, что показывал селектор до переключения (и чем та, что
   // был прогрет заранее, см. эффект прогрева в Player.tsx/WatchPlayer.tsx).
   const activeTranslationTitleRef = useRef<string | null>(activeTranslation?.title ?? null);
+  // Последний id, который МЫ сами сообщили родителю. Он держит его у себя и
+  // возвращает нам обратно пропом selectedTranslationId — такое эхо применять
+  // нельзя, иначе любое расхождение между нами и родителем превращается в
+  // бесконечный обмен (см. эффект внешнего выбора ниже).
+  const reportedTranslationIdRef = useRef<number | null>(null);
   // Сообщаем родителю текущую озвучку (см. Props.onTranslationChange) — нужно
   // именно эффектом (не инлайн-вызовом в теле рендера), чтобы не звать
   // setState родителя во время нашего собственного рендера.
   useEffect(() => {
-    onTranslationChangeRef.current?.(
-      activeTranslation ? { id: activeTranslation.id, title: activeTranslation.title } : null,
-    );
+    // Переходный рендер при смене серии: translationId — от ПРОШЛОЙ серии,
+    // translations — уже от новой, и activeTranslation молча падает на
+    // translations[0]. Сообщить это наверх нельзя: родитель примет чужую
+    // первую озвучку за наш выбор, вернёт её нам через selectedTranslationId,
+    // мы применим — а корректирующий эффект ниже тут же вернёт выбор по
+    // подписи обратно. Двое пишут одно и то же состояние по очереди, и это
+    // не гипотеза: на проде так уходило в бесконечный цикл 996794 ↔ 996795
+    // («Озвучка AniLibria · Alloha» ↔ «Субтитры · Alloha») с падением всей
+    // страницы по React #185. Молчим до тех пор, пока id не станет валидным
+    // — ждать недолго, корректирующий эффект отрабатывает следом.
+    if (translationId != null && !translations.some((t) => t.id === translationId)) return;
+
+    const reported = activeTranslation ? { id: activeTranslation.id, title: activeTranslation.title } : null;
+    reportedTranslationIdRef.current = reported?.id ?? null;
+    onTranslationChangeRef.current?.(reported);
     // activeTranslation — новый объект почти на каждый рендер (derived, не
     // state) — зависимость по id (примитив) вместо самого объекта, чтобы не
     // звать колбэк на каждый чих; title всегда путешествует вместе с тем же
     // id в одной записи translations, отдельно его тут отслеживать незачем.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTranslation?.id]);
+  }, [activeTranslation?.id, translationId, translations]);
   // Каждая озвучка может идти через свой источник извлечения (Alloha/Sibnet/
   // ...) — используем его, а extractSource остаётся дефолтом только когда
   // список переводов пуст (раздел «Фильмы и сериалы», см. Player.tsx).
@@ -2004,6 +2021,12 @@ export default function OwnPlayer({
   useEffect(() => {
     if (selectedTranslationId == null || selectedTranslationId === translationId) return;
     if (!translations.some((t) => t.id === selectedTranslationId)) return;
+    // Эхо: родитель вернул ровно то, что мы ему только что сами сообщили.
+    // Применять это как «внешний выбор» нельзя — именно так замыкался цикл
+    // на проде. Настоящий внешний выбор (селектор над плеером, подмена
+    // недоступной озвучки родителем) всегда несёт id, которого мы не
+    // сообщали, и сюда доходит как раньше.
+    if (selectedTranslationId === reportedTranslationIdRef.current) return;
     changeTranslation(selectedTranslationId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTranslationId, translations]);

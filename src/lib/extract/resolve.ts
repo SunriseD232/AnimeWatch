@@ -165,10 +165,23 @@ async function resolveStreamUncoalesced({
   // сопоставить её "{Label}" в конфиге плеера, а не только Puppeteer-пути,
   // который просто открывает embedUrl с default_audio_id как есть.
   let translationLabel: string | undefined;
+  // Запросили конкретную озвучку, а в списке ЭТОЙ серии её нет. Так бывает
+  // на переходном рендере при смене серии: id у Yummy свои на каждую серию
+  // (см. миграцию 0008), и клиент успевает спросить старый.
+  //
+  // Раньше это молча уходило в «слепой» путь экстрактора — тот перебирает
+  // всех кандидатов серии подряд, каждого через Puppeteer. На проде это
+  // стоило 56, 92 и 125 секунд на запрос при потолке маршрута в 60 (см.
+  // maxDuration), то есть пользователь гарантированно получал обрыв, а
+  // общий браузер на VPS был занят перебором, и НАСТОЯЩИЙ запрос той же
+  // серии вставал в очередь за ним. Отвечаем сразу: пусть клиент выберет
+  // существующую озвучку и спросит заново.
+  let translationMissing = false;
   if (translationId != null) {
     if (contentType === 'anime') {
       const yummy = await getYummyEpisode(shikimoriId, episode);
       embedUrl = yummy?.translations.find((t) => t.id === translationId)?.embedUrl;
+      translationMissing = !embedUrl;
     } else if (source === 'kodik') {
       const kodik = await getKodikOwnPlayerTranslations(shikimoriId, season, episode);
       embedUrl = kodik.find((t) => t.id === translationId)?.embedUrl;
@@ -183,7 +196,15 @@ async function resolveStreamUncoalesced({
     } else if (source === 'alloha' && contentType === 'cinema') {
       const alloha = await getAllohaSources(shikimoriId);
       embedUrl = alloha.ownPlayerTranslations.find((t) => t.id === translationId)?.embedUrl;
+      translationMissing = !embedUrl;
     }
+  }
+
+  if (translationMissing) {
+    console.error(
+      `[resolve] озвучка ${translationId} не найдена у ${contentType} ${shikimoriId} s${season}e${episode} (${source}) — отвечаем сразу, без перебора`,
+    );
+    return null;
   }
 
   if (signal?.aborted) return null;

@@ -42,7 +42,11 @@ export function useTranslationFallback({
   /** Сколько замен подряд разрешено в одной серии. */
   limit?: number;
 }) {
-  const failedRef = useRef<{ key: string; ids: Set<number> }>({ key: '', ids: new Set() });
+  const failedRef = useRef<{ key: string; ids: Set<number>; attempts: number }>({
+    key: '',
+    ids: new Set(),
+    attempts: 0,
+  });
   const warnedRef = useRef<Set<string>>(new Set());
 
   return useCallback(
@@ -51,14 +55,21 @@ export function useTranslationFallback({
       if (failed.key !== episodeKey) {
         failed.key = episodeKey;
         failed.ids = new Set();
+        failed.attempts = 0;
       }
       failed.ids.add(id);
+      failed.attempts++;
 
       // Потолок не косметический: у тайтла бывает под сорок озвучек, и если
       // серии нет ВОВСЕ (не открывается ни одна), без него плеер молча
       // простучал бы весь список, вместо того чтобы честно сказать зрителю,
       // что серия недоступна.
-      if (failed.ids.size > limit) return false;
+      //
+      // Считаем и РАЗНЫЕ озвучки, и число обращений. Одного размера множества
+      // мало: если та же пара озвучек попросит замену по кругу, множество
+      // так и останется размером два и потолок не сработает никогда — а
+      // именно циклы здесь и опасны (см. историю с React #185).
+      if (failed.ids.size > limit || failed.attempts > limit * 2) return false;
 
       const current = tracks.find((t) => t.id === id);
       // «Озвучка AniLibria · Alloha» → студия «Озвучка AniLibria», источник
