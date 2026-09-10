@@ -3,6 +3,8 @@ import { isAdminEmail } from '@/lib/admin';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getCachedUser } from '@/lib/supabase/server';
 import RunJobButton from '@/components/admin/RunJobButton';
+import ResetExtractorButton from '@/components/admin/ResetExtractorButton';
+import { getExtractorHealth } from '@/lib/extractorHealth';
 import type { JobName } from '@/lib/adminJobs';
 
 export const metadata = { title: 'Состояние — MediaWatch' };
@@ -31,12 +33,16 @@ export default async function AdminStatusPage() {
 
   const supabase = createServiceClient();
 
-  const [animeState, cinemaState, animePosters, cinemaPosters, ratings] = await Promise.all([
+  const [animeState, cinemaState, animePosters, cinemaPosters, ratings, extractor] = await Promise.all([
     supabase.from('anime_index_state').select('*').eq('id', true).maybeSingle(),
     supabase.from('cinema_index_state').select('*').eq('id', true).maybeSingle(),
     supabase.from('poster_cache').select('*', { count: 'exact', head: true }).eq('kind', 'anime').gt('bytes', 0),
     supabase.from('poster_cache').select('*', { count: 'exact', head: true }).eq('kind', 'cinema').gt('bytes', 0),
     supabase.from('cinema_ratings').select('*', { count: 'exact', head: true }).not('rating', 'is', null),
+    // Отдельный процесс на этой же машине — см. lib/extractorHealth.ts, оно
+    // никогда не бросает: если экстрактор лежит, страница должна об этом
+    // сказать, а не упасть вместе с ним.
+    getExtractorHealth(),
   ]);
 
   const a = animeState.data as Record<string, unknown> | null;
@@ -98,6 +104,46 @@ export default async function AdminStatusPage() {
         />
       </Section>
 
+      {/* Экстрактор — не крон, а живущий рядом процесс с Puppeteer. Его
+          наработку раньше можно было увидеть только по SSH, хотя именно она
+          первой объясняет «плеер грузится дольше обычного». */}
+      <Section title="Экстрактор" extra={<ResetExtractorButton />}>
+        <Row
+          label="Доступен"
+          value={extractor.reachable ? 'да' : 'нет'}
+          ok={extractor.reachable}
+        />
+        {extractor.reachable && (
+          <>
+            <Row label="Процесс живёт" value={`${num(extractor.uptimeMinutes)} мин`} />
+            <Row label="Память процесса" value={extractor.rssMb != null ? `${extractor.rssMb} МБ` : '—'} />
+            <Row
+              label="Chromium запущен"
+              value={extractor.browser?.running ? 'да' : 'нет (поднимется по запросу)'}
+            />
+            <Row
+              label="Извлечений на текущем Chromium"
+              value={
+                extractor.browser
+                  ? `${num(extractor.browser.extractions)} из ${num(extractor.browser.maxExtractions)}`
+                  : '—'
+              }
+              // Близко к порогу — не беда, а штатная плановая замена; тревожно
+              // только если счётчик его заметно перевалил (значит замена не
+              // отрабатывает).
+              ok={
+                !extractor.browser ||
+                extractor.browser.extractions <= extractor.browser.maxExtractions
+              }
+            />
+            <Row
+              label="Chromium живёт"
+              value={extractor.browser ? `${num(extractor.browser.ageMinutes)} мин` : '—'}
+            />
+          </>
+        )}
+      </Section>
+
       {/* У проверки новых серий нет своих цифр — она только рассылает
           уведомления, — но кнопка ей нужна не меньше остальных: чаще всего
           руками дёргают именно её. */}
@@ -123,21 +169,25 @@ export default async function AdminStatusPage() {
 function Section({
   title,
   jobs,
+  extra,
   children,
 }: {
   title: string;
   jobs?: JobName[];
+  /** Кнопка раздела, не связанная с кронами (перезапуск Chromium). */
+  extra?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section className="flex flex-col gap-2 rounded-2xl bg-bg-card p-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-sm font-bold text-gray-100">{title}</h2>
-        {jobs && jobs.length > 0 && (
+        {(extra || (jobs && jobs.length > 0)) && (
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {jobs.map((job) => (
+            {jobs?.map((job) => (
               <RunJobButton key={job} job={job} />
             ))}
+            {extra}
           </div>
         )}
       </div>

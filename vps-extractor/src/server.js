@@ -10,7 +10,7 @@ const { extractKodik } = require('./kodik');
 const { extractCVH } = require('./cvh');
 const { extractAksor } = require('./aksor');
 
-const { serializeBrowserUse, sharedBrowserStats } = require('./browser');
+const { serializeBrowserUse, sharedBrowserStats, closeSharedBrowser } = require('./browser');
 
 const PORT = Number(process.env.PORT) || 3300;
 const AUTH_TOKEN = process.env.EXTRACTOR_AUTH_TOKEN;
@@ -41,6 +41,32 @@ app.get('/health', (req, res) => {
     rssMb: Math.round(process.memoryUsage().rss / 1048576),
     browser: sharedBrowserStats(),
   });
+});
+
+/**
+ * Ручной перезапуск общего Chromium (кнопка на /admin/status).
+ *
+ * Штатно он и так меняется каждые BROWSER_MAX_EXTRACTIONS извлечений (см.
+ * browser.js), но когда «плеер грузится дольше обычного» здесь и сейчас,
+ * ждать порога незачем — а лезть на сервер по SSH ради одной кнопки тем
+ * более.
+ *
+ * Через очередь браузера, а не напрямую: закрыть Chromium посреди чужого
+ * извлечения — гарантированно сорвать его. Так сброс дождётся текущего.
+ * Новый браузер поднимется лениво на следующем запросе.
+ */
+app.post('/browser/reset', requireAuth, async (req, res) => {
+  const before = sharedBrowserStats();
+  try {
+    await serializeBrowserUse(() => closeSharedBrowser(), { priority: 'high' });
+  } catch (err) {
+    console.error('[browser] ручной сброс упал:', err);
+    return res.status(500).json({ error: 'reset_failed', message: String(err && err.message) });
+  }
+  console.error(
+    `[browser] ручной сброс: было ${before.extractions} извлечений за ${before.ageMinutes} мин`,
+  );
+  return res.json({ ok: true, before });
 });
 
 // Хосты, на которые /relay разрешено ходить — эндпоинт защищён Bearer-

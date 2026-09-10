@@ -227,6 +227,8 @@ async function closeSharedBrowser() {
   if (sharedBrowserPromise) {
     const promise = sharedBrowserPromise;
     sharedBrowserPromise = null;
+    browserUseCount = 0;
+    browserStartedAt = 0;
     try {
       const browser = await promise;
       if (browser.isConnected()) await browser.close();
