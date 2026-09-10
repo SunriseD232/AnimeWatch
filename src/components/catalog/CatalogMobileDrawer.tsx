@@ -173,7 +173,7 @@ export default function CatalogMobileDrawer({
             type="button"
             onClick={applyAndClose}
             disabled={!dirty}
-            className="press flex-1 rounded-full bg-accent px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+            className="press flex-1 rounded-full bg-accent px-4 py-2.5 text-sm font-semibold text-accent-fg transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
             Применить
           </button>

@@ -109,7 +109,7 @@ export default function GenreFilterPanel({ genres, sorts, defaultSort, anonsTogg
             <select
               value={sort}
               onChange={(e) => applyNow(pendingInclude, pendingExclude, e.target.value, showAnons)}
-              className="rounded-lg border border-white/10 bg-bg-card px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none"
+              className="rounded-lg border border-white/10 bg-bg-card px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:ring-1 focus:ring-accent"
             >
               {sorts.map((s) => (
                 <option key={s.value} value={s.value}>
@@ -152,7 +152,7 @@ export default function GenreFilterPanel({ genres, sorts, defaultSort, anonsTogg
               className={[
                 'press rounded-full px-3.5 py-1.5 text-sm font-medium transition',
                 isIncluded
-                  ? 'bg-accent text-white shadow-lg shadow-accent/25'
+                  ? 'bg-accent text-accent-fg shadow-lg shadow-accent/25'
                   : isExcluded
                     ? 'bg-red-500/15 text-red-300 line-through ring-1 ring-red-500/40'
                     : 'bg-bg-card text-gray-300 ring-1 ring-white/5 hover:bg-bg-soft hover:text-white',
@@ -170,7 +170,7 @@ export default function GenreFilterPanel({ genres, sorts, defaultSort, anonsTogg
           <button
             type="button"
             onClick={() => applyNow(pendingInclude, pendingExclude, sort, showAnons)}
-            className="press animate-rise rounded-full bg-accent px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-accent/40 transition hover:bg-accent-hover"
+            className="press animate-rise rounded-full bg-accent px-6 py-2.5 text-sm font-semibold text-accent-fg shadow-lg shadow-accent/40 transition hover:bg-accent-hover"
           >
             Применить
           </button>

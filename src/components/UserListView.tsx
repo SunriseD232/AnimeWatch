@@ -128,7 +128,7 @@ function ListCard({
           className={[
             'pointer-events-none absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full border-2 transition',
             selected
-              ? 'border-accent bg-accent text-white'
+              ? 'border-accent bg-accent text-accent-fg'
               : 'border-white/40 bg-black/50',
           ].join(' ')}
         >
@@ -274,7 +274,7 @@ export default function UserListView({
               aria-pressed={type === t.value}
               className={[
                 'press relative z-10 rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200',
-                type === t.value ? 'text-white' : 'text-gray-300 hover:text-white',
+                type === t.value ? 'text-accent-fg' : 'text-gray-300 hover:text-white',
               ].join(' ')}
             >
               {t.label}
@@ -370,7 +370,7 @@ export default function UserListView({
           <p className="text-sm text-gray-400">Здесь пока пусто.</p>
           <Link
             href={type === 'cinema' ? '/cinema/catalog' : '/catalog'}
-            className="press rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-hover"
+            className="press rounded-full bg-accent px-4 py-2 text-sm font-medium text-accent-fg transition hover:bg-accent-hover"
           >
             Найти что посмотреть →
           </Link>

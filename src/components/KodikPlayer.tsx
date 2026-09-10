@@ -204,7 +204,7 @@ export default function KodikPlayer({
             <select
               value={translationId ?? ''}
               onChange={(e) => changeTranslation(Number(e.target.value))}
-              className="rounded-lg border border-white/10 bg-bg-card px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:outline-none"
+              className="rounded-lg border border-white/10 bg-bg-card px-3 py-1.5 text-sm text-gray-100 focus:border-accent focus:ring-1 focus:ring-accent"
             >
               {translations.map((t) => (
                 <option key={t.id} value={t.id}>

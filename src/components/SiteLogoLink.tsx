@@ -38,7 +38,7 @@ export default function SiteLogoLink({ cookieMode }: { cookieMode: ContentType }
       prefetch={false}
       className="flex shrink-0 items-center gap-2 text-lg font-bold"
     >
-      <span className="grid h-8 w-8 place-items-center rounded-xl bg-accent text-white">
+      <span className="grid h-8 w-8 place-items-center rounded-xl bg-accent text-accent-fg">
         ▶
       </span>
       <span className="hidden sm:inline">MediaWatch</span>

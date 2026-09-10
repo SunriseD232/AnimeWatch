@@ -193,7 +193,7 @@ function ApplyBar() {
       <button
         type="button"
         onClick={() => apply()}
-        className="press animate-rise pointer-events-auto rounded-full bg-accent px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-accent/40 transition hover:bg-accent-hover"
+        className="press animate-rise pointer-events-auto rounded-full bg-accent px-6 py-2.5 text-sm font-semibold text-accent-fg shadow-lg shadow-accent/40 transition hover:bg-accent-hover"
       >
         Применить
       </button>

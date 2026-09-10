@@ -40,9 +40,21 @@ export default function ThemeScript() {
       var m = function (c) { return Math.round(c + (255 - c) * 0.14); };
       return m((n >> 16) & 255) + ' ' + m((n >> 8) & 255) + ' ' + m(n & 255);
     };
+    // Текст поверх заливки акцентом — тёмный или белый, см. accentForeground
+    // в lib/theme.ts (там же расчёт и порог 0.189).
+    var fg = function (h) {
+      var n = parseInt(h.slice(1), 16);
+      var c = function (v) {
+        v = v / 255;
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+      };
+      var l = 0.2126 * c((n >> 16) & 255) + 0.7152 * c((n >> 8) & 255) + 0.0722 * c(n & 255);
+      return l > 0.189 ? '11 11 15' : '255 255 255';
+    };
     var s = document.documentElement.style;
     s.setProperty('--accent', ch(hex));
     s.setProperty('--accent-hover', lighten(hex));
+    s.setProperty('--accent-fg', fg(hex));
     s.setProperty('--bg', ch(pal[0]));
     s.setProperty('--bg-soft', ch(pal[1]));
     s.setProperty('--bg-card', ch(pal[2]));

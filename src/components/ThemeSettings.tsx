@@ -213,7 +213,7 @@ export default function ThemeSettings({ initialTheme }: Props) {
           type="button"
           onClick={save}
           disabled={!dirty || saving}
-          className="press rounded-full bg-accent px-4 py-2 font-medium text-black transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+          className="press rounded-full bg-accent px-4 py-2 font-medium text-accent-fg transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
         >
           {saving ? 'Сохраняем…' : 'Сохранить'}
         </button>

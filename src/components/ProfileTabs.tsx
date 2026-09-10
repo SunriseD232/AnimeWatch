@@ -75,7 +75,7 @@ export default function ProfileTabs({
             className={[
               'rounded-lg px-4 py-2 text-sm font-semibold transition',
               tab === t.value
-                ? 'bg-accent text-white'
+                ? 'bg-accent text-accent-fg'
                 : 'bg-bg-card text-gray-300 hover:bg-bg-soft',
             ].join(' ')}
           >

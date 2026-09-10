@@ -101,7 +101,7 @@ export function FiltersTrigger({
       {/* Счётчик у свёрнутой кнопки — иначе заданный фильтр не виден совсем,
           и суженная выдача выглядит как поломка каталога. */}
       {count > 0 && (
-        <span className="rounded-full bg-accent px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white">
+        <span className="rounded-full bg-accent px-1.5 py-0.5 text-[11px] font-semibold leading-none text-accent-fg">
           {count}
         </span>
       )}

@@ -2192,7 +2192,7 @@ export default function OwnPlayer({
             // переизвлечь ссылку заново (см. wantFreshRef).
             retry({ fresh: true });
           }}
-          className="press rounded-full bg-accent px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
+          className="press rounded-full bg-accent px-4 py-1.5 text-sm font-medium text-accent-fg hover:bg-accent-hover"
         >
           Повторить
         </button>
@@ -2377,14 +2377,14 @@ export default function OwnPlayer({
             <button
               type="button"
               onClick={onNext}
-              className="absolute bottom-20 right-3 z-10 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white ring-1 ring-white/20 backdrop-blur transition hover:bg-accent-hover"
+              className="absolute bottom-20 right-3 z-10 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-fg ring-1 ring-white/20 backdrop-blur transition hover:bg-accent-hover"
             >
               {nextLabel ?? 'Следующая серия'} →
             </button>
           ) : (
             <Link
               href={nextHref}
-              className="absolute bottom-20 right-3 z-10 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white ring-1 ring-white/20 backdrop-blur transition hover:bg-accent-hover"
+              className="absolute bottom-20 right-3 z-10 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-fg ring-1 ring-white/20 backdrop-blur transition hover:bg-accent-hover"
             >
               {nextLabel ?? 'Следующая серия'} →
             </Link>

@@ -119,6 +119,45 @@ export function hexToChannels(hex: string): string {
   return `${(n >> 16) & 255} ${(n >> 8) & 255} ${n & 255}`;
 }
 
+/**
+ * Цвет текста ПОВЕРХ заливки акцентом — тёмный или белый, что читается.
+ *
+ * Белый на акценте не проходит по контрасту НИ НА ОДНОМ пресете: синий
+ * 3.02:1, фиолетовый и розовый 3.52:1, оранжевый 2.06:1, зелёный 2.02:1,
+ * бирюзовый 1.99:1 — при норме 4.5:1 для обычного текста (WCAG 1.4.3) и
+ * 3:1 для значков (1.4.11). Проверено расчётом по всем шести пресетам.
+ * Почти-чёрный на тех же цветах даёт от 5.58:1 до 9.87:1.
+ *
+ * Дело в том, что это системные цвета Apple для ТЁМНОГО режима: они
+ * задуманы как текст на чёрном холсте, а не как холст под белым текстом.
+ * Затемнять саму заливку до 4.5:1 значило бы получить грязный цвет вместо
+ * выбранного пользователем — поэтому меняем не заливку, а текст на ней.
+ *
+ * Порог — точка, где белый и почти-чёрный дают одинаковый контраст:
+ * (L+0.05)² = 0.0545 · 1.05, то есть L ≈ 0.189. Свой акцент пипеткой может
+ * быть и тёмным, и тогда белый тут выигрывает честно.
+ */
+const ACCENT_FG_DARK = '11 11 15';
+const ACCENT_FG_LIGHT = '255 255 255';
+
+export function relativeLuminance(hex: string): number {
+  const v = isHexColor(hex) ? hex : DEFAULT_THEME.accent;
+  const n = parseInt(v.slice(1), 16);
+  const channel = (c: number) => {
+    const x = c / 255;
+    return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+  };
+  return (
+    0.2126 * channel((n >> 16) & 255) +
+    0.7152 * channel((n >> 8) & 255) +
+    0.0722 * channel(n & 255)
+  );
+}
+
+export function accentForeground(hex: string): string {
+  return relativeLuminance(hex) > 0.189 ? ACCENT_FG_DARK : ACCENT_FG_LIGHT;
+}
+
 /** Оттенок наведения: осветление к белому на `amount`. Отдельной настройки
  *  на hover нет намеренно — она бы только позволила выбрать несочетающуюся
  *  пару. 0.14 подобрано так, чтобы #2997ff дал #46a6ff — прежний ручной
@@ -140,6 +179,7 @@ export function themeToCssVars(theme: Theme): Record<string, string> {
   return {
     '--accent': hexToChannels(t.accent),
     '--accent-hover': hexToChannels(lightenHex(t.accent)),
+    '--accent-fg': accentForeground(t.accent),
     '--bg': hexToChannels(palette.bg),
     '--bg-soft': hexToChannels(palette.soft),
     '--bg-card': hexToChannels(palette.card),

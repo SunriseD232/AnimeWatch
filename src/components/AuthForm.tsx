@@ -133,7 +133,7 @@ export default function AuthForm({ mode }: { mode: Mode }) {
         <button
           type="submit"
           disabled={loading}
-          className="rounded-full press flex items-center justify-center gap-2 bg-accent px-4 py-2.5 font-medium text-white transition hover:bg-accent-hover disabled:opacity-60"
+          className="rounded-full press flex items-center justify-center gap-2 bg-accent px-4 py-2.5 font-medium text-accent-fg transition hover:bg-accent-hover disabled:opacity-60"
         >
           {loading && (
             <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />

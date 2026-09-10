@@ -50,7 +50,11 @@ export default function ModeSwitch({ active }: { active: ContentType }) {
   return (
     <div
       ref={rootRef}
-      className="relative inline-flex rounded-full border border-white/10 bg-bg-card p-1"
+      // self-start обязателен: все родители переключателя — flex-колонки, а
+      // в них элемент по умолчанию растягивается на всю ширину (inline-flex
+      // у flex-элемента браузер приводит к flex). Контрол шириной в две
+      // вкладки уезжал рамкой на 1120px, с пустым хвостом на весь экран.
+      className="relative inline-flex self-start rounded-full border border-white/10 bg-bg-card p-1"
     >
       <SlidingPill pill={pill} />
       {TABS.map((tab) => {
@@ -81,7 +85,7 @@ export default function ModeSwitch({ active }: { active: ContentType }) {
             }}
             className={[
               'press relative z-10 rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200',
-              isActive ? 'text-white' : 'text-gray-300 hover:text-white',
+              isActive ? 'text-accent-fg' : 'text-gray-300 hover:text-white',
             ].join(' ')}
           >
             {tab.label}

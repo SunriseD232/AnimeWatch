@@ -241,7 +241,7 @@ export default async function CinemaPage({
             {hasAnyPlayer ? (
               <Link
                 href={`/cinema/watch/${id}/${resumeSeason}/${resumeEpisode}`}
-                className="rounded-full press bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-hover"
+                className="rounded-full press bg-accent px-5 py-2.5 text-sm font-semibold text-accent-fg transition hover:bg-accent-hover"
               >
                 {progress
                   ? item.isSerial

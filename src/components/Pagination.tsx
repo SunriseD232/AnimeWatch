@@ -39,9 +39,12 @@ export default function Pagination({ page, prevHref, nextHref, scrollToId }: Pro
   // после подмены содержимого.
   const onNavigate = scrollToId
     ? () => {
+        // Плавность — по системной настройке: явный behavior в JS сильнее
+        // css-правила scroll-behavior, поэтому спрашиваем сами.
+        const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         document
           .getElementById(scrollToId)
-          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          ?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
       }
     : undefined;
   return (

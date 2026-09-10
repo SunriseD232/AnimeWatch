@@ -53,7 +53,7 @@ export default function TriStateCheckbox({
         ].join(' ')}
       >
         {included && (
-          <svg viewBox="0 0 16 16" className="h-3 w-3 fill-none stroke-white stroke-[2.5]">
+          <svg viewBox="0 0 16 16" className="h-3 w-3 fill-none stroke-accent-fg stroke-[2.5]">
             <path d="M3.5 8.5 6.5 11.5 12.5 5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         )}

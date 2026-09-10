@@ -123,7 +123,7 @@ export default async function Navbar() {
             </Link>
             <Link
               href="/signup"
-              className="press rounded-full bg-accent px-3 py-2 text-sm font-medium text-white transition hover:bg-accent-hover"
+              className="press rounded-full bg-accent px-3 py-2 text-sm font-medium text-accent-fg transition hover:bg-accent-hover"
             >
               Регистрация
             </Link>

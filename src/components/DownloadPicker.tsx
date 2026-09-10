@@ -419,7 +419,7 @@ export default function DownloadPicker({
             type="button"
             onClick={confirm}
             disabled={confirming || !chosenTranslation}
-            className="press w-full rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-hover disabled:opacity-60"
+            className="press w-full rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-accent-fg transition hover:bg-accent-hover disabled:opacity-60"
           >
             {confirming ? 'Ставим в очередь…' : isMovie ? 'Скачать фильм' : `Скачать (${selected.size})`}
           </button>
@@ -445,7 +445,7 @@ function EpisodeCheckbox({
       className={[
         'press rounded-md py-1.5 text-xs font-medium ring-1 transition',
         checked
-          ? 'bg-accent text-white ring-accent'
+          ? 'bg-accent text-accent-fg ring-accent'
           : 'bg-bg-card text-gray-300 ring-white/10 hover:ring-white/20',
       ].join(' ')}
     >

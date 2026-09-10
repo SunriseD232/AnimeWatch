@@ -48,7 +48,7 @@ export default function DiscoverTabs({
               className={[
                 'rounded-full px-4 py-1.5 text-sm font-medium transition',
                 tab.key === activeKey
-                  ? 'bg-accent text-white'
+                  ? 'bg-accent text-accent-fg'
                   : 'bg-bg-card text-gray-300 ring-1 ring-white/10 hover:bg-bg-soft',
               ].join(' ')}
             >
@@ -67,7 +67,7 @@ export default function DiscoverTabs({
           выбранная вкладка. */}
       <Link
         href={catalogHref}
-        className="press group flex items-center gap-2 rounded-full bg-accent/15 px-4 py-1.5 text-sm font-semibold text-accent ring-1 ring-accent/30 transition hover:bg-accent hover:text-white hover:ring-accent"
+        className="press group flex items-center gap-2 rounded-full bg-accent/15 px-4 py-1.5 text-sm font-semibold text-accent ring-1 ring-accent/30 transition hover:bg-accent hover:text-accent-fg hover:ring-accent"
       >
         <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4 shrink-0">
           <g className="fill-none stroke-current" strokeWidth="1.6" strokeLinecap="round">

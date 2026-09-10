@@ -753,7 +753,7 @@ export default function WatchPlayer({
             <button
               type="button"
               onClick={() => switchEpisode(otherEpisode)}
-              className="rounded-md bg-accent px-3 py-1.5 font-medium text-white hover:bg-accent-hover"
+              className="rounded-md bg-accent px-3 py-1.5 font-medium text-accent-fg hover:bg-accent-hover"
             >
               Перейти
             </button>
@@ -812,7 +812,7 @@ export default function WatchPlayer({
                   className={[
                     'flex shrink-0 items-center whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
                     source === kind
-                      ? 'bg-accent text-white'
+                      ? 'bg-accent text-accent-fg'
                       : 'text-gray-300 hover:text-white',
                   ].join(' ')}
                 >
@@ -1028,7 +1028,7 @@ export default function WatchPlayer({
             <button
               type="button"
               onClick={() => switchEpisode(activeEpisode + 1)}
-              className="rounded-md bg-accent px-4 py-1.5 font-medium text-white hover:bg-accent-hover"
+              className="rounded-md bg-accent px-4 py-1.5 font-medium text-accent-fg hover:bg-accent-hover"
             >
               Следующая серия →
             </button>

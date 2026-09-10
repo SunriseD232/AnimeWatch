@@ -99,7 +99,7 @@ export default function SearchPage({
           aria-current={!isCinema ? 'page' : undefined}
           className={[
             'press rounded-full px-4 py-2 text-sm font-medium transition',
-            !isCinema ? 'bg-accent text-white' : 'text-gray-300 hover:bg-bg-soft hover:text-white',
+            !isCinema ? 'bg-accent text-accent-fg' : 'text-gray-300 hover:bg-bg-soft hover:text-accent-fg',
           ].join(' ')}
         >
           Аниме
@@ -109,7 +109,7 @@ export default function SearchPage({
           aria-current={isCinema ? 'page' : undefined}
           className={[
             'press rounded-full px-4 py-2 text-sm font-medium transition',
-            isCinema ? 'bg-accent text-white' : 'text-gray-300 hover:bg-bg-soft hover:text-white',
+            isCinema ? 'bg-accent text-accent-fg' : 'text-gray-300 hover:bg-bg-soft hover:text-accent-fg',
           ].join(' ')}
         >
           Фильмы и сериалы

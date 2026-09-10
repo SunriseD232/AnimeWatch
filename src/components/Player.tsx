@@ -1180,7 +1180,7 @@ export default function Player({
               onClick={() =>
                 switchEpisode({ season: otherSeason ?? 1, episode: otherEpisode })
               }
-              className="rounded-md bg-accent px-3 py-1.5 font-medium text-white hover:bg-accent-hover"
+              className="rounded-md bg-accent px-3 py-1.5 font-medium text-accent-fg hover:bg-accent-hover"
             >
               Перейти
             </button>
@@ -1229,7 +1229,7 @@ export default function Player({
                   className={[
                     'flex shrink-0 items-center whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium transition',
                     player === kind
-                      ? 'bg-accent text-white'
+                      ? 'bg-accent text-accent-fg'
                       : 'text-gray-300 hover:text-white',
                   ].join(' ')}
                 >
@@ -1497,7 +1497,7 @@ export default function Player({
             <button
               type="button"
               onClick={() => switchEpisode(next)}
-              className="rounded-md bg-accent px-4 py-1.5 font-medium text-white hover:bg-accent-hover"
+              className="rounded-md bg-accent px-4 py-1.5 font-medium text-accent-fg hover:bg-accent-hover"
             >
               {next.season !== activeSeason
                 ? `Сезон ${next.season} →`

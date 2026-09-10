@@ -43,7 +43,7 @@ export default function CollapsibleSection({
         <span className="flex items-center gap-2">
           <span className="text-sm font-medium text-gray-100">{title}</span>
           {count > 0 && (
-            <span className="rounded-full bg-accent px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white">
+            <span className="rounded-full bg-accent px-1.5 py-0.5 text-[11px] font-semibold leading-none text-accent-fg">
               {count}
             </span>
           )}

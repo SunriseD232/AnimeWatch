@@ -87,7 +87,7 @@ export default function EpisodeGrid({
               className={[
                 'grid h-11 w-full place-items-center rounded-lg text-sm font-medium ring-1 transition',
                 isCurrent
-                  ? 'bg-accent text-white ring-accent'
+                  ? 'bg-accent text-accent-fg ring-accent'
                   : isWatched
                     ? 'bg-accent/15 text-accent ring-accent/30'
                     : 'bg-bg-card text-gray-300 ring-white/5 hover:bg-bg-soft hover:text-white',

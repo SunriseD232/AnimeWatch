@@ -64,7 +64,7 @@ export default function MobileDock({ cookieMode }: { cookieMode: ContentType }) 
           <span
             className={[
               'grid h-12 w-12 place-items-center rounded-2xl transition',
-              isHome ? 'bg-accent text-white' : 'bg-accent/15 text-accent',
+              isHome ? 'bg-accent text-accent-fg' : 'bg-accent/15 text-accent',
             ].join(' ')}
           >
             {/* Треугольник во всю плитку: на 24-й сетке он занимал меньше

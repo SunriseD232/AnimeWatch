@@ -254,7 +254,7 @@ export default function HlsPlayer({
             className={[
               'rounded-md px-3 py-1.5 text-sm font-medium transition',
               quality === q.label
-                ? 'bg-accent text-white'
+                ? 'bg-accent text-accent-fg'
                 : 'bg-bg-card text-gray-200 hover:bg-bg-soft',
             ].join(' ')}
           >

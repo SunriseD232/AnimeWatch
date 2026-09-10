@@ -26,7 +26,7 @@ export default function Checkbox({ checked, onChange, label }: Props) {
         <svg
           viewBox="0 0 16 16"
           aria-hidden="true"
-          className="pointer-events-none relative h-3 w-3 fill-none stroke-white stroke-[2.5] opacity-0 transition peer-checked:opacity-100"
+          className="pointer-events-none relative h-3 w-3 fill-none stroke-accent-fg stroke-[2.5] opacity-0 transition peer-checked:opacity-100"
         >
           <path d="M3.5 8.5 6.5 11.5 12.5 5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>

@@ -218,7 +218,7 @@ export default function NotificationBell({
           />
         </svg>
         {unread > 0 && (
-          <span className="absolute right-0 top-0 grid h-4 min-w-4 place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold text-white">
+          <span className="absolute right-0 top-0 grid h-4 min-w-4 place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold text-accent-fg">
             {unread > 9 ? '9+' : unread}
           </span>
         )}

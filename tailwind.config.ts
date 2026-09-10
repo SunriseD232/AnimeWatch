@@ -40,6 +40,10 @@ const config: Config = {
         accent: {
           DEFAULT: 'rgb(var(--accent) / <alpha-value>)',
           hover: 'rgb(var(--accent-hover) / <alpha-value>)',
+          // Текст и значки ПОВЕРХ заливки акцентом: белый на акценте не
+          // проходит по контрасту ни на одном пресете, см. accentForeground
+          // в lib/theme.ts. Пара всегда вместе: `bg-accent text-accent-fg`.
+          fg: 'rgb(var(--accent-fg) / <alpha-value>)',
         },
       },
       fontFamily: {

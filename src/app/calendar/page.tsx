@@ -106,7 +106,7 @@ export default async function CalendarPage() {
           </p>
           <Link
             href="/catalog"
-            className="press rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-hover"
+            className="press rounded-full bg-accent px-4 py-2 text-sm font-medium text-accent-fg transition hover:bg-accent-hover"
           >
             Найти что посмотреть →
           </Link>
