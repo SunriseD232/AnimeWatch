@@ -279,10 +279,17 @@ export default function CinemaHomePage({
 
   return (
     <div className="flex flex-col gap-10">
+      {/* Заголовок страницы — только для скринридера: визуально роль
+          заголовка играет сам переключатель разделов. Без него первым
+          <h1> на странице оказывался «Продолжить просмотр», то есть
+          раздел выдавал себя за название страницы, а у гостя без истории
+          просмотра <h1> не было вовсе. */}
+      <h1 className="sr-only">Фильмы и сериалы — MediaWatch</h1>
+
       <ModeSwitch active="cinema" />
 
       <section className="animate-rise flex flex-col gap-4">
-        <h1 className="text-xl font-bold">Продолжить просмотр</h1>
+        <h2 className="text-xl font-bold">Продолжить просмотр</h2>
         <Suspense fallback={<CarouselSkeleton count={4} />}>
           <ContinueWatching />
         </Suspense>
