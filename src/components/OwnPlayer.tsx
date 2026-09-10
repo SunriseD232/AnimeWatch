@@ -411,6 +411,10 @@ export default function OwnPlayer({
     if (translationId != null && !translations.some((t) => t.id === translationId)) return;
 
     const reported = activeTranslation ? { id: activeTranslation.id, title: activeTranslation.title } : null;
+    // Уже сообщали ровно это — молчим. Эффект теперь зависит и от
+    // translations (ссылка новая почти на каждый рендер родителя), и без
+    // этой проверки колбэк дёргался бы вхолостую на каждый чих.
+    if ((reported?.id ?? null) === reportedTranslationIdRef.current) return;
     reportedTranslationIdRef.current = reported?.id ?? null;
     onTranslationChangeRef.current?.(reported);
     // activeTranslation — новый объект почти на каждый рендер (derived, не
