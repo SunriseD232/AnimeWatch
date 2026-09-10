@@ -135,12 +135,19 @@ export default function ScrollCarousel({ children, className }: Props) {
       // карусели position не задан — значит от кого-то выше по дереву, и к
       // scrollLeft он отношения не имеет. С offsetLeft доводка промахивалась
       // и лента вставала между карточками (проверено вживую).
-      // Отступ контейнера (px-4) НЕ вычитаем: snap-start прижимает карточку
-      // к границе padding-box, то есть точка привязки браузера включает его
-      // в себя. Пока вычитали — мы доводили на 16px левее, а восстановленный
-      // snap тут же поправлял ленту обратно, и в самом конце жеста был
+      // Важно про отступы: точка привязки браузера — это край прокрутки
+      // ПЛЮС scroll-padding. Поэтому вычитаем именно scroll-padding, а не
+      // padding: пока вычитали padding, доводка промахивалась, и
+      // восстановленный snap поправлял ленту обратно — в конце жеста был
       // заметный подскок.
-      const base = el.getBoundingClientRect().left - el.scrollLeft;
+      // Отступ прокрутки вычитаем — ровно тот же, что задан в CSS
+      // (.carousel-room), читаем его отсюда, чтобы значение не пришлось
+      // дублировать в двух местах и оно не разъехалось. Браузерное
+      // прилипание учитывает scroll-padding, и если доводка его не учтёт,
+      // восстановленный snap в конце жеста поправит ленту на эту величину —
+      // тот самый заметный подскок, который тут уже ловили.
+      const snapInset = parseFloat(getComputedStyle(el).scrollPaddingLeft) || 0;
+      const base = el.getBoundingClientRect().left - el.scrollLeft + snapInset;
       const max = el.scrollWidth - el.clientWidth;
       const current = el.scrollLeft;
 
