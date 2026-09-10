@@ -114,7 +114,7 @@ async function ContinueWatching() {
 
   // Помимо родной полосы прокрутки — колесо мыши и драг (см. ScrollCarousel).
   return (
-    <ScrollCarousel className="flex snap-x gap-3 overflow-x-auto pb-2">
+    <ScrollCarousel className="carousel-room flex snap-x gap-3 overflow-x-auto">
       {progress.map((p) => (
         <div key={p.id} className="w-56 shrink-0 snap-start sm:w-72">
           <ContinueCard
@@ -160,7 +160,7 @@ async function PlannedCarousel() {
   return (
     <section className="animate-rise flex flex-col gap-4" style={{ animationDelay: '40ms' }}>
       <h2 className="text-xl font-bold">Вы хотели посмотреть</h2>
-      <ScrollCarousel className="flex snap-x gap-3 overflow-x-auto pb-2">
+      <ScrollCarousel className="carousel-room flex snap-x gap-3 overflow-x-auto">
         {items.map((i) => (
           <div key={i.id} className="w-28 shrink-0 snap-start sm:w-[134px]">
             <PlannedCard

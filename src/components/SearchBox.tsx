@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useDismissOnOutside } from '@/components/useAnchoredPanel';
 import type { SearchSuggestion } from '@/app/api/search/suggest/route';
 import { logEvent } from '@/lib/clientLog';
 
@@ -22,6 +23,7 @@ export default function SearchBox() {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const rootRef = useRef<HTMLFormElement>(null);
+  const panelRef = useRef<HTMLUListElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [box, setBox] = useState<{ top: number; left: number; width: number } | null>(null);
 
@@ -85,18 +87,11 @@ export default function SearchBox() {
     };
   }, [value, isCinema]);
 
-  // Закрытие дропдауна по клику вовне — тот же паттерн, что и в других
-  // раскрывающихся меню сайта (см. NotificationBell/ListButton).
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
-  }, [open]);
+  // Закрытие по клику вовне — общий хук (см. useDismissOnOutside).
+  // panelRef обязателен: список подсказок живёт в <body>, и без него клик по
+  // подсказке считался бы внешним — список закрывался бы по mousedown, а сам
+  // переход не происходил.
+  useDismissOnOutside(open, () => setOpen(false), rootRef, panelRef);
 
   const showDropdown = open && value.trim().length >= 2 && suggestions.length > 0;
 
@@ -210,6 +205,7 @@ export default function SearchBox() {
         box &&
         createPortal(
           <ul
+            ref={panelRef}
             id="search-suggestions"
             role="listbox"
             // Прирастает к полю без зазора и с прямым верхом: список —

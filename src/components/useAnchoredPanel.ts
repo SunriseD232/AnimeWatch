@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { RefObject } from 'react';
 
 /**
  * Позиция для выпадающей панели, которая живёт в <body>, а не там, где
@@ -65,4 +66,57 @@ export function useAnchoredPanelFor<T extends HTMLElement>(open: boolean) {
   const { track } = panel;
   useEffect(() => track(open), [open, track]);
   return panel;
+}
+
+/**
+ * Закрытие панели по клику вовне и по Escape — с учётом того, что сама
+ * панель живёт в <body>, а не рядом с кнопкой.
+ *
+ * ЗАЧЕМ ОТДЕЛЬНЫЙ ХУК. Каждая портальная панель раньше писала этот
+ * обработчик сама и сверялась ТОЛЬКО с обёрткой кнопки. Панель ей не
+ * потомок (она в другом месте дерева), поэтому любой mousedown внутри самой
+ * панели считался «кликом вовне» и закрывал её — ДО того, как браузер
+ * успевал выстрелить click. Элемент к этому моменту уже размонтирован, и
+ * клик не доезжал никуда.
+ *
+ * Ловилось это как три разные жалобы: крестик в уведомлениях «просто
+ * закрывает уведомления» вместо того, чтобы убрать строку; из уведомления
+ * не открыть тайтл; у админа не открываются профили пользователей из списка
+ * онлайна. Причина одна.
+ *
+ * Слушаем mousedown, а не click: панель должна закрываться сразу по нажатию,
+ * иначе выделение текста мышью из панели наружу выглядит залипанием.
+ */
+export function useDismissOnOutside(
+  open: boolean,
+  onDismiss: () => void,
+  /** Элементы, клик внутри которых НЕ считается внешним: кнопка-якорь и
+   *  сама панель. null-значения игнорируются — панель существует только
+   *  пока открыта. */
+  ...insideRefs: RefObject<HTMLElement | null>[]
+): void {
+  const refs = useRef(insideRefs);
+  refs.current = insideRefs;
+  const dismiss = useRef(onDismiss);
+  dismiss.current = onDismiss;
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      for (const ref of refs.current) {
+        if (ref.current?.contains(target)) return;
+      }
+      dismiss.current();
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') dismiss.current();
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
 }

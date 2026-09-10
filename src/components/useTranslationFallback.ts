@@ -46,7 +46,7 @@ export function useTranslationFallback({
   const warnedRef = useRef<Set<string>>(new Set());
 
   return useCallback(
-    (id: number): boolean => {
+    (id: number, silent = false): boolean => {
       const failed = failedRef.current;
       if (failed.key !== episodeKey) {
         failed.key = episodeKey;
@@ -75,7 +75,10 @@ export function useTranslationFallback({
       // Предупреждаем один раз на серию: замен подряд может быть несколько,
       // и плеер отдельно предупреждает про ненайденные субтитры — три
       // одинаковых сообщения подряд это уже шум, а не помощь.
-      if (!warnedRef.current.has(episodeKey)) {
+      // silent — плеер сейчас не на экране (играет в причале, пока человек
+      // ходит по сайту). Замену делаем, предупреждение придержим: тост
+      // посреди профиля или каталога выглядит взявшимся из ниоткуда.
+      if (!silent && !warnedRef.current.has(episodeKey)) {
         warnedRef.current.add(episodeKey);
         onSwitched?.(next);
       }

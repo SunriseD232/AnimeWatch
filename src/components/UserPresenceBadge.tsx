@@ -1,7 +1,7 @@
 'use client';
 
 import { createPortal } from 'react-dom';
-import { useAnchoredPanelFor } from '@/components/useAnchoredPanel';
+import { useAnchoredPanelFor, useDismissOnOutside } from '@/components/useAnchoredPanel';
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
@@ -24,24 +24,13 @@ export default function UserPresenceBadge({ onlineCount }: { onlineCount: number
   const [summary, setSummary] = useState<PresenceSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onClick);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onClick);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [open]);
+  // panelRef обязателен: панель в <body>, и без него клик по строке
+  // пользователя считался бы внешним — панель закрывалась бы по mousedown,
+  // ссылка размонтировалась, и переход в профиль не происходил вовсе
+  // (см. useDismissOnOutside).
+  useDismissOnOutside(open, () => setOpen(false), rootRef, panelRef);
 
   const toggle = () => {
     const next = !open;
@@ -86,6 +75,7 @@ export default function UserPresenceBadge({ onlineCount }: { onlineCount: number
         // не страницу под собой (см. useAnchoredPanel).
         createPortal(
           <div
+            ref={panelRef}
             style={{ top: box.top, right: box.right }}
             className="glass-panel fixed z-50 w-80 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl border border-white/10 shadow-2xl"
           >

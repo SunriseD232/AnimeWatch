@@ -40,6 +40,11 @@ export default function DiscoverTabs({
             <Link
               key={tab.key}
               href={showAnons ? `${tab.href}&anons=1` : tab.href}
+              // scroll={false}: Next по умолчанию прокручивает страницу
+              // наверх при каждой навигации. Здесь это чистая помеха —
+              // меняется только выдача ПОД самими вкладками, а страница
+              // прыгала в шапку, и до выдачи приходилось скроллить обратно.
+              scroll={false}
               className={[
                 'rounded-full px-4 py-1.5 text-sm font-medium transition',
                 tab.key === activeKey

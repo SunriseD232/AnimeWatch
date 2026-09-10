@@ -10,7 +10,7 @@ const { extractKodik } = require('./kodik');
 const { extractCVH } = require('./cvh');
 const { extractAksor } = require('./aksor');
 
-const { serializeBrowserUse } = require('./browser');
+const { serializeBrowserUse, sharedBrowserStats } = require('./browser');
 
 const PORT = Number(process.env.PORT) || 3300;
 const AUTH_TOKEN = process.env.EXTRACTOR_AUTH_TOKEN;
@@ -32,7 +32,15 @@ function requireAuth(req, res, next) {
 }
 
 app.get('/health', (req, res) => {
-  res.json({ ok: true, uptime: process.uptime() });
+  // browser — наработка общего Chromium: сколько извлечений он обслужил и
+  // сколько живёт. Нужно, чтобы жалобу «стало медленно» можно было проверить
+  // цифрами (см. BROWSER_MAX_EXTRACTIONS в browser.js).
+  res.json({
+    ok: true,
+    uptime: process.uptime(),
+    rssMb: Math.round(process.memoryUsage().rss / 1048576),
+    browser: sharedBrowserStats(),
+  });
 });
 
 // Хосты, на которые /relay разрешено ходить — эндпоинт защищён Bearer-
@@ -196,6 +204,7 @@ app.post('/extract', requireAuth, async (req, res) => {
     `[server] Извлечение: source=${source} shikimoriId=${id} season=${se} episode=${ep}${background ? ' background=true' : ''}`,
   );
 
+  const startedAt = Date.now();
   try {
     // Sibnet/Kodik/CVH — обычный fetch(), не Puppeteer: не занимают очередь
     // Chromium (см. serializeBrowserUse в browser.js) и не блокируются/не
@@ -226,12 +235,22 @@ app.post('/extract', requireAuth, async (req, res) => {
         background: !!background,
       });
     }
+    // Длительность в лог — обязательно. Разбор жалобы «загрузка плеера стала
+    // дольше» упёрся в то, что мерить было нечего: логи говорили, ЧТО
+    // извлекали, но не КАК ДОЛГО. Рядом — наработка общего Chromium, чтобы
+    // сразу видеть, не в ней ли дело (см. BROWSER_MAX_EXTRACTIONS).
+    const ms = Date.now() - startedAt;
+    const stats = sharedBrowserStats();
+    console.error(
+      `[server] ${result ? 'Готово' : 'Не нашлось'}: source=${source} за ${ms}мс ` +
+        `(браузер: ${stats.extractions} извлечений, ${stats.ageMinutes} мин)`,
+    );
     if (!result) {
       return res.status(404).json({ error: 'not_found' });
     }
     return res.json(result);
   } catch (err) {
-    console.error('[server] Извлечение упало:', err);
+    console.error(`[server] Извлечение упало за ${Date.now() - startedAt}мс:`, err);
     return res.status(502).json({ error: 'extract_failed', message: String(err && err.message) });
   }
 });

@@ -5,7 +5,8 @@ import { useEffect, useState } from 'react';
 import type { ContentType } from '@/lib/types';
 import { SlidingPill, useSlidingPill } from '@/components/useSlidingPill';
 
-// href «Аниме» — /?mode=anime, не голый '/': у него отдельный ключ
+// Оба раздела — короткими адресами '/?mode=...', симметрично. У «Аниме»
+// это ещё и обход кэша: /?mode=anime — отдельный ключ
 // клиентского Router Cache Next.js, независимый от '/' (который middleware
 // при aw_mode=cinema редиректит на /cinema, см. middleware.ts) — иначе клик
 // по «Аниме» иногда зацикливался обратно на /cinema через закэшированный
@@ -14,7 +15,7 @@ import { SlidingPill, useSlidingPill } from '@/components/useSlidingPill';
 // Picture-in-Picture при переключении раздела.
 const TABS: { value: ContentType; label: string; href: string }[] = [
   { value: 'anime', label: 'Аниме', href: '/?mode=anime' },
-  { value: 'cinema', label: 'Фильмы и сериалы', href: '/cinema' },
+  { value: 'cinema', label: 'Фильмы и сериалы', href: '/?mode=cinema' },
 ];
 
 /**

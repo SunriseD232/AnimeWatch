@@ -122,7 +122,7 @@ interface Props {
    * Возврат true означает «замена будет» — тогда мы не показываем экран
    * ошибки, а продолжаем ждать: новый проп вот-вот приедет.
    */
-  onTranslationUnavailable?: (id: number) => boolean;
+  onTranslationUnavailable?: (id: number, silent?: boolean) => boolean;
 }
 
 const VOLUME_KEY = 'aw:ownPlayerVolume';
@@ -640,12 +640,31 @@ export default function OwnPlayer({
   // а два одинаковых тоста подряд — уже шум.
   const comboWarnedRef = useRef<string | null>(null);
 
+  /**
+   * Виден ли плеер прямо сейчас.
+   *
+   * Зачем. Плеер переживает уход со страницы просмотра: он портирован в
+   * постоянный причал (см. components/pip/PipPlayerHost.tsx) и продолжает
+   * играть, пока человек ходит по сайту. Припаркованный причал стоит за
+   * экраном (left: -10000px). Предупреждения про дорожки в этот момент
+   * показывать нельзя: всплывало «Данное сочетание не нашлось» посреди
+   * профиля или каталога, где никакого плеера на экране нет и жалоба
+   * выглядит взявшейся из ниоткуда.
+   */
+  const isPlayerOnScreen = useCallback((): boolean => {
+    const el = containerRef.current;
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.right > 0 && r.left < window.innerWidth;
+  }, []);
+
   const warnComboMissing = useCallback(() => {
+    if (!isPlayerOnScreen()) return;
     const key = `${season}:${episode}`;
     if (comboWarnedRef.current === key) return;
     comboWarnedRef.current = key;
     toast('Данное сочетание не нашлось, выбрано доступное', 'error');
-  }, [toast, season, episode]);
+  }, [toast, season, episode, isPlayerOnScreen]);
 
   // Доп. аудиодорожки той же серии+перевода (см. ResolvedStream.audioTracks
   // — сейчас реально отдаёт только Alloha, напр. оригинал без перевода).
@@ -893,7 +912,12 @@ export default function OwnPlayer({
           });
           // Родитель может подобрать другую озвучку — тогда экран ошибки не
           // нужен, сейчас приедет новый src (см. Props.onTranslationUnavailable).
-          if (translationId != null && onTranslationUnavailableRef.current?.(translationId)) {
+          // Второй аргумент — «молча»: замену делаем всегда, а вот
+          // предупреждать, когда плеер стоит за экраном, не надо.
+          if (
+            translationId != null &&
+            onTranslationUnavailableRef.current?.(translationId, !isPlayerOnScreen())
+          ) {
             return;
           }
           setLoadState(res.status === 404 ? 'unavailable' : 'failed');

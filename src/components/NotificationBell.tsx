@@ -3,7 +3,9 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useDismissOnOutside } from '@/components/useAnchoredPanel';
 import { createClient } from '@/lib/supabase/client';
+import { useToast } from '@/components/ToastProvider';
 import type { AppNotification } from '@/lib/types';
 
 function timeAgo(iso: string): string {
@@ -37,6 +39,8 @@ export default function NotificationBell({
   const [items, setItems] = useState(initial);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
   const [box, setBox] = useState<{ top: number; right: number } | null>(null);
 
   // Список кладём ПОД шапку, а не под кнопку. Колокольчик стоит внутри
@@ -66,24 +70,10 @@ export default function NotificationBell({
 
   const unread = items.filter((n) => !n.read_at).length;
 
-  // Закрытие дропдауна по клику вовне и по Escape.
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onClick);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onClick);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [open]);
+  // Закрытие по клику вовне и по Escape. panelRef обязателен: панель живёт
+  // в <body>, и без него любой клик по ней самой считался бы внешним —
+  // см. useDismissOnOutside.
+  useDismissOnOutside(open, () => setOpen(false), rootRef, panelRef);
 
   useEffect(() => {
     const supabase = createClient();
@@ -142,6 +132,34 @@ export default function NotificationBell({
       .delete()
       .eq('id', notification.id);
     if (error) console.error('[NotificationBell] не удалилось:', error.message);
+  }
+
+  /**
+   * Больше не уведомлять про этот тайтл.
+   *
+   * Механика та же, что у «Заглушить уведомления» на странице тайтла (см.
+   * ListButton.tsx): флаг muted в user_list, по нему фильтрует крон
+   * (api/cron/check-episodes). Здесь он просто под рукой — отписаться
+   * логичнее всего там же, где уведомление и попалось на глаза, а не идти
+   * ради этого на страницу тайтла.
+   *
+   * Само уведомление тоже убираем: оставить его в списке после «больше не
+   * присылать» — противоречие.
+   */
+  async function mute(notification: AppNotification) {
+    if (notification.kind !== 'episode') return;
+    const supabase = createClient();
+    const { error } = await supabase
+      .from('user_list')
+      .update({ muted: true })
+      .eq('content_type', notification.content_type)
+      .eq('shikimori_id', notification.shikimori_id);
+    if (error) {
+      toast(error.message, 'error');
+      return;
+    }
+    await dismiss(notification);
+    toast(`Больше не уведомляем: ${notification.title}`, 'success');
   }
 
   async function markAllRead() {
@@ -214,6 +232,7 @@ export default function NotificationBell({
         // координаты считались бы от шапки, а не от окна.
         createPortal(
           <div
+          ref={panelRef}
           // fixed, а не absolute: позиция считается от шапки, чтобы список
           // начинался строго под ней. Ширина ограничена окном — на телефоне
           // колокольчик стоит не у самого края, и список шириной 90vw уезжал
@@ -308,7 +327,10 @@ export default function NotificationBell({
                       <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-accent" />
                     )}
                   </Link>
-                  <DismissButton onClick={() => dismiss(n)} />
+                  <RowActions
+                    onMute={() => mute(n)}
+                    onDismiss={() => dismiss(n)}
+                  />
                   </div>
                 ),
               )
@@ -336,15 +358,76 @@ export default function NotificationBell({
  */
 function DismissButton({ onClick }: { onClick: () => void }) {
   return (
+    <ActionButton onClick={onClick} label="Убрать уведомление" title="Убрать" className="right-1.5">
+      <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" strokeLinecap="round" />
+    </ActionButton>
+  );
+}
+
+/**
+ * Две кнопки у строки уведомления о новой серии: «больше не уведомлять» и
+ * «убрать». Перечёркнутый колокольчик слева от крестика — разные действия и
+ * читаются по-разному: одно про эту строку, другое про весь тайтл.
+ */
+function RowActions({ onMute, onDismiss }: { onMute: () => void; onDismiss: () => void }) {
+  return (
+    <>
+      <ActionButton
+        onClick={onMute}
+        label="Больше не уведомлять про этот тайтл"
+        title="Отписаться"
+        className="right-9"
+      >
+        <path
+          d="M7.4 7.9a2.6 2.6 0 0 1 5.2 0c0 3 1.3 3.9 1.3 3.9H6.1s1.3-.9 1.3-3.9z"
+          strokeLinejoin="round"
+        />
+        <path d="M8.8 14.2a1.4 1.4 0 0 0 2.4 0" strokeLinecap="round" />
+        <path d="M3.5 3.5l13 13" strokeLinecap="round" />
+      </ActionButton>
+      <DismissButton onClick={onDismiss} />
+    </>
+  );
+}
+
+/**
+ * Кнопка действия ПОВЕРХ строки, а не внутри неё: строка уведомления — это
+ * ссылка (или кнопка «прочитано»), и вложенная кнопка внутри ссылки —
+ * невалидная разметка, по которой браузеры расходятся в поведении клика.
+ *
+ * На мыши появляется по наведению, на тач-экранах видна всегда: hover там не
+ * существует, и спрятанная за ним кнопка была бы недоступна вовсе.
+ *
+ * Снизу справа, а не сверху: сверху справа стоит точка «не прочитано», и
+ * кнопки её перекрывали бы. Внизу справа пусто — время публикации слева.
+ */
+function ActionButton({
+  onClick,
+  label,
+  title,
+  className,
+  children,
+}: {
+  onClick: () => void;
+  label: string;
+  title: string;
+  /** Горизонтальное положение: крестик у самого края, отписка левее него. */
+  className: string;
+  children: React.ReactNode;
+}) {
+  return (
     <button
       type="button"
       onClick={onClick}
-      aria-label="Убрать уведомление"
-      title="Убрать"
-      className="press absolute bottom-1.5 right-1.5 grid h-6 w-6 place-items-center rounded-full bg-bg-card/80 text-gray-400 opacity-100 transition hover:bg-white/10 hover:text-white md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+      aria-label={label}
+      title={title}
+      className={[
+        'press absolute bottom-1.5 grid h-6 w-6 place-items-center rounded-full bg-bg-card/80 text-gray-400 opacity-100 transition hover:bg-white/10 hover:text-white md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100',
+        className,
+      ].join(' ')}
     >
       <svg viewBox="0 0 20 20" aria-hidden="true" className="h-3.5 w-3.5 fill-none stroke-current stroke-2">
-        <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" strokeLinecap="round" />
+        {children}
       </svg>
     </button>
   );

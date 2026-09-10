@@ -142,11 +142,41 @@ async function launchBrowserWithPac(pacDataUri) {
 let sharedBrowserPromise = null;
 let sharedProxyBridge = null;
 
+/**
+ * Сколько извлечений обслуживает один Chromium, прежде чем его заменить.
+ *
+ * Зачем. Раньше браузер жил столько же, сколько процесс экстрактора, то есть
+ * неделями. Chromium, открывший и закрывший тысячи вкладок, растёт в памяти
+ * и замедляется — а на этой VPS всего 3.8 ГБ на всё: два воркера сайта,
+ * семь контейнеров Supabase и он сам. Разбор жалобы «загрузка плеера стала
+ * дольше, помог ребут сервера»: ни OOM в журнале, ни разросшихся таблиц в
+ * базе не нашлось (resolved_streams 457 строк, api_response_cache 890) —
+ * долгоживущий Chromium остался единственным, что деградирует со временем и
+ * лечится перезапуском.
+ *
+ * Замена происходит МЕЖДУ извлечениями (см. счётчик ниже), поэтому текущий
+ * запрос она не рвёт. Первое извлечение после замены дороже на ~1 секунду —
+ * это цена запуска, и она несопоставима с минутами, которые люди ждали.
+ */
+const BROWSER_MAX_EXTRACTIONS = 150;
+let browserUseCount = 0;
+let browserStartedAt = 0;
+
 async function getSharedBrowser() {
   if (sharedBrowserPromise) {
     const browser = await sharedBrowserPromise;
-    if (browser.isConnected()) return browser;
-    sharedBrowserPromise = null; // упал/закрылся — перезапустим ниже
+    if (browser.isConnected()) {
+      browserUseCount += 1;
+      if (browserUseCount <= BROWSER_MAX_EXTRACTIONS) return browser;
+      const ageMin = Math.round((Date.now() - browserStartedAt) / 60_000);
+      console.error(
+        `[browser] плановая замена: ${browserUseCount - 1} извлечений за ${ageMin} мин — перезапускаю Chromium`,
+      );
+      sharedBrowserPromise = null;
+      await browser.close().catch(() => {});
+    } else {
+      sharedBrowserPromise = null; // упал/закрылся — перезапустим ниже
+    }
   }
 
   const proxyConfig = allohaProxyConfig();
@@ -170,6 +200,8 @@ async function getSharedBrowser() {
   const { hosts, cdnSuffixes } = videoseedDirectHosts();
   const pacDataUri = buildPacDataUri({ directHosts: hosts, directCdnSuffixes: cdnSuffixes, proxyHostPort });
   sharedBrowserPromise = launchBrowserWithPac(pacDataUri);
+  browserUseCount = 1;
+  browserStartedAt = Date.now();
   return sharedBrowserPromise;
 }
 
@@ -180,6 +212,17 @@ async function getSharedBrowser() {
  * рискуют остаться висеть осиротевшими после `pm2 restart`, съедая память
  * на и без того тесной VPS.
  */
+/** Возраст и наработка общего браузера — для /health, чтобы «стало медленно»
+ *  можно было проверить цифрами, а не догадками. */
+function sharedBrowserStats() {
+  return {
+    running: sharedBrowserPromise !== null,
+    extractions: browserUseCount,
+    ageMinutes: browserStartedAt ? Math.round((Date.now() - browserStartedAt) / 60_000) : 0,
+    maxExtractions: BROWSER_MAX_EXTRACTIONS,
+  };
+}
+
 async function closeSharedBrowser() {
   if (sharedBrowserPromise) {
     const promise = sharedBrowserPromise;
@@ -252,6 +295,7 @@ function serializeBrowserUse(fn, options) {
 module.exports = {
   toAbsoluteUrl,
   resolveProxy,
+  sharedBrowserStats,
   launchBrowser,
   getSharedBrowser,
   closeSharedBrowser,

@@ -31,7 +31,35 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(absoluteUrl('/cinema', request.url));
   }
 
-  return await updateSession(request);
+  const response = await updateSession(request);
+
+  // '/?mode=cinema' — зеркало '/?mode=anime': один и тот же короткий адрес на
+  // оба раздела, отличается только параметр. Раньше «Фильмы и сериалы» вели
+  // на '/cinema', и пара выглядела разнобоем.
+  //
+  // rewrite, а не redirect: адрес в строке остаётся тем, по которому кликнули,
+  // а отрисовывается страница раздела кино. Редирект сменил бы адрес на
+  // '/cinema' — то есть ровно то, от чего уходим.
+  //
+  // Проверка location: если updateSession уже решил увести на /login
+  // (auth-gate), перебивать его нельзя — иначе аноним получил бы содержимое
+  // страницы вместо входа.
+  if (
+    request.nextUrl.pathname === '/' &&
+    request.nextUrl.searchParams.get('mode') === 'cinema' &&
+    !response.headers.get('location')
+  ) {
+    const target = request.nextUrl.clone();
+    target.pathname = '/cinema';
+    target.searchParams.delete('mode');
+    const rewritten = NextResponse.rewrite(target);
+    // Куки обновлённой сессии переносим руками: их проставил updateSession на
+    // СВОЙ ответ, а наружу уходит другой.
+    for (const cookie of response.cookies.getAll()) rewritten.cookies.set(cookie);
+    return rewritten;
+  }
+
+  return response;
 }
 
 export const config = {
