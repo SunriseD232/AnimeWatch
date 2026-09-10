@@ -639,6 +639,9 @@ export default function OwnPlayer({
   // эффекты озвучки и субтитров срабатывают отдельно и оба могут промахнуться,
   // а два одинаковых тоста подряд — уже шум.
   const comboWarnedRef = useRef<string | null>(null);
+  // Для какого сочетания серия+озвучка уже восстанавливали дорожки — см.
+  // эффект резолва субтитров ниже.
+  const restoredComboRef = useRef<string | null>(null);
 
   /**
    * Виден ли плеер прямо сейчас.
@@ -1282,6 +1285,20 @@ export default function OwnPlayer({
         // субтитры и предупреждаем: продолжать серию без них молча, когда
         // человек их специально включил, хуже, чем сказать вслух.
         const prefs = readTrackPrefs();
+
+        // Список субтитров и аудиодорожек зависит от СЕРИИ и ОЗВУЧКИ, но не
+        // от выбранного качества и не от выбранной аудиодорожки — а эффект
+        // крутится на каждую смену src, включая ?q= и ?audio=. Поэтому
+        // восстанавливаем выбор и предупреждаем только когда сочетание
+        // серия+озвучка реально сменилось. Без этой проверки переключение
+        // аудиодорожки внутри той же серии выдавало «Данное сочетание не
+        // нашлось» на ровном месте (видно на скриншоте пользователя), а
+        // сохранённая подпись могла тут же перебить только что сделанный
+        // руками выбор.
+        const comboKey = `${season}:${episode}:${translationId ?? ''}`;
+        const comboChanged = restoredComboRef.current !== comboKey;
+        restoredComboRef.current = comboKey;
+        if (!comboChanged) return;
 
         // Доп. аудиодорожку переносим ТАК ЖЕ, как субтитры, — по подписи.
         // Раньше она сбрасывалась на основную при каждой смене серии: индекс
@@ -2685,14 +2702,13 @@ export default function OwnPlayer({
                           onClick={() => setSettingsView('quality')}
                         />
                       )}
-                      {(translations.length > 1 || audioTracks.length > 0) && (
+                      {translations.length > 1 && (
                         <SettingsRow
                           label="Озвучка"
-                          value={
-                            audioTrackIndex != null
-                              ? (audioTracks[audioTrackIndex]?.label ?? '—')
-                              : (activeTranslation?.title ?? '—')
-                          }
+                          // Именно озвучка, а не подпись выбранной аудиодорожки:
+                          // строка показывала «(Japanese) Japanese» там, где
+                          // человек искал, какой перевод сейчас играет.
+                          value={activeTranslation?.title ?? '—'}
                           onClick={() => setSettingsView('audio')}
                         />
                       )}
@@ -2754,28 +2770,20 @@ export default function OwnPlayer({
                             <RadioOption
                               key={t.id}
                               label={t.title}
-                              active={t.id === translationId && audioTrackIndex === null}
+                              active={t.id === translationId}
                               onClick={() => {
                                 changeTranslation(t.id);
                                 setSettingsOpen(false);
                               }}
                             />
                           ))}
-                          {/* Доп. аудиодорожки ТЕКУЩЕГО перевода (см. Аудиодорожка
-                              ниже — тот же выбор, доступный и отсюда: аудиодорожка
-                              концептуально тоже "что я слышу", как и озвучка выше,
-                              просто без повторного извлечения по сети). */}
-                          {audioTracks.map((t, i) => (
-                            <RadioOption
-                              key={`audio-${i}`}
-                              label={t.label}
-                              active={audioTrackIndex === i}
-                              onClick={() => {
-                                changeAudioTrack(i);
-                                setSettingsOpen(false);
-                              }}
-                            />
-                          ))}
+                          {/* Аудиодорожек здесь НЕТ намеренно. Раньше они
+                              дублировались в этот же список «под озвучки», и
+                              выходила путаница: «(Japanese) Japanese» стоял
+                              рядом с «Озвучка AniLibria · Alloha», хотя это
+                              разные вещи — перевод переизвлекается по сети, а
+                              дорожка переключается внутри него. Свой раздел
+                              «Аудиодорожка» ниже, он и так есть. */}
                         </>
                       )}
 
