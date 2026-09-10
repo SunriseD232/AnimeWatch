@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import { getAnime, imageUrl } from '@/lib/shikimori';
 import { mapWithConcurrency } from '@/lib/concurrency';
+import { getLocalPosterIds, localPosterUrl } from '@/lib/posterCacheServer';
 import type { UserListItem } from '@/lib/types';
 
 export const metadata = { title: 'Календарь выхода серий — MediaWatch' };
@@ -72,6 +73,18 @@ export default async function CalendarPage() {
   )
     .filter((r): r is CalendarRow => r !== null)
     .sort((a, b) => a.nextEpisodeAt.localeCompare(b.nextEpisodeAt));
+
+  // Обложки — свои, с диска. Календарь брал их прямо с Shikimori: те же
+  // картинки, но с чужого хоста и заметно дольше (см. «Локальный кэш
+  // обложек» в README). Спрашиваем реестр, а не гадаем по id: файла может не
+  // быть, и тогда честнее оставить прежнюю ссылку, чем получить 404.
+  const local = await getLocalPosterIds(
+    'anime',
+    rows.map((r) => r.id),
+  );
+  for (const row of rows) {
+    if (local.has(row.id)) row.poster = localPosterUrl('anime', row.id);
+  }
 
   return (
     <div className="flex flex-col gap-5">

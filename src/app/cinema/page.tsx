@@ -20,6 +20,8 @@ import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
 import { getEpisodeProgressMap } from '@/lib/watch/progressMap';
 import { withLocalPosters } from '@/lib/posterCacheServer';
+import { getCinemaCatalogFromIndex } from '@/lib/cinemaIndexQuery';
+import { EMPTY_TRI } from '@/lib/catalogFilters';
 import { getLocalPosterMap } from '@/lib/posterCacheServer';
 
 export const metadata = { title: 'Фильмы и сериалы — MediaWatch' };
@@ -182,19 +184,42 @@ async function PlannedCarousel() {
  *  searchParams.tab в CinemaHomePage) — тот же грид, что у /cinema/new и
  *  /cinema/catalog. */
 async function DiscoverGrid({ tab, page }: { tab: string; page: number }) {
-  let data;
-  try {
-    data =
-      tab === 'popular'
-        ? await getPopularCinemaRanked(page, DISCOVER_PAGE_SIZE)
-        : await getNewCinema(page, DISCOVER_PAGE_SIZE);
-  } catch {
-    return (
-      <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
-        Не удалось загрузить каталог Videoseed. Попробуйте обновить страницу
-        позже.
-      </div>
-    );
+  // Сначала свой индекс — один SQL-запрос вместо похода в Videoseed. Тот же
+  // источник, что у каталога (см. /cinema/catalog), поэтому и порядок, и
+  // обложки совпадают: «Новинки» здесь считаются так же (год, затем дата
+  // добавления), а не по чужой выдаче, и обложки сразу приходят локальные,
+  // без отдельного запроса в poster_cache.
+  //
+  // Videoseed остаётся запасным путём — на первый запуск, пока индекс ещё не
+  // построен, и на случай, если он отвалится.
+  let data = await getCinemaCatalogFromIndex({
+    genresInclude: [],
+    genresExclude: [],
+    countriesInclude: [],
+    countriesExclude: [],
+    kinds: EMPTY_TRI,
+    yearFrom: null,
+    yearTo: null,
+    sort: tab === 'popular' ? 'popularity' : 'new',
+    page,
+    pageSize: DISCOVER_PAGE_SIZE,
+  });
+
+  let fromIndex = data !== null;
+  if (!data) {
+    try {
+      data =
+        tab === 'popular'
+          ? await getPopularCinemaRanked(page, DISCOVER_PAGE_SIZE)
+          : await getNewCinema(page, DISCOVER_PAGE_SIZE);
+    } catch {
+      return (
+        <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
+          Не удалось загрузить каталог Videoseed. Попробуйте обновить страницу
+          позже.
+        </div>
+      );
+    }
   }
 
   if (data.items.length === 0) {
@@ -210,9 +235,11 @@ async function DiscoverGrid({ tab, page }: { tab: string; page: number }) {
   }
 
   const hasPrev = page > 1;
-  // Обложки — наши, с диска: Videoseed отдаёт свои за 330–340 мс каждую, по
-  // десятку на экран (см. withLocalPosters).
-  const items = await withLocalPosters(data.items);
+  // Индекс уже отдаёт локальные обложки (poster_local), подменять нечего.
+  // Подмена нужна только запасному пути через Videoseed: он про наш кэш не
+  // знает и вернул бы ссылки на их хост — те же картинки, но за 330–340 мс
+  // вместо 24 (см. withLocalPosters).
+  const items = fromIndex ? data.items : await withLocalPosters(data.items);
   const progressMap = await getEpisodeProgressMap('cinema', items.map((item) => item.id));
   const episodesTotalMap = await getCinemaEpisodesTotalMap([...progressMap.keys()]);
 
@@ -235,6 +262,7 @@ async function DiscoverGrid({ tab, page }: { tab: string; page: number }) {
         page={page}
         prevHref={hasPrev ? discoverPageHref(tab, page - 1) : null}
         nextHref={data.hasMore ? discoverPageHref(tab, page + 1) : null}
+        scrollToId="discover"
       />
     </div>
   );
@@ -268,7 +296,10 @@ export default function CinemaHomePage({
         <PlannedCarousel />
       </Suspense>
 
+      {/* id — якорь для листания: кнопки стоят внизу длинной выдачи, и без
+          него Next уводил бы в самый верх страницы (см. Pagination). */}
       <section
+        id="discover"
         className="animate-rise flex flex-col gap-4"
         style={{ animationDelay: '80ms' }}
       >

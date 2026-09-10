@@ -33,7 +33,7 @@ export default function PlannedCard({
   const href = contentType === 'cinema' ? `/cinema/${shikimoriId}` : `/anime/${shikimoriId}`;
 
   return (
-    <div className="card-lift group relative flex flex-col overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60">
+    <div className="card-lift group relative flex flex-col overflow-hidden rounded-2xl bg-bg-card ring-1 ring-inset ring-white/5 hover:ring-accent/60">
       <Link href={href} className="flex flex-1 flex-col">
         <div className="relative aspect-[2/3] w-full overflow-hidden bg-bg-soft">
           {/* Сперва наша копия с диска — в user_list лежит ссылка, записанная

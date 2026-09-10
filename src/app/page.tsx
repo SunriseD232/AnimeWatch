@@ -214,6 +214,7 @@ async function DiscoverGrid({
         page={page}
         prevHref={hasPrev ? discoverPageHref(tab, showAnons, page - 1) : null}
         nextHref={data.hasMore ? discoverPageHref(tab, showAnons, page + 1) : null}
+        scrollToId="discover"
       />
     </div>
   );
@@ -248,7 +249,10 @@ export default function HomePage({
         <PlannedCarousel />
       </Suspense>
 
+      {/* id — якорь для листания: кнопки стоят внизу длинной выдачи, и без
+          него Next уводил бы в самый верх страницы (см. Pagination). */}
       <section
+        id="discover"
         className="animate-rise flex flex-col gap-4"
         style={{ animationDelay: '80ms' }}
       >

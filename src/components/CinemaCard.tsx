@@ -37,7 +37,7 @@ export default function CinemaCard({
   const showProgress = currentEpisode != null && episodesTotal != null && episodesTotal > 1;
 
   return (
-    <div className="card-lift group relative flex flex-col overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60">
+    <div className="card-lift group relative flex flex-col overflow-hidden rounded-2xl bg-bg-card ring-1 ring-inset ring-white/5 hover:ring-accent/60">
       {/* prefetch={false}: /cinema/[id] — тяжёлая серверная страница (Videoseed +
           Supabase + похожее + проверка Vibix/Kodik), и при её медленном резолве
           автопрефетч Next.js иногда успевает выстрелить ВТОРЫМ, отдельным RSC-

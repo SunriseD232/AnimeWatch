@@ -71,13 +71,20 @@ export default function ContinueCard({
     }
     setHidden(true); // оптимистично прячем
     toast('Убрано из просмотра', 'success');
-    router.refresh(); // обновляем серверный список
+    // router.refresh() здесь НЕ нужен, хотя напрашивается. Карточка уже
+    // спрятана локально, а refresh перерисовывает всё серверное дерево
+    // страницы разом — карусели и сетка мигают скелетонами, и клик по
+    // крестику выглядит как перезагрузка страницы.
+    //
+    // Устареть список не может: staleTimes.dynamic = 0 (см. next.config.js),
+    // то есть при следующем заходе на страницу Next и так пойдёт за свежими
+    // данными, а не возьмёт их из клиентского кэша.
   }
 
   if (hidden) return null;
 
   return (
-    <div className="card-lift group relative overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60">
+    <div className="card-lift group relative overflow-hidden rounded-2xl bg-bg-card ring-1 ring-inset ring-white/5 hover:ring-accent/60">
       <Link href={watchHref}>
         <div className="relative aspect-video w-full overflow-hidden bg-bg-soft">
           {/* localPoster приходит с сервера уже проверенным по реестру
