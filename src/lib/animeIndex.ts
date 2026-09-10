@@ -207,6 +207,90 @@ function absoluteImage(path: string | null | undefined): string | null {
   return path.startsWith('http') ? path : `https://shikimori.io${path}`;
 }
 
+/**
+ * Третий источник обложек — Kitsu, по идентификатору MyAnimeList.
+ *
+ * Идея верная: id у Shikimori и у MAL один и тот же, и у MAL картинка есть
+ * даже там, где Shikimori её не отдаёт. Напрямую к MAL, однако, с нашего
+ * сервера не достучаться: TCP до myanimelist.net открывается, Client Hello
+ * уходит — и ответа нет, соединение висит до таймаута. То же с
+ * cdn.myanimelist.net (у него вдобавок в DNS сервера только AAAA, а IPv6
+ * наружу отсюда нет). То есть блокировка по SNI на стороне провайдера, а
+ * не капризы MAL: с машины разработчика та же страница открывается и
+ * отдаёт og:image. Публичный прокси Jikan тоже мимо — на 18+ он отвечает
+ * 504 «MyAnimeList refuses to connect», хотя обычные тайтлы отдаёт.
+ *
+ * Kitsu держит те же перекрёстные ссылки, ищет тайтл по внешнему id MAL и
+ * с сервера доступен — и API, и хост картинок. Берёт до 20 id за запрос.
+ */
+const KITSU_URL = 'https://kitsu.io/api/edge/mappings';
+const KITSU_IDS_PER_REQUEST = 20;
+const KITSU_INTERVAL_MS = 700;
+
+/** Предохранитель: если Shikimori однажды отвалится целиком, лучше остаться
+ *  без части обложек, чем всю ночь обходить чужой каталог. */
+const KITSU_MAX_TITLES = 600;
+
+interface KitsuResponse {
+  data?: {
+    attributes?: { externalId?: string };
+    relationships?: { item?: { data?: { id?: string } | null } };
+  }[];
+  included?: {
+    id?: string;
+    attributes?: { posterImage?: Record<string, string | null> | null };
+  }[];
+}
+
+async function fetchPostersViaKitsu(ids: number[]): Promise<Map<number, string>> {
+  const found = new Map<number, string>();
+  const list = ids.slice(0, KITSU_MAX_TITLES);
+
+  for (let i = 0; i < list.length; i += KITSU_IDS_PER_REQUEST) {
+    const chunk = list.slice(i, i + KITSU_IDS_PER_REQUEST);
+    const params = new URLSearchParams({
+      'filter[externalSite]': 'myanimelist/anime',
+      'filter[externalId]': chunk.join(','),
+      include: 'item',
+      'page[limit]': String(KITSU_IDS_PER_REQUEST),
+    });
+
+    try {
+      const res = await fetch(`${KITSU_URL}?${params}`, {
+        headers: { Accept: 'application/vnd.api+json', 'User-Agent': USER_AGENT },
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const json = (await res.json()) as KitsuResponse;
+      // Сами тайтлы приезжают отдельным массивом included, связь — по id.
+      const items = new Map(
+        (json.included ?? []).map((x) => [x.id ?? '', x.attributes?.posterImage ?? null]),
+      );
+
+      for (const row of json.data ?? []) {
+        const malId = Number(row.attributes?.externalId);
+        const itemId = row.relationships?.item?.data?.id ?? '';
+        if (!Number.isFinite(malId)) continue;
+
+        const poster = items.get(itemId);
+        const url = poster?.original ?? poster?.large ?? poster?.medium ?? null;
+        if (url) found.set(malId, url);
+      }
+    } catch (err) {
+      // Как и у REST: не добрали — тайтл поедет в каталог без картинки.
+      console.error(
+        '[animeIndex] обложки из Kitsu не пришли, пропускаю пачку:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+
+    if (i + KITSU_IDS_PER_REQUEST < list.length) await sleep(KITSU_INTERVAL_MS);
+  }
+
+  return found;
+}
+
 /** Актуальная таксономия: 22 жанра + 53 темы + 5 демографий. */
 async function fetchTaxonomy(): Promise<GqlGenre[]> {
   const data = await gql<{ genres: GqlGenre[] }>(
@@ -499,6 +583,23 @@ export async function rebuildAnimeIndex(): Promise<ReindexResult> {
       if (!found) continue;
       row.poster_original = found.original;
       row.poster_preview = found.preview;
+    }
+
+    // Кого не знает и REST — спрашиваем у Kitsu по id MAL (см. выше).
+    const stillEmpty = needPoster.filter((r) => !r.poster_original && !r.poster_preview);
+    if (stillEmpty.length > 0) {
+      const fromKitsu = await fetchPostersViaKitsu(stillEmpty.map((r) => r.shikimori_id));
+      for (const row of stillEmpty) {
+        const url = fromKitsu.get(row.shikimori_id);
+        if (!url) continue;
+        // У Kitsu одна картинка на тайтл в нужном размере — кладём её в оба
+        // поля: карточка берёт preview, страница тайтла original.
+        row.poster_original = url;
+        row.poster_preview = url;
+      }
+      console.log(
+        `[animeIndex] после REST без обложки осталось ${stillEmpty.length}, Kitsu дал ${fromKitsu.size}`,
+      );
     }
 
     for (let i = 0; i < needPoster.length; i += INSERT_CHUNK) {
