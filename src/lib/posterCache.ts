@@ -360,7 +360,7 @@ export async function cachePosters(
     const okIds: number[] = [];
 
     for (let i = 0; i < part.length; i++) {
-      const { url, res } = results[i];
+      const { res } = results[i];
       attempted++;
 
       if (res === null) {
@@ -378,7 +378,14 @@ export async function cachePosters(
       rows.push({
         kind,
         source_id: part[i].id,
-        source_url: url,
+        // Пишем ссылку ИЗ ИНДЕКСА, а не ту, по которой скачали. Проверка
+        // свежести выше сравнивает сохранённое значение с индексом, а
+        // скачиваем мы, когда можем, с Yummy (см. loadYummyPosters) — и
+        // запись его ссылки означала вечное расхождение: каждую ночь все
+        // такие тайтлы считались «апстрим сменил обложку» и качались
+        // заново. На проде это давало 10 251 повторную закачку и 472 МБ
+        // трафика за прогон вместо десятков новых.
+        source_url: part[i].url,
         bytes: res.bytes,
         width: res.width,
         height: res.height,
