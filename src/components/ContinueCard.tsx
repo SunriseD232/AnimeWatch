@@ -139,8 +139,12 @@ export default function ContinueCard({
         titleRef={titleRef}
       />
 
-      {/* Убрать из «Продолжить просмотр» — с подтверждением. Кнопка всегда
-          видима (не по hover): на тач-устройствах hover не срабатывает.
+      {/* Убрать из «Продолжить просмотр» — с подтверждением. Крестик
+          появляется по наведению (класс hover-reveal, см. globals.css); на
+          тач-устройствах наведения нет, и там он остаётся видимым всегда —
+          иначе убрать тайтл с телефона было бы нечем. Подтверждение уже без
+          hover-reveal: увести курсор с полураскрытого диалога — обычное
+          дело, и он не должен от этого исчезать.
           Скрыта целиком в readOnly (см. Props.readOnly выше). */}
       {readOnly ? null : confirming ? (
         <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-black/85 p-1 backdrop-blur">
@@ -166,7 +170,7 @@ export default function ContinueCard({
           onClick={() => setConfirming(true)}
           aria-label="Убрать из просмотра"
           title="Убрать из просмотра"
-          className="press absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full bg-black/70 text-sm text-white backdrop-blur transition hover:bg-red-600"
+          className="press hover-reveal absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full bg-black/70 text-sm text-white backdrop-blur transition hover:bg-red-600"
         >
           ✕
         </button>

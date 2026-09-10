@@ -48,3 +48,34 @@ export function modeFromPathname(pathname: string): ContentType | null {
 export function homeHref(mode: ContentType): string {
   return mode === 'cinema' ? '/?mode=cinema' : '/?mode=anime';
 }
+
+/**
+ * Разделы, которые есть и у аниме, и у кино. У кино тот же путь с префиксом
+ * `/cinema` — на этом и держится переключение.
+ */
+const TWIN_SECTIONS = ['/catalog', '/new', '/popular'] as const;
+
+/**
+ * Куда ведёт переключатель разделов С ЭТОЙ страницы.
+ *
+ * Из каталога аниме — в каталог кино, из «Новинок» аниме — в «Новинки»
+ * кино. Раньше обе вкладки всегда вели на главную, и переключение из
+ * каталога выбрасывало пользователя из каталога вообще.
+ *
+ * Параметры запроса намеренно не переносим: наборы фильтров у разделов
+ * разные (lib/animeFilters.ts против lib/cinemaFilters.ts), и `?genres=12`
+ * означал бы в кино совсем другой жанр, а не тот же самый.
+ */
+export function sectionHref(pathname: string, mode: ContentType): string {
+  const base =
+    pathname === '/cinema'
+      ? '/'
+      : pathname.startsWith('/cinema/')
+        ? pathname.slice('/cinema'.length)
+        : pathname;
+
+  const twin = TWIN_SECTIONS.find((p) => p === base);
+  if (!twin) return homeHref(mode);
+
+  return mode === 'cinema' ? `/cinema${twin}` : twin;
+}

@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import type { ContentType } from '@/lib/types';
-import { MODE_COOKIE, homeHref } from '@/lib/mode';
+import { MODE_COOKIE, sectionHref } from '@/lib/mode';
 import { SlidingPill, useSlidingPill } from '@/components/useSlidingPill';
 
 // Оба раздела — короткими адресами '/?mode=...', симметрично. У «Аниме»
@@ -14,9 +15,12 @@ import { SlidingPill, useSlidingPill } from '@/components/useSlidingPill';
 // редирект. Обычная (не голая) ссылка позволяет использовать next/link —
 // полная перезагрузка страницы здесь больше не нужна и раньше обрывала
 // Picture-in-Picture при переключении раздела.
-const TABS: { value: ContentType; label: string; href: string }[] = [
-  { value: 'anime', label: 'Аниме', href: homeHref('anime') },
-  { value: 'cinema', label: 'Фильмы и сериалы', href: homeHref('cinema') },
+// Адрес у вкладки не фиксированный: он зависит от того, где мы сейчас —
+// из каталога переключатель ведёт в каталог соседнего раздела, а не на
+// главную (см. sectionHref в lib/mode.ts).
+const TABS: { value: ContentType; label: string }[] = [
+  { value: 'anime', label: 'Аниме' },
+  { value: 'cinema', label: 'Фильмы и сериалы' },
 ];
 
 function setModeCookie(mode: ContentType) {
@@ -45,6 +49,7 @@ export default function ModeSwitch({ active }: { active: ContentType }) {
     setOptimistic(null);
   }, [active]);
 
+  const pathname = usePathname();
   const { rootRef, setTabRef, pill } = useSlidingPill(shown);
 
   return (
@@ -62,7 +67,7 @@ export default function ModeSwitch({ active }: { active: ContentType }) {
         return (
           <Link
             key={tab.value}
-            href={tab.href}
+            href={sectionHref(pathname, tab.value)}
             // prefetch={false}: автопрефетч Next.js для этих ссылок (видимы в
             // шапке с самого рендера) может выстрелить вторым RSC-запросом
             // почти одновременно с реальным переходом по клику, поймав
