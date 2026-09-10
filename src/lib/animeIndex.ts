@@ -242,6 +242,17 @@ interface KitsuResponse {
   }[];
 }
 
+/**
+ * Часть ссылок Kitsu отдаёт подписанными прямо на своё хранилище S3, с
+ * `X-Amz-Expires=900` — такая живёт пятнадцать минут, и записать её в
+ * индекс на сутки значит получить битую картинку почти сразу. Берём только
+ * постоянные, с их собственного хоста. На живой выборке подписанной
+ * оказалась одна ссылка из 118.
+ */
+function isStableKitsuUrl(url: string | null | undefined): url is string {
+  return typeof url === 'string' && url.startsWith('https://media.kitsu.app/') && !url.includes('?');
+}
+
 async function fetchPostersViaKitsu(ids: number[]): Promise<Map<number, string>> {
   const found = new Map<number, string>();
   const list = ids.slice(0, KITSU_MAX_TITLES);
@@ -274,7 +285,7 @@ async function fetchPostersViaKitsu(ids: number[]): Promise<Map<number, string>>
         if (!Number.isFinite(malId)) continue;
 
         const poster = items.get(itemId);
-        const url = poster?.original ?? poster?.large ?? poster?.medium ?? null;
+        const url = [poster?.original, poster?.large, poster?.medium].find(isStableKitsuUrl);
         if (url) found.set(malId, url);
       }
     } catch (err) {
