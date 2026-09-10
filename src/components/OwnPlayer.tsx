@@ -394,6 +394,19 @@ export default function OwnPlayer({
   // нельзя, иначе любое расхождение между нами и родителем превращается в
   // бесконечный обмен (см. эффект внешнего выбора ниже).
   const reportedTranslationIdRef = useRef<number | null>(null);
+  // Последний ЯВНЫЙ выбор озвучки в пределах текущей серии — из меню плеера,
+  // из селектора над ним или подменой недоступной озвучки родителем. Пока он
+  // есть, восстановление по подписи (эффект ниже) в эту серию не лезет.
+  //
+  // Иначе получается качель: восстановление тянет выбор к запомненной
+  // подписи, внешний выбор — к своему id, и они меняются местами каждый
+  // рендер. На проде это уходило в бесконечный цикл и роняло страницу
+  // (React #185) — видно в логах как поток player.change_translation,
+  // перекидывающий одну и ту же пару id туда-обратно.
+  // Ключ серии хранится вместе с id: эффекты выполняются в порядке
+  // объявления, и сбрасывать закрепление отдельным эффектом ниже значило бы
+  // зависеть от того, кто из них окажется раньше.
+  const pinnedTranslationRef = useRef<{ key: string; id: number } | null>(null);
   // Сообщаем родителю текущую озвучку (см. Props.onTranslationChange) — нужно
   // именно эффектом (не инлайн-вызовом в теле рендера), чтобы не звать
   // setState родителя во время нашего собственного рендера.
@@ -753,6 +766,19 @@ export default function OwnPlayer({
   // зациклится.
   useEffect(() => {
     if (translations.length === 0) return;
+
+    // В этой серии уже есть явный выбор — он и главный. Восстановление по
+    // подписи существует ради ПЕРЕХОДА между сериями, а не ради того, чтобы
+    // спорить с тем, что человек (или родитель) только что выбрал.
+    const pinned = pinnedTranslationRef.current;
+    if (
+      pinned &&
+      pinned.key === `${season}:${episode}` &&
+      translations.some((t) => t.id === pinned.id)
+    ) {
+      setTranslationId(pinned.id);
+      return;
+    }
 
     // Порядок предпочтений: та озвучка, что играла прямо сейчас → та, что
     // пришла пропом → сохранённая с прошлых серий и сеансов. Последняя и
@@ -2000,6 +2026,7 @@ export default function OwnPlayer({
       // (см. коммент у объявления activeTranslationTitleRef выше).
       const picked = translations.find((t) => t.id === id);
       if (picked) activeTranslationTitleRef.current = picked.title;
+      pinnedTranslationRef.current = { key: `${season}:${episode}`, id };
       logEvent('player.change_translation', {
         shikimoriId,
         season,
