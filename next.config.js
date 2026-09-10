@@ -31,6 +31,25 @@ const nextConfig = {
     // трассировка находит и копирует его как есть.
     serverComponentsExternalPackages: ['node-wreq'],
   },
+  // Разделы «Новинки» и «Популярное» жили отдельными страницами до того, как
+  // ими стали вкладки на самих главных (см. DISCOVER_TABS в app/page.tsx и
+  // app/cinema/page.tsx). Ссылок на старые адреса в интерфейсе не осталось
+  // ни одной — но они могли сохраниться в закладках и в истории браузера,
+  // поэтому страницы удалены, а адреса переведены на соответствующие
+  // вкладки. Вкладки к тому же честнее: они читают локальный индекс, а
+  // старые страницы ходили в чужой API на каждый заход.
+  //
+  // Не permanent: 308 браузер запоминает намертво, и вернуть адрес обратно,
+  // если он вдруг понадобится, было бы нечем. Здесь это ничего не стоит —
+  // сайт за авторизацией, поисковикам эти адреса всё равно не видны.
+  async redirects() {
+    return [
+      { source: '/new', destination: '/?tab=new', permanent: false },
+      { source: '/popular', destination: '/?tab=popular', permanent: false },
+      { source: '/cinema/new', destination: '/cinema?tab=new', permanent: false },
+      { source: '/cinema/popular', destination: '/cinema?tab=popular', permanent: false },
+    ];
+  },
   images: {
     remotePatterns: [
       {

@@ -173,23 +173,6 @@ function dedupe(items: KodikItem[], limit: number): CinemaShort[] {
   return out;
 }
 
-/** Популярное для главной раздела кино. */
-export async function getPopularCinema(limit = 18): Promise<CinemaShort[]> {
-  // Берём с запасом (Kodik дублирует по озвучкам) и дедуплицируем.
-  const items = await kodikFetch(
-    '/list',
-    {
-      types: CINEMA_TYPES,
-      with_material_data: 'true',
-      sort: 'kinopoisk_rating',
-      order: 'desc',
-      limit: '100',
-    },
-    3600,
-  );
-  return dedupe(items, limit);
-}
-
 /** Поиск по строке запроса среди фильмов/сериалов. */
 export async function searchCinema(
   query: string,

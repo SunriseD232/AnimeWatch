@@ -33,8 +33,6 @@ export function modeFromPathname(pathname: string): ContentType | null {
   if (pathname === '/cinema' || pathname.startsWith('/cinema/')) return 'cinema';
   if (
     pathname === '/catalog' ||
-    pathname === '/new' ||
-    pathname === '/popular' ||
     pathname === '/calendar' ||
     pathname.startsWith('/anime/') ||
     pathname.startsWith('/watch/')
@@ -52,8 +50,12 @@ export function homeHref(mode: ContentType): string {
 /**
  * Разделы, которые есть и у аниме, и у кино. У кино тот же путь с префиксом
  * `/cinema` — на этом и держится переключение.
+ *
+ * «Новинки» и «Популярное» сюда не входят: отдельными страницами они больше
+ * не существуют, это вкладки на самих главных (старые адреса перенаправлены,
+ * см. redirects в next.config.js).
  */
-const TWIN_SECTIONS = ['/catalog', '/new', '/popular'] as const;
+const TWIN_SECTIONS = ['/catalog'] as const;
 
 /**
  * Куда ведёт переключатель разделов С ЭТОЙ страницы.
