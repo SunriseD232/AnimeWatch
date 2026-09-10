@@ -468,6 +468,12 @@ export default function OwnPlayer({
     queryStr ? `?${queryStr}` : ''
   }`;
 
+  // Указывает ли translationId на озвучку, которая есть в СЕГОДНЯШНЕМ списке.
+  // false — переходный рендер при смене серии, запрашивать поток рано (см.
+  // эффект подключения источника ниже).
+  const translationReady =
+    translationId == null || translations.some((t) => t.id === translationId);
+
   // Просить ли сервер переизвлечь ссылку заново (?fresh=1), а не отдавать из
   // своего 15-минутного кэша resolved_streams.
   //
@@ -914,6 +920,16 @@ export default function OwnPlayer({
 
   // --- Определение типа потока (HLS/mp4) и подключение источника -----------
   useEffect(() => {
+    // Переходный рендер при смене серии: translationId ещё от ПРОШЛОЙ серии
+    // (id у Yummy на каждую серию свои), а translations уже от новой.
+    // Спрашивать такую озвучку у сервера нельзя: он честно ответит «нет
+    // такой», а мы примем это за «озвучка недоступна» и подменим выбор —
+    // хотя в новой серии он есть. Ровно так и терялись «Субтитры · Alloha»
+    // при каждом переключении серии (в логах прода это probe_failed 404 с
+    // id прошлой серии, а следом подмена). Ждать недолго: корректирующий
+    // эффект отрабатывает следом.
+    if (!translationReady) return;
+
     let cancelled = false;
     // Раньше отменяли только реакцию на результат (cancelled-флаг), но не сам
     // запрос — если пользователь уходил с серии на этапе извлечения (HEAD
@@ -1009,7 +1025,12 @@ export default function OwnPlayer({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [src, reloadKey]);
+    // translationReady — булев, а не сам список: с translations в
+    // зависимостях эффект пересобирался бы на КАЖДЫЙ рендер родителя
+    // (ссылка на список каждый раз новая), то есть заново поднимал бы
+    // hls.js и рвал воспроизведение.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, reloadKey, translationReady]);
 
   // --- Подключение источника к <video>, когда он смонтирован (loadState === 'ready') ---
   useEffect(() => {
