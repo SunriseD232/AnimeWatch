@@ -52,6 +52,16 @@ export async function middleware(request: NextRequest) {
     const target = request.nextUrl.clone();
     target.pathname = '/cinema';
     target.searchParams.delete('mode');
+    // Протокол принудительно http. За nginx nextUrl приносит protocol из
+    // X-Forwarded-Proto (https), а host — bind-адрес процесса
+    // (localhost:3000), который слушает ОБЫЧНЫЙ http. Next видит чужой
+    // origin, идёт проксировать запрос сам в себя по TLS на нешифрованный
+    // порт и получает «Failed to proxy https://localhost:3000/cinema:
+    // wrong version number» — наружу уходила пустая страница (поймано на
+    // проде). С совпадающим origin переход остаётся внутренним, без похода
+    // по сети. Публичный SITE_URL здесь НЕ годится: он для редиректов, где
+    // адрес видит браузер, а не для внутреннего rewrite.
+    target.protocol = 'http:';
     const rewritten = NextResponse.rewrite(target);
     // Куки обновлённой сессии переносим руками: их проставил updateSession на
     // СВОЙ ответ, а наружу уходит другой.
