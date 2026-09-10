@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import type { ContentType } from '@/lib/types';
+import { homeHref, modeFromPathname } from '@/lib/mode';
 
 /**
  * Нижняя док-панель для телефона: каталог — логотип — профиль.
@@ -11,15 +13,15 @@ import { usePathname } from 'next/navigation';
  * Профиль и каталог переехали вниз, к большому пальцу, а поиск наверху
  * получил освободившееся место.
  *
- * Логотип посередине ведёт на главную — на голый «/», а не на конкретный
- * раздел: middleware сам перенесёт на /cinema, если пользователь последний
- * раз был там (кука aw_mode, см. ModeSwitch).
+ * Логотип посередине ведёт на главную ТОГО раздела, где пользователь
+ * сейчас, а на общих страницах — где он был в прошлый раз (кука aw_mode).
+ * Про то, почему адрес раздела, а не голый «/», — см. lib/mode.ts.
  *
  * Каталог, наоборот, зависит от раздела: из кино логично попадать в каталог
  * кино, а не аниме. Определяем по пути, а не по куке — путь честнее
  * показывает, где пользователь прямо сейчас.
  */
-export default function MobileDock() {
+export default function MobileDock({ cookieMode }: { cookieMode: ContentType }) {
   const pathname = usePathname();
   const isCinema = pathname.startsWith('/cinema');
 
@@ -53,7 +55,8 @@ export default function MobileDock() {
         {/* Логотип — крупнее соседей и без подписи: он и так узнаваем, а
             подпись «Главная» под ним только сбивала бы центр. */}
         <Link
-          href="/"
+          href={homeHref(modeFromPathname(pathname) ?? cookieMode)}
+          prefetch={false}
           aria-label="На главную"
           aria-current={isHome ? 'page' : undefined}
           className="press flex h-full shrink-0 items-center justify-center px-4"

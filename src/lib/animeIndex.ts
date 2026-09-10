@@ -136,6 +136,77 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Обложки 18+ тайтлов — вторым источником, через REST.
+ *
+ * GraphQL Shikimori отдаёт у цензурированных тайтлов `poster: null` —
+ * ВСЕГДА, даже с `censored: false`, который возвращает их в выдачу. Само
+ * изображение при этом есть и открывается: REST /api/animes/57470 отдаёт
+ * `/system/animes/original/57470.jpg`. Из-за этого в каталоге хентай ехал
+ * плитками «нет постера», хотя на странице тайтла (она ходит в REST)
+ * обложка была.
+ *
+ * REST берёт до 50 id за запрос, так что весь недостающий хвост (~1.6 тыс.
+ * тайтлов) обходится тремя десятками запросов — тем же темпом, что и
+ * основной обход.
+ */
+const REST_URL = 'https://shikimori.io/api';
+const REST_IDS_PER_REQUEST = 50;
+
+/** Заглушка «обложки нет» у Shikimori. Такую ссылку писать в индекс нельзя:
+ *  карточка показала бы серый прямоугольник вместо честного «нет постера». */
+const MISSING_POSTER_RE = /missing_original|missing_preview/;
+
+interface RestAnime {
+  id: number;
+  image: { original: string | null; preview: string | null } | null;
+}
+
+async function fetchPostersViaRest(
+  ids: number[],
+): Promise<Map<number, { original: string | null; preview: string | null }>> {
+  const found = new Map<number, { original: string | null; preview: string | null }>();
+
+  for (let i = 0; i < ids.length; i += REST_IDS_PER_REQUEST) {
+    const chunk = ids.slice(i, i + REST_IDS_PER_REQUEST);
+    const url = `${REST_URL}/animes?ids=${chunk.join(',')}&limit=${REST_IDS_PER_REQUEST}&censored=false`;
+
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const list = (await res.json()) as RestAnime[];
+      for (const item of Array.isArray(list) ? list : []) {
+        const id = Number(item.id);
+        if (!Number.isFinite(id)) continue;
+        found.set(id, {
+          original: absoluteImage(item.image?.original),
+          preview: absoluteImage(item.image?.preview),
+        });
+      }
+    } catch (err) {
+      // Хвост необязательный: не добрали обложку — тайтл всё равно поедет в
+      // каталог, просто без картинки. Ронять из-за неё перестройку незачем.
+      console.error(
+        '[animeIndex] обложки через REST не пришли, пропускаю пачку:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+
+    if (i + REST_IDS_PER_REQUEST < ids.length) await sleep(REQUEST_INTERVAL_MS);
+  }
+
+  return found;
+}
+
+function absoluteImage(path: string | null | undefined): string | null {
+  if (!path || MISSING_POSTER_RE.test(path)) return null;
+  return path.startsWith('http') ? path : `https://shikimori.io${path}`;
+}
+
 /** Актуальная таксономия: 22 жанра + 53 темы + 5 демографий. */
 async function fetchTaxonomy(): Promise<GqlGenre[]> {
   const data = await gql<{ genres: GqlGenre[] }>(
@@ -383,6 +454,11 @@ export async function rebuildAnimeIndex(): Promise<ReindexResult> {
   let page = 1;
   let titles = 0;
   const seen = new Set<number>();
+  // Тайтлы, которым GraphQL не дал обложки (18+, см. fetchPostersViaRest) —
+  // откладываем и вставляем после того, как доберём картинки через REST.
+  // Копится их пара тысяч из тридцати, память это переживает, а вставлять
+  // сразу и потом обновлять построчно — тысячи лишних запросов в базу.
+  const needPoster: IndexRow[] = [];
 
   while (page <= MAX_PAGES) {
     const batch = await fetchPage(page);
@@ -395,7 +471,8 @@ export async function rebuildAnimeIndex(): Promise<ReindexResult> {
       // прямо во время обхода; первичный ключ бы на них упал.
       if (row && !seen.has(row.shikimori_id)) {
         seen.add(row.shikimori_id);
-        rows.push(row);
+        if (row.poster_original || row.poster_preview) rows.push(row);
+        else needPoster.push(row);
       }
     }
 
@@ -410,6 +487,30 @@ export async function rebuildAnimeIndex(): Promise<ReindexResult> {
 
     if (batch.length < PAGE_SIZE) break; // апстрим исчерпан
     await sleep(REQUEST_INTERVAL_MS);
+  }
+
+  // ── Хвост без обложек ──
+  if (needPoster.length > 0) {
+    await sleep(REQUEST_INTERVAL_MS);
+    const posters = await fetchPostersViaRest(needPoster.map((r) => r.shikimori_id));
+
+    for (const row of needPoster) {
+      const found = posters.get(row.shikimori_id);
+      if (!found) continue;
+      row.poster_original = found.original;
+      row.poster_preview = found.preview;
+    }
+
+    for (let i = 0; i < needPoster.length; i += INSERT_CHUNK) {
+      const chunk = needPoster.slice(i, i + INSERT_CHUNK);
+      const { error } = await supabase.from('anime_index').insert(chunk);
+      if (error) throw new Error(`вставка тайтлов без обложек упала: ${error.message}`);
+    }
+
+    titles += needPoster.length;
+    console.log(
+      `[animeIndex] обложек не было у ${needPoster.length} тайтлов, REST дал ${posters.size}`,
+    );
   }
 
   // ── Проверка на вменяемость до переключения ──

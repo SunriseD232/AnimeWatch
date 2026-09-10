@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import type { ContentType } from '@/lib/types';
+import { MODE_COOKIE, homeHref } from '@/lib/mode';
 import { SlidingPill, useSlidingPill } from '@/components/useSlidingPill';
 
 // Оба раздела — короткими адресами '/?mode=...', симметрично. У «Аниме»
@@ -14,16 +15,9 @@ import { SlidingPill, useSlidingPill } from '@/components/useSlidingPill';
 // полная перезагрузка страницы здесь больше не нужна и раньше обрывала
 // Picture-in-Picture при переключении раздела.
 const TABS: { value: ContentType; label: string; href: string }[] = [
-  { value: 'anime', label: 'Аниме', href: '/?mode=anime' },
-  { value: 'cinema', label: 'Фильмы и сериалы', href: '/?mode=cinema' },
+  { value: 'anime', label: 'Аниме', href: homeHref('anime') },
+  { value: 'cinema', label: 'Фильмы и сериалы', href: homeHref('cinema') },
 ];
-
-/**
- * Кука последнего открытого раздела. Читается в middleware: заход на «/»
- * при aw_mode=cinema переносится на /cinema — сайт открывается там, где
- * пользователь был в прошлый раз.
- */
-const MODE_COOKIE = 'aw_mode';
 
 function setModeCookie(mode: ContentType) {
   document.cookie = `${MODE_COOKIE}=${mode}; path=/; max-age=31536000; samesite=lax`;

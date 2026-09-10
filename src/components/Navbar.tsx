@@ -1,5 +1,7 @@
 import Link from 'next/link';
+import { cookies } from 'next/headers';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
+import { MODE_COOKIE, normalizeMode } from '@/lib/mode';
 import { getOnlineUserCount, isAdminEmail } from '@/lib/admin';
 import CalendarLink from './CalendarLink';
 import NotificationBell from './NotificationBell';
@@ -17,6 +19,10 @@ export default async function Navbar() {
   } = await getCachedUser();
 
   const isAdmin = isAdminEmail(user?.email);
+  // Последний открытый раздел — логотипу, чтобы он вёл туда же (lib/mode.ts).
+  // Читаем на сервере: клиент возьмёт то же значение пропом и не разойдётся
+  // с разметкой при гидратации.
+  const cookieMode = normalizeMode(cookies().get(MODE_COOKIE)?.value);
   // Только счётчик тут — дешёвый count, без admin.listUsers (см.
   // getOnlineUserCount в lib/admin.ts про то, почему это важно: тяжёлая
   // версия на каждом рендере шапки заметно тормозила весь сайт админу).
@@ -60,7 +66,7 @@ export default async function Navbar() {
     <>
       <header className="glass sticky top-0 z-40 border-b border-white/[0.06] pt-[env(safe-area-inset-top)]">
       <nav className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
-        <SiteLogoLink />
+        <SiteLogoLink cookieMode={cookieMode} />
 
         {/* Поиск — только вошедшим. Гостю на /login и /signup он не нужен:
             все результаты ведут на страницы за авторизацией, то есть каждый
@@ -128,7 +134,7 @@ export default async function Navbar() {
 
       {/* Нижний док — только вошедшим и только на телефоне: гостю на форме
         входа некуда по нему ходить. */}
-      {user && <MobileDock />}
+      {user && <MobileDock cookieMode={cookieMode} />}
     </>
   );
 }
