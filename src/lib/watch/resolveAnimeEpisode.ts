@@ -73,7 +73,14 @@ export async function resolveAnimeEpisodeSources({
     kodikTranslations: embed.translations,
     kodikInitialTranslationId: resolvedTranslationId,
     kodikFallback: embed.fallback,
-    episodesTotal: embed.episodesTotal,
+    // Наибольшее из того, что знают источники. Раньше брали только число от
+    // Kodik — и у франшиз, которые он держит короткой записью, а Yummy
+    // длинной, сетка серий обрывалась на чужом числе: страница честно играла
+    // серию 73, а в заголовке стояло «из 21», кнопки «След.» не было вовсе и
+    // перейти к 74-й было нечем. Ноль превращаем в null, чтобы страница, как
+    // и раньше, откатилась на число серий по Shikimori.
+    episodesTotal:
+      Math.max(embed.episodesTotal ?? 0, yummy?.episodesTotal ?? 0) || null,
     yummyTranslations: yummy?.translations ?? [],
     // Real-Debrid по умолчанию СКРЫТ от пользователя.
     //
