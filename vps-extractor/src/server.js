@@ -215,7 +215,7 @@ app.post('/extract', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'bad embedUrl' });
     }
   }
-  // translationLabel — только для сопоставления HTTP-пути videoseed
+  // translationLabel — для сопоставления HTTP-пути videoseed
   // конкретной озвучке (см. videoseed-http.js), в fetch/URL никуда не идёт —
   // валидируем только тип.
   let safeTranslationLabel;
@@ -241,7 +241,10 @@ app.post('/extract', requireAuth, async (req, res) => {
     } else if (source === 'kodik') {
       result = await extractKodik({ embedUrl: safeEmbedUrl });
     } else if (source === 'cvh') {
-      result = await extractCVH({ embedUrl: safeEmbedUrl });
+      result = await extractCVH({
+        embedUrl: safeEmbedUrl,
+        translationLabel: safeTranslationLabel,
+      });
     } else if (source === 'aksor') {
       result = await extractAksor({ embedUrl: safeEmbedUrl });
     } else if (source === 'alloha') {

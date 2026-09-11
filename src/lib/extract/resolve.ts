@@ -180,8 +180,15 @@ async function resolveStreamUncoalesced({
   if (translationId != null) {
     if (contentType === 'anime') {
       const yummy = await getYummyEpisode(shikimoriId, episode);
-      embedUrl = yummy?.translations.find((t) => t.id === translationId)?.embedUrl;
+      const found = yummy?.translations.find((t) => t.id === translationId);
+      embedUrl = found?.embedUrl;
       translationMissing = !embedUrl;
+      // Подпись без суффикса источника: «Субтитры Манипулятор · CVH» →
+      // «Субтитры Манипулятор». Нужна CVH: у Yummy в embedUrl лежит то
+      // отображаемое имя студии, то её транслитерированный слаг, а CVH знает
+      // только имя — по подписи такие случаи и сходятся (см. findItem в
+      // vps-extractor/src/cvh.js).
+      translationLabel = found?.title.replace(/\s*·\s*[^·]+$/, '');
     } else if (source === 'kodik') {
       const kodik = await getKodikOwnPlayerTranslations(shikimoriId, season, episode);
       embedUrl = kodik.find((t) => t.id === translationId)?.embedUrl;
