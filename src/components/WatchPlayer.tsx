@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
 import { useTranslationFallback } from '@/components/useTranslationFallback';
+import type { FranchiseFallback } from '@/lib/watch/franchiseFallback';
 import HlsPlayer from '@/components/HlsPlayer';
 import KodikPlayer from '@/components/KodikPlayer';
 import YummyPlayer from '@/components/YummyPlayer';
@@ -49,6 +50,9 @@ interface Props {
   kodikTranslations: Translation[];
   kodikInitialTranslationId: number | null;
   kodikFallback: boolean;
+  /** Подсказка «эта часть есть у источников под другим тайтлом» — приходит
+   *  только когда своих источников не нашлось, см. lib/watch/franchiseFallback.ts. */
+  franchiseFallback?: FranchiseFallback | null;
   // Данные Yummy (резервный источник) и тайминги пропуска для AniLibria.
   yummyTranslations: YummyTranslation[];
   /** Real-Debrid — отдельно от yummyTranslations, см. resolveAnimeEpisode.ts. */
@@ -81,6 +85,7 @@ interface EpisodeSourcesResponse {
   skipOpening: SkipSegment | null;
   skipEnding: SkipSegment | null;
   resumeFrom: number | null;
+  franchiseFallback?: FranchiseFallback | null;
 }
 
 /**
@@ -106,6 +111,7 @@ export default function WatchPlayer({
   kodikTranslations: initialKodikTranslations,
   kodikInitialTranslationId: initialKodikInitialTranslationId,
   kodikFallback: initialKodikFallback,
+  franchiseFallback: initialFranchiseFallback = null,
   yummyTranslations: initialYummyTranslations,
   realdebridTranslations: initialRealDebridTranslations,
   savedTranslationTitle,
@@ -129,6 +135,7 @@ export default function WatchPlayer({
     initialKodikInitialTranslationId,
   );
   const [kodikFallback, setKodikFallback] = useState(initialKodikFallback);
+  const [franchiseFallback, setFranchiseFallback] = useState(initialFranchiseFallback);
   const [yummyTranslations, setYummyTranslations] = useState(initialYummyTranslations);
   // К какой серии относится список выше. Номер серии меняется СИНХРОННО по
   // клику, а список приезжает с сервера позже — и всё это время у плеера на
@@ -574,6 +581,7 @@ export default function WatchPlayer({
         setKodikTranslations(data.kodikTranslations);
         setKodikInitialTranslationId(data.kodikInitialTranslationId);
         setKodikFallback(data.kodikFallback);
+        setFranchiseFallback(data.franchiseFallback ?? null);
         setYummyTranslations(data.yummyTranslations);
         setTranslationsEpisode(targetEpisode);
         setRealDebridTranslations(data.realdebridTranslations);
@@ -785,6 +793,40 @@ export default function WatchPlayer({
           </div>
         </div>
       )}
+
+      {/* Подсказка «эта часть есть под другим тайтлом» — только когда играть
+          действительно нечем: Kodik не знает тайтл по id (kodikFallback),
+          Yummy пусто, «Наш плеер» пуст, AniLibria не нашлась. Ничего не
+          подменяем: даём ссылку на обычную страницу того тайтла, где дальше
+          работает всё как всегда, и честно пишем «примерно» — точное
+          смещение вычислить нельзя, см. lib/watch/franchiseFallback.ts. */}
+      {!resolving &&
+        franchiseFallback &&
+        kodikFallback &&
+        !aniQualities &&
+        !hasYummy &&
+        !hasOwnPlayer && (
+          <div className="flex flex-col gap-2 rounded-lg border border-accent/20 bg-accent/10 px-4 py-3 text-sm">
+            <p className="font-medium">Отдельно этой части у источников нет</p>
+            <p className="text-gray-300">
+              Зато у них вся франшиза идёт одним тайтлом со сквозной нумерацией.
+              Серии этой части там — примерно{' '}
+              <b className="font-semibold text-white">
+                {franchiseFallback.firstEpisode}–{franchiseFallback.lastEpisode}
+              </b>{' '}
+              из {franchiseFallback.hostEpisodes}. Если попали не в ту серию, поправьте
+              номер в сетке серий — там нумерация источника.
+            </p>
+            <Link
+              href={`${watchBase}/${franchiseFallback.hostId}/${franchiseFallback.firstEpisode + Math.max(0, activeEpisode - 1)}`}
+              className="press self-start rounded-md bg-accent px-3 py-1.5 font-medium text-accent-fg hover:bg-accent-hover"
+            >
+              Открыть серию{' '}
+              {franchiseFallback.firstEpisode + Math.max(0, activeEpisode - 1)} в «
+              {franchiseFallback.hostTitle}»
+            </Link>
+          </div>
+        )}
 
       {/* Переключатель источника — когда есть альтернатива Kodik */}
       {!resolving && (aniQualities || hasYummy) && (

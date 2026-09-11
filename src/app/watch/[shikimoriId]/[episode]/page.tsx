@@ -116,6 +116,7 @@ export default async function WatchPage({
         kodikTranslations={sources.kodikTranslations}
         kodikInitialTranslationId={sources.kodikInitialTranslationId}
         kodikFallback={sources.kodikFallback}
+        franchiseFallback={sources.franchiseFallback}
         yummyTranslations={sources.yummyTranslations}
         realdebridTranslations={sources.realdebridTranslations}
         savedTranslationTitle={savedTranslationTitle}

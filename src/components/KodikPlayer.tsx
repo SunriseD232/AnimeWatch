@@ -173,13 +173,19 @@ export default function KodikPlayer({
         {fallback ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-bg-soft p-6 text-center">
             <div className="text-4xl">🎬</div>
+            {/* «Попробуйте позже» годится, когда источник ЛЁГ. Но у этого
+                же экрана есть второй случай: тайтла нет ни у одного
+                источника вовсе (Kodik не знает его по id, альтернатив нет) —
+                тогда приходить позже бессмысленно, и врать об этом не надо.
+                Отличаем по hasAlternatives: пусто — значит искать больше
+                негде. */}
             <p className="text-sm font-medium text-gray-200">
-              Этот источник сейчас недоступен
+              {hasAlternatives ? 'Этот источник сейчас недоступен' : 'Эту серию пока никто не раздаёт'}
             </p>
             <p className="max-w-md text-xs leading-relaxed text-gray-400">
               {hasAlternatives
                 ? 'Попробуйте другой плеер в переключателе выше.'
-                : 'Попробуйте зайти позже.'}
+                : 'Ни один из наших источников её не отдаёт. Как появится — заработает само.'}
             </p>
           </div>
         ) : (

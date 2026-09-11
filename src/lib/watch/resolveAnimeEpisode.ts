@@ -1,5 +1,6 @@
 import { createVideoSource } from '@/lib/video/kodik';
 import { getYummyEpisode, type YummyTranslation } from '@/lib/video/yummy';
+import { findFranchiseFallback, type FranchiseFallback } from '@/lib/watch/franchiseFallback';
 import type { Translation } from '@/lib/video/types';
 import type { OwnPlayerTranslation } from '@/lib/extract/types';
 
@@ -22,6 +23,9 @@ export interface AnimeEpisodeSources {
   realdebridTranslations: OwnPlayerTranslation[];
   skipOpening: SkipSegment | null;
   skipEnding: SkipSegment | null;
+  /** «Эта часть есть у источников под другим тайтлом» — только когда своих
+   *  источников не нашлось ни одного, см. lib/watch/franchiseFallback.ts. */
+  franchiseFallback: FranchiseFallback | null;
 }
 
 /**
@@ -55,6 +59,15 @@ export async function resolveAnimeEpisodeSources({
 
   const resolvedTranslationId = translationId ?? embed.translations[0]?.id ?? null;
 
+  // Подсказку про франшизу считаем ТОЛЬКО когда искать больше нечего: у
+  // Kodik сработал общий find-player (embed.fallback — значит по id он
+  // тайтл не знает), и у Yummy пусто. На рабочем тайтле сюда не заходим
+  // вовсе, лишних запросов на обычном пути просмотра нет.
+  const nothingFound = embed.fallback && (yummy?.translations.length ?? 0) === 0;
+  const franchiseFallback = nothingFound
+    ? await findFranchiseFallback(shikimoriId, episode)
+    : null;
+
   return {
     kodikEmbedUrl: embed.embedUrl,
     kodikTranslations: embed.translations,
@@ -78,5 +91,6 @@ export async function resolveAnimeEpisodeSources({
         : [],
     skipOpening: yummy?.skipOpening ?? null,
     skipEnding: yummy?.skipEnding ?? null,
+    franchiseFallback,
   };
 }

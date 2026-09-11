@@ -79,6 +79,12 @@ export interface YummyEpisodeData {
   translations: YummyTranslation[];
   skipOpening: YummySkipSegment | null;
   skipEnding: YummySkipSegment | null;
+  /** Наибольший номер серии, который Yummy знает у этого тайтла. Нужен
+   *  подсказке про франшизу (см. lib/watch/franchiseFallback.ts): у
+   *  источников франшиза лежит одним тайтлом, и её длина — единственный
+   *  честный ориентир, помещается ли в него нужный диапазон. Считается из
+   *  того же ответа, лишнего запроса не делает. */
+  episodesTotal: number;
 }
 
 /** Протокол-относительный URL (//host/path) → абсолютный (нужен для полей,
@@ -174,10 +180,16 @@ export async function getYummyEpisode(
   const skipSource =
     byAniLibria && skipScore(byAniLibria) > 0 ? byAniLibria : bestOverall;
 
+  const episodesTotal = (data?.response ?? []).reduce((max, it) => {
+    const n = Number(it.number);
+    return Number.isFinite(n) && n > max ? n : max;
+  }, 0);
+
   return {
     translations,
     skipOpening: skipSource?.skips?.opening ?? null,
     skipEnding: skipSource?.skips?.ending ?? null,
+    episodesTotal,
   };
 }
 
