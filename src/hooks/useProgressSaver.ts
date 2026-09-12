@@ -45,6 +45,28 @@ interface Args {
 const SAVE_INTERVAL_MS = 5_000;
 const MIN_POSITION = 5; // не сохраняем случайные открытия (< 5 сек)
 
+// Доля серии, после которой считаем её досмотренной. Та же граница, что у
+// nearEnd на сервере при восстановлении позиции (см.
+// watch/[shikimoriId]/[episode]/page.tsx) и у ручного переключения серии в
+// WatchPlayer/Player.
+//
+// ЗАЧЕМ ЭТО ЗДЕСЬ. До этого в watched_episodes писали только два места:
+// событие 'ended' у <video> и switchEpisode при >90%. Оба легко не
+// наступают: 'ended' не приходит, если человек досмотрел титры не до
+// последнего кадра и закрыл вкладку, а порог в switchEpisode сравнивал
+// длительность из durationRef, который заполнял ТОЛЬКО OwnPlayer (Kodik,
+// AniLibria и Yummy отдавали наверх одну позицию без длительности) — то
+// есть для трёх источников из четырёх этот путь был мёртвым. На проде
+// 12.09.2026: 57969 серия 11 сохранена с позицией 1396 из 1428 (97.8%) и в
+// историю не попала вовсе; у 62001 в истории нет серий 3, 5, 8 и 15, причём
+// у 15-й позиция 1322 из 1420 (93%).
+//
+// Здесь же длительность есть у всех плееров без исключения (её и так
+// пишут в watch_progress.duration_seconds), поэтому отметка уезжает тем же
+// периодическим сохранением, что и позиция, и ни от какого события не
+// зависит.
+const WATCHED_RATIO = 0.9;
+
 /**
  * Общая логика сохранения прогресса для любого плеера (HLS / Kodik).
  * Пишет каждые 10 сек во время воспроизведения, при уходе со страницы и
@@ -64,12 +86,28 @@ export function useProgressSaver({
   const getStateRef = useRef(getState);
   getStateRef.current = getState;
 
+  // Какие серии уже отметили досмотренными в этой сессии плеера — чтобы не
+  // повторять отметку каждые пять секунд на титрах. Ключ с сезоном: у
+  // сериалов номера серий повторяются от сезона к сезону.
+  const markedRef = useRef<Set<string>>(new Set());
+
   const save = useCallback(
     (useBeacon = false) => {
       if (!isAuthed) return;
       const { position, duration, translationId, translationTitle, episode, season } =
         getStateRef.current();
       if (!Number.isFinite(position) || position < MIN_POSITION) return;
+
+      // Серия досмотрена — отмечаем ОДИН раз за серию, тем же запросом, что
+      // несёт позицию: сервер обрабатывает и пометку, и позицию вместе.
+      const episodeKey = `${season ?? 1}:${episode}`;
+      const nearEnd =
+        duration != null &&
+        Number.isFinite(duration) &&
+        duration > 0 &&
+        position / duration > WATCHED_RATIO;
+      const markWatched = nearEnd && !markedRef.current.has(episodeKey);
+      if (markWatched) markedRef.current.add(episodeKey);
 
       const payload = {
         content_type: contentType,
@@ -83,6 +121,7 @@ export function useProgressSaver({
           duration != null && Number.isFinite(duration) ? duration : null,
         translation_id: translationId,
         translation_title: translationTitle ?? null,
+        ...(markWatched ? { watched_episode: true } : {}),
       };
 
       if (useBeacon && typeof navigator.sendBeacon === 'function') {

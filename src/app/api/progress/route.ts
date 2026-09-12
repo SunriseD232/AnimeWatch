@@ -46,53 +46,65 @@ export async function POST(request: NextRequest) {
   // --- Пометки о завершении (могут прийти вместе или по отдельности) ------
   // watched_episode: серия season/episode досмотрена — для подсветки в сетках.
   // completed: тайтл целиком просмотрен — в списке ставится «Просмотрено».
-  if (body.watched_episode === true || body.completed === true) {
-    if (body.watched_episode === true) {
-      const { error } = await supabase.from('watched_episodes').upsert(
-        {
-          user_id: user.id,
-          content_type: contentType,
-          shikimori_id: shikimoriId,
-          season,
-          episode,
-          anime_title: body.anime_title ?? null,
-          poster_url: body.poster_url ?? null,
-        },
-        {
-          // Было ignoreDuplicates: true (ON CONFLICT DO NOTHING) — из-за
-          // этого строки, отмеченные ДО того, как сюда добавили title/
-          // poster_url (миграция 0017), никогда не получали их: конфликт по
-          // тому же (user, content_type, shikimori_id, season, episode)
-          // просто молча игнорировался. Теперь конфликт обновляет title/
-          // poster_url — новый повтор той же серии их подтянет.
-          onConflict: 'user_id,content_type,shikimori_id,season,episode',
-        },
-      );
-      if (error) {
-        console.error(`${logTag} watched_episode upsert failed: ${error.message}`);
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
+  //
+  // Ветка НЕ выходит из обработчика: пометка приходит тем же запросом, что и
+  // позиция (см. useProgressSaver — досмотренность отмечает обычное
+  // периодическое сохранение), и обрывать его здесь значило бы терять
+  // позицию. По той же причине падение одной записи больше не отменяет
+  // остальные: раньше ошибка на watched_episodes отдавала 500 ДО обработки
+  // completed, и досмотренный до конца тайтл не попадал в «Просмотрено» —
+  // ровно это и происходило, пока у watched_episodes не было
+  // UPDATE-политики (миграция 0035).
+  const failures: string[] = [];
+  const hasFlags = body.watched_episode === true || body.completed === true;
+
+  if (body.watched_episode === true) {
+    const { error } = await supabase.from('watched_episodes').upsert(
+      {
+        user_id: user.id,
+        content_type: contentType,
+        shikimori_id: shikimoriId,
+        season,
+        episode,
+        anime_title: body.anime_title ?? null,
+        poster_url: body.poster_url ?? null,
+      },
+      {
+        // Было ignoreDuplicates: true (ON CONFLICT DO NOTHING) — из-за
+        // этого строки, отмеченные ДО того, как сюда добавили title/
+        // poster_url (миграция 0017), никогда не получали их: конфликт по
+        // тому же (user, content_type, shikimori_id, season, episode)
+        // просто молча игнорировался. Теперь конфликт обновляет title/
+        // poster_url — новый повтор той же серии их подтянет.
+        onConflict: 'user_id,content_type,shikimori_id,season,episode',
+      },
+    );
+    if (error) {
+      console.error(`${logTag} watched_episode upsert failed: ${error.message}`);
+      failures.push(`watched_episode: ${error.message}`);
+    } else {
       console.log(`${logTag} watched_episode content=${contentType} id=${shikimoriId} s=${season} e=${episode}`);
     }
-    if (body.completed === true) {
-      const { error } = await supabase.from('user_list').upsert(
-        {
-          user_id: user.id,
-          content_type: contentType,
-          shikimori_id: shikimoriId,
-          anime_title: body.anime_title ?? 'Без названия',
-          poster_url: body.poster_url ?? null,
-          status: 'completed',
-        },
-        { onConflict: 'user_id,content_type,shikimori_id' },
-      );
-      if (error) {
-        console.error(`${logTag} completed upsert failed: ${error.message}`);
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
+  }
+
+  if (body.completed === true) {
+    const { error } = await supabase.from('user_list').upsert(
+      {
+        user_id: user.id,
+        content_type: contentType,
+        shikimori_id: shikimoriId,
+        anime_title: body.anime_title ?? 'Без названия',
+        poster_url: body.poster_url ?? null,
+        status: 'completed',
+      },
+      { onConflict: 'user_id,content_type,shikimori_id' },
+    );
+    if (error) {
+      console.error(`${logTag} completed upsert failed: ${error.message}`);
+      failures.push(`completed: ${error.message}`);
+    } else {
       console.log(`${logTag} completed content=${contentType} id=${shikimoriId}`);
     }
-    return NextResponse.json({ ok: true });
   }
 
   if (isMark) {
@@ -139,38 +151,44 @@ export async function POST(request: NextRequest) {
   }
 
   // Не сохраняем случайные открытия (< 5 сек).
-  if (!Number.isFinite(position) || position < 5) {
-    return NextResponse.json({ ok: false, reason: 'too-early' });
+  const hasPosition = Number.isFinite(position) && position >= 5;
+
+  if (hasPosition) {
+    const { error } = await supabase.from('watch_progress').upsert(
+      {
+        user_id: user.id,
+        content_type: contentType,
+        shikimori_id: shikimoriId,
+        anime_title: body.anime_title ?? 'Без названия',
+        poster_url: body.poster_url ?? null,
+        season,
+        episode,
+        position_seconds: position,
+        duration_seconds:
+          body.duration_seconds != null
+            ? Number(body.duration_seconds)
+            : null,
+        translation_id:
+          body.translation_id != null ? Number(body.translation_id) : null,
+        translation_title: body.translation_title ?? null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id,content_type,shikimori_id' },
+    );
+    if (error) {
+      // Обычное периодическое сохранение позиции (интервал, см.
+      // useProgressSaver) не логируем на успехе — слишком часто, чтобы нести
+      // диагностическую ценность построчно. Ошибка тут редкая и всегда важна.
+      console.error(`${logTag} position upsert failed: ${error.message}`);
+      failures.push(`position: ${error.message}`);
+    }
   }
 
-  const { error } = await supabase.from('watch_progress').upsert(
-    {
-      user_id: user.id,
-      content_type: contentType,
-      shikimori_id: shikimoriId,
-      anime_title: body.anime_title ?? 'Без названия',
-      poster_url: body.poster_url ?? null,
-      season,
-      episode,
-      position_seconds: position,
-      duration_seconds:
-        body.duration_seconds != null
-          ? Number(body.duration_seconds)
-          : null,
-      translation_id:
-        body.translation_id != null ? Number(body.translation_id) : null,
-      translation_title: body.translation_title ?? null,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'user_id,content_type,shikimori_id' },
-  );
-
-  if (error) {
-    // Обычное периодическое сохранение позиции (интервал, см.
-    // useProgressSaver) не логируем на успехе — слишком часто, чтобы нести
-    // диагностическую ценность построчно. Ошибка тут редкая и всегда важна.
-    console.error(`${logTag} position upsert failed: ${error.message}`);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (failures.length > 0) {
+    return NextResponse.json({ error: failures.join('; ') }, { status: 500 });
+  }
+  if (!hasPosition && !hasFlags) {
+    return NextResponse.json({ ok: false, reason: 'too-early' });
   }
   return NextResponse.json({ ok: true });
 }
