@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { episodeCount, imageUrl, type ShikimoriAnimeShort } from '@/lib/shikimoriShared';
-import ExpandTitleButton from '@/components/ExpandTitleButton';
+import CardActions from '@/components/CardActions';
 import PosterImage from '@/components/PosterImage';
 import { StarIcon } from '@/components/social/icons';
 
@@ -95,7 +95,7 @@ export default function AnimeCard({
             ref={titleRef}
             className={[
               'text-sm font-medium leading-snug text-gray-100',
-              expanded ? '' : 'line-clamp-2',
+              expanded ? '' : 'line-clamp-2 min-h-[2.5rem]',
             ].join(' ')}
           >
             {title}
@@ -105,9 +105,13 @@ export default function AnimeCard({
           </p>
         </div>
       </Link>
-      <ExpandTitleButton
+      <CardActions
+        shikimoriId={anime.id}
+        contentType="anime"
+        title={title}
+        posterUrl={poster ?? null}
         expanded={expanded}
-        onToggle={() => setExpanded((v) => !v)}
+        onToggleExpand={() => setExpanded((v) => !v)}
         titleRef={titleRef}
       />
     </div>

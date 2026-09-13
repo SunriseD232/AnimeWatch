@@ -44,7 +44,11 @@ export default function MobileDock({
     // и тень сквозь неё читалась бы грязным пятном.
     <nav
       aria-label="Основная навигация"
-      className="glass fixed inset-x-0 bottom-0 z-40 border-t border-white/[0.06] pb-[env(safe-area-inset-bottom)] md:hidden"
+      // Плотнее шапочного стекла (0.72): под нижней панелью проезжает
+      // контент — яркий постер сквозь полупрозрачный фон роняет контраст
+      // мелких подписей ниже нормы (поймано axe). 0.94 + размытие держит
+      // фон стабильно тёмным, подписи читаются на любом кадре прокрутки.
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-white/[0.06] bg-bg-card/[0.94] pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden"
     >
       {/* Одинаковая высота у всех трёх: боковые пункты — значок плюс
           подпись, средний — только кнопка. Без общей высоты кнопка «плей»
@@ -119,7 +123,7 @@ function DockLink({
       aria-current={active ? 'page' : undefined}
       className={[
         'press flex h-full flex-1 flex-col items-center justify-center gap-1 px-2 text-[11px] font-medium leading-none transition',
-        active ? 'text-accent-text' : 'text-gray-400 hover:text-gray-200',
+        active ? 'text-accent-text' : 'text-gray-300 hover:text-white',
       ].join(' ')}
     >
       {children}

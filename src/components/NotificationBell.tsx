@@ -7,7 +7,7 @@ import { useDismissOnOutside } from '@/components/useAnchoredPanel';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
 import Avatar from '@/components/social/Avatar';
-import { AlertIcon, BellOffIcon, ReplyIcon, UserCheckIcon, UserPlusIcon, XIcon } from '@/components/social/icons';
+import { AlertIcon, BellOffIcon, CheckCheckIcon, ReplyIcon, UserCheckIcon, UserPlusIcon, XIcon } from '@/components/social/icons';
 import { nameOf } from '@/lib/social/names';
 import { commentHref } from '@/lib/social/types';
 import type { AppNotification, EpisodeNotification, SocialNotification, SystemNotification } from '@/lib/types';
@@ -220,17 +220,29 @@ export default function NotificationBell({ initial }: { initial: AppNotification
     toast(accept ? `${notification.actor.name} теперь в друзьях` : 'Заявка отклонена', 'success');
   }
 
-  async function markSectionRead() {
-    const unreadItems = items.filter((n) => !n.read_at && sectionOf(n) === section);
+  /**
+   * Прочитать ВСЁ — по всем разделам разом (галочка в шапке панели).
+   * Раньше кнопка «Прочитать» гасила только открытый раздел, и чтобы убрать
+   * все счётчики, приходилось обойти каждую вкладку. Пишем по таблицам:
+   * непрочитанные группируем по своей таблице и обновляем одним запросом на
+   * таблицу.
+   */
+  async function markAllRead() {
+    const unreadItems = items.filter((n) => !n.read_at);
     if (unreadItems.length === 0) return;
     const now = new Date().toISOString();
     const ids = new Set(unreadItems.map((n) => n.id));
     setItems((prev) => prev.map((n) => (ids.has(n.id) ? { ...n, read_at: n.read_at ?? now } : n)));
-    const table = tableFor(unreadItems[0].kind);
-    await createClient()
-      .from(table)
-      .update({ read_at: now })
-      .in('id', [...ids]);
+
+    const byTable = new Map<string, string[]>();
+    for (const n of unreadItems) {
+      const table = tableFor(n.kind);
+      (byTable.get(table) ?? byTable.set(table, []).get(table)!).push(n.id);
+    }
+    const supabase = createClient();
+    await Promise.all(
+      [...byTable].map(([table, tableIds]) => supabase.from(table).update({ read_at: now }).in('id', tableIds)),
+    );
   }
 
   const visible = items.filter((n) => sectionOf(n) === section);
@@ -265,7 +277,11 @@ export default function NotificationBell({ initial }: { initial: AppNotification
           <path d="M9.5 18a2.5 2.5 0 0 0 5 0" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
         </svg>
         {unread > 0 && (
-          <span className="absolute right-0 top-0 grid h-4 min-w-4 place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold text-accent-fg">
+          // Счётчик приподнят над кольцом кнопки и обведён фоном шапки, иначе
+          // он сливался с колокольчиком и «резался» его краем. Ровный круг:
+          // фиксированная высота, min-width под неё же и симметричные поля —
+          // одна цифра даёт круг, две — короткую пилюлю, без перекоса.
+          <span className="pointer-events-none absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-accent px-1 text-[11px] font-bold leading-none text-accent-fg ring-2 ring-bg tabular-nums">
             {unread > 9 ? '9+' : unread}
           </span>
         )}
@@ -319,7 +335,7 @@ export default function NotificationBell({ initial }: { initial: AppNotification
                     >
                       {SECTION_LABELS[s]}
                       {unreadBySection[s] > 0 && (
-                        <span className="relative grid h-4 min-w-4 place-items-center rounded-full bg-accent px-1 text-[10px] font-bold text-accent-fg">
+                        <span className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-accent px-1 text-[11px] font-bold leading-none text-accent-fg tabular-nums">
                           {unreadBySection[s] > 9 ? '9+' : unreadBySection[s]}
                           <span className="sr-only"> непрочитанных</span>
                         </span>
@@ -328,18 +344,20 @@ export default function NotificationBell({ initial }: { initial: AppNotification
                   );
                 })}
               </div>
-              {unreadBySection[section] > 0 && (
+              {unread > 0 && (
                 <button
                   type="button"
-                  onClick={markSectionRead}
-                  className="mb-2 shrink-0 rounded-full px-2 py-1 text-xs font-medium text-gray-300 transition hover:bg-white/5 hover:text-gray-100"
+                  onClick={markAllRead}
+                  aria-label="Прочитать все уведомления"
+                  title="Прочитать все"
+                  className="press mb-2 grid h-8 w-8 shrink-0 place-items-center rounded-full text-gray-300 transition hover:bg-white/5 hover:text-gray-100"
                 >
-                  Прочитать
+                  <CheckCheckIcon className="h-[18px] w-[18px]" />
                 </button>
               )}
             </div>
 
-            <div id="notif-panel" role="tabpanel" aria-labelledby={`notif-tab-${section}`} className="max-h-96 overflow-y-auto">
+            <div id="notif-panel" role="tabpanel" aria-labelledby={`notif-tab-${section}`} className="slim-scroll max-h-96 overflow-y-auto">
               {visible.length === 0 ? (
                 <p className="px-4 py-8 text-center text-sm text-gray-400">{EMPTY_TEXT[section]}</p>
               ) : (
@@ -394,7 +412,7 @@ function EpisodeRow({ n, onOpen }: { n: EpisodeNotification; onOpen: () => void 
     <Link
       href={`/${n.content_type === 'cinema' ? 'cinema' : 'anime'}/${n.shikimori_id}`}
       onClick={onOpen}
-      className={['flex gap-3 px-4 py-3 pr-16 transition hover:bg-white/5', n.read_at ? 'opacity-60' : ''].join(' ')}
+      className={['flex gap-3 px-4 py-3 pr-11 transition hover:bg-white/5', n.read_at ? 'opacity-60' : ''].join(' ')}
     >
       <div className="h-14 w-10 shrink-0 overflow-hidden rounded-lg bg-bg-soft">
         {n.poster_url && (

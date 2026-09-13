@@ -276,8 +276,11 @@ export default function UserListView({
         })}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-2">
+      {/* Фильтры статуса — одной прокручиваемой строкой, а не переносом в
+          три ряда на телефоне (профиль и так «перегружен кнопками»).
+          «Выбрать» пришпилен справа и не уезжает в прокрутку. */}
+      <div className="flex items-center gap-2">
+        <div className="no-scrollbar flex min-w-0 flex-1 gap-2 overflow-x-auto">
           {FILTERS.map((f) => {
             const count =
               f.value === 'all'
@@ -289,7 +292,7 @@ export default function UserListView({
                 type="button"
                 onClick={() => setFilter(f.value)}
                 className={[
-                  'press rounded-lg px-3 py-1.5 text-sm font-medium transition',
+                  'press shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition',
                   filter === f.value
                     ? 'bg-accent/20 text-accent-text ring-1 ring-accent/40'
                     : 'bg-bg-card text-gray-300 hover:bg-bg-soft',
@@ -306,7 +309,7 @@ export default function UserListView({
             type="button"
             onClick={toggleSelectMode}
             className={[
-              'press rounded-lg px-3 py-1.5 text-sm font-medium transition',
+              'press shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition',
               selectMode
                 ? 'bg-accent/20 text-accent-text ring-1 ring-accent/40'
                 : 'bg-bg-card text-gray-300 hover:bg-bg-soft',

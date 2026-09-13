@@ -63,10 +63,15 @@ export default function UserPresenceBadge({ onlineCount }: { onlineCount: number
         }}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="press flex items-center gap-1.5 rounded-full bg-bg-card px-3 py-1.5 text-xs font-medium text-gray-400 ring-1 ring-white/10 transition hover:text-white"
+        aria-label={`Пользователи онлайн: ${onlineCount}`}
+        // На телефоне — компактный кружок «точка + число», без слова
+        // «онлайн»: в узкой шапке админу нужен сам счётчик, а не подпись.
+        // На широких экранах разворачивается в полноценную пилюлю.
+        className="press flex items-center gap-1.5 rounded-full bg-bg-card px-2.5 py-1.5 text-xs font-medium text-gray-300 ring-1 ring-white/10 transition hover:text-white sm:px-3"
       >
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-        {onlineCount} онлайн
+        <span className="tabular-nums">{onlineCount}</span>
+        <span className="hidden sm:inline">онлайн</span>
       </button>
 
       {open &&

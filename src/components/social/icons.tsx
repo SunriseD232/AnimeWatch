@@ -161,6 +161,28 @@ export function CheckIcon({ className }: IconProps) {
   );
 }
 
+/** Двойная галочка — «прочитать всё» в колокольчике. */
+export function CheckCheckIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M18 6 7 17l-4-4" />
+      <path d="m22 10-7.5 7.5L13 16" />
+    </Svg>
+  );
+}
+
+/** Значок «i» в кружке — раскрыть полное название карточки. Не курсивная
+ *  буква (та читалась дефектом, см. ExpandTitleButton), а настоящая иконка. */
+export function InfoIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-4" />
+      <path d="M12 8h.01" />
+    </Svg>
+  );
+}
+
 export function BellIcon({ className }: IconProps) {
   return (
     <Svg className={className}>

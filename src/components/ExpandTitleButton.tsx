@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type RefObject } from 'react';
+import { InfoIcon, XIcon } from '@/components/social/icons';
 
 interface Props {
   expanded: boolean;
@@ -8,6 +9,10 @@ interface Props {
   /** Ref на обрезаемый (line-clamp) заголовок — кнопка появляется, только
    * если он реально не влез и обрезался. */
   titleRef: RefObject<HTMLElement>;
+  /** false — кнопка без собственного абсолютного позиционирования: её
+   *  раскладывает родитель-флекс (см. CardActions, где рядом стоит «+»).
+   *  По умолчанию true — как раньше, сама себя ставит в угол карточки. */
+  standalone?: boolean;
 }
 
 /**
@@ -24,6 +29,7 @@ export default function ExpandTitleButton({
   expanded,
   onToggle,
   titleRef,
+  standalone = true,
 }: Props) {
   const [truncated, setTruncated] = useState(false);
 
@@ -54,36 +60,30 @@ export default function ExpandTitleButton({
         onToggle();
       }}
       aria-label={expanded ? 'Свернуть название' : 'Показать полное название'}
-      // Видимый значок остаётся 24×24 (WCAG-минимум впритык), но область
-      // нажатия расширена до ~40×40 псевдоэлементом — карточки в основном
-      // листают с телефона, а на границе минимума нет запаса на неточный тап.
-      className="press absolute bottom-1.5 right-1.5 z-10 grid h-6 w-6 place-items-center rounded-full bg-black/70 leading-none text-white backdrop-blur transition before:absolute before:inset-[-8px] before:content-[''] hover:bg-black/90"
+      // Тот же вид, что кнопки в уведомлениях: матовый кружок фона карточки,
+      // серый значок — вместо курсивной буквы в чёрной обводке. Область
+      // нажатия расширена псевдоэлементом до ~44px: карточки листают с
+      // телефона, на 28px нет запаса на неточный тап.
+      className={[
+        'press z-10 grid h-7 w-7 place-items-center rounded-full bg-bg-card/80 text-gray-300 backdrop-blur transition',
+        "before:absolute before:inset-[-8px] before:content-['']",
+        'hover:bg-white/10 hover:text-white',
+        standalone ? 'absolute bottom-1.5 right-1.5' : 'relative',
+      ].join(' ')}
     >
       {/* Значки лежат друг на друге и меняются поворотом с растворением, а не
-          подменой символа: мгновенная замена «i» на «×» читалась как дефект
-          отрисовки.
-
-          Курсивная «i» смещена на пол-пикселя влево: наклон уводит её
-          видимый центр вправо, и в идеально отцентрованном боксе она
-          выглядела прижатой к правому краю кружка. Компенсация именно у
-          неё — у «×» наклона нет и смещать её не нужно. */}
-      <span className="relative block h-3.5 w-3.5">
-        <span
-          aria-hidden="true"
-          className={`absolute inset-0 grid -translate-x-[0.5px] place-items-center text-xs font-bold italic transition-[transform,opacity,filter] duration-200 ease-[cubic-bezier(0.2,0,0,1)] ${
-            expanded ? 'scale-[0.25] opacity-0 blur-[4px]' : 'scale-100 opacity-100 blur-0'
+          подменой: мгновенная замена «i» на «×» читалась как дефект. */}
+      <span className="relative block h-4 w-4">
+        <InfoIcon
+          className={`absolute inset-0 h-4 w-4 transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.2,0,0,1)] ${
+            expanded ? 'scale-[0.4] opacity-0' : 'scale-100 opacity-100'
           }`}
-        >
-          i
-        </span>
-        <span
-          aria-hidden="true"
-          className={`absolute inset-0 grid place-items-center text-sm font-bold transition-[transform,opacity,filter] duration-200 ease-[cubic-bezier(0.2,0,0,1)] ${
-            expanded ? 'scale-100 opacity-100 blur-0' : 'scale-[0.25] opacity-0 blur-[4px]'
+        />
+        <XIcon
+          className={`absolute inset-0 h-4 w-4 transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.2,0,0,1)] ${
+            expanded ? 'scale-100 opacity-100' : 'scale-[0.4] opacity-0'
           }`}
-        >
-          ×
-        </span>
+        />
       </span>
     </button>
   );

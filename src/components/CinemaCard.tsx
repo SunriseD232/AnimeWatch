@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRef, useState } from 'react';
 import type { CinemaShort } from '@/lib/videoseed-catalog';
-import ExpandTitleButton from '@/components/ExpandTitleButton';
+import CardActions from '@/components/CardActions';
 import PosterImage from '@/components/PosterImage';
 import { StarIcon, UsersIcon } from '@/components/social/icons';
 import type { SiteRating } from '@/lib/social/types';
@@ -127,7 +127,7 @@ export default function CinemaCard({
             ref={titleRef}
             className={[
               'text-sm font-medium leading-snug text-gray-100',
-              expanded ? '' : 'line-clamp-2',
+              expanded ? '' : 'line-clamp-2 min-h-[2.5rem]',
             ].join(' ')}
           >
             {item.title}
@@ -137,9 +137,13 @@ export default function CinemaCard({
           </p>
         </div>
       </Link>
-      <ExpandTitleButton
+      <CardActions
+        shikimoriId={item.id}
+        contentType="cinema"
+        title={item.title}
+        posterUrl={item.poster ?? null}
         expanded={expanded}
-        onToggle={() => setExpanded((v) => !v)}
+        onToggleExpand={() => setExpanded((v) => !v)}
         titleRef={titleRef}
       />
     </div>

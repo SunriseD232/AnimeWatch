@@ -115,11 +115,7 @@ export default async function Navbar() {
 
         {user ? (
           <div className="flex shrink-0 items-center gap-1">
-            {onlineCount !== null && (
-              <div className="hidden sm:block">
-                <UserPresenceBadge onlineCount={onlineCount} />
-              </div>
-            )}
+            {onlineCount !== null && <UserPresenceBadge onlineCount={onlineCount} />}
             {/* Календарь и подсказки — со всех экранов кроме самых узких:
                 на телефоне их место занял поиск, а сами они доступны из
                 профиля. */}

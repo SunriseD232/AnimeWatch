@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import CinemaCard from '@/components/CinemaCard';
-import ContinueCard from '@/components/ContinueCard';
+import ContinueCarousel from '@/components/ContinueCarousel';
 import DiscoverTabs from '@/components/DiscoverTabs';
 import LoginBanner from '@/components/LoginBanner';
 import ModeSwitch from '@/components/ModeSwitch';
@@ -116,22 +116,17 @@ async function ContinueWatching() {
   );
 
   // Помимо родной полосы прокрутки — колесо мыши и драг (см. ScrollCarousel).
+  // Список держит клиентский ContinueCarousel — убранная карточка исчезает
+  // вместе с ячейкой, без пустого столбца до перезагрузки.
   return (
-    <ScrollCarousel className="carousel-room flex snap-x gap-3 overflow-x-auto">
-      {progress.map((p) => (
-        <div key={p.id} className="w-56 shrink-0 snap-start sm:w-72">
-          <ContinueCard
-            progress={p}
-            isMultiSeason={(seasonCountMap.get(p.shikimori_id) ?? 0) > 1}
-            localPoster={
-              localPosters.get(
-                `${p.content_type === 'cinema' ? 'cinema' : 'anime'}:${p.shikimori_id}`,
-              ) ?? null
-            }
-          />
-        </div>
-      ))}
-    </ScrollCarousel>
+    <ContinueCarousel
+      entries={progress.map((p) => ({
+        progress: p,
+        isMultiSeason: (seasonCountMap.get(p.shikimori_id) ?? 0) > 1,
+        localPoster:
+          localPosters.get(`${p.content_type === 'cinema' ? 'cinema' : 'anime'}:${p.shikimori_id}`) ?? null,
+      }))}
+    />
   );
 }
 

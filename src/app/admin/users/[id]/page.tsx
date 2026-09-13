@@ -1,10 +1,12 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import AdminIdentityCard from '@/components/AdminIdentityCard';
 import AdminResetPasswordCard from '@/components/AdminResetPasswordCard';
 import AdminUserTabs from '@/components/AdminUserTabs';
 import { isAdminEmail } from '@/lib/admin';
 import { getCachedUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { toPublicUser } from '@/lib/social/server';
 import { getCinemaSeasonCountMap } from '@/lib/videoseed-catalog';
 import type { UserListItem, WatchedEpisode, WatchProgress } from '@/lib/types';
 
@@ -39,11 +41,17 @@ export default async function AdminUserProfilePage({
   const service = createServiceClient();
   const [
     { data: targetUser, error: userError },
+    { data: profileRow },
     { data: listData },
     { data: historyData },
     { data: progressData },
   ] = await Promise.all([
     service.auth.admin.getUserById(params.id),
+    service
+      .from('profiles')
+      .select('user_id, display_name, avatar_path')
+      .eq('user_id', params.id)
+      .maybeSingle(),
     service
       .from('user_list')
       .select('*')
@@ -100,6 +108,8 @@ export default async function AdminUserProfilePage({
           Список и история пользователя — только просмотр, изменить отсюда ничего нельзя.
         </p>
       </div>
+
+      <AdminIdentityCard userId={params.id} initial={toPublicUser(params.id, profileRow)} />
 
       <AdminResetPasswordCard userId={params.id} />
 

@@ -110,7 +110,12 @@ export default function ProfileTabs({
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex flex-wrap gap-2">
+      {/* На телефоне вкладки — одной прокручиваемой строкой, а не переносом
+          в три ряда над содержимым (перегружало экран кнопками). Полоску
+          растягиваем на всю ширину экрана (-mx-4 px-4), чтобы край строки
+          не обрывался у поля страницы; прячем сам скролл. На широких —
+          обычный перенос, все вкладки видны сразу. */}
+      <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0">
         {tabs.map((t) => (
           <button
             key={t.value}
@@ -118,7 +123,7 @@ export default function ProfileTabs({
             onClick={() => setTab(t.value)}
             aria-pressed={tab === t.value}
             className={[
-              'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition',
+              'inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition',
               tab === t.value
                 ? 'bg-accent text-accent-fg'
                 : 'bg-bg-card text-gray-300 hover:bg-bg-soft',

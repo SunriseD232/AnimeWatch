@@ -1,4 +1,5 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { NextResponse, type NextRequest } from 'next/server';
 import { absoluteUrl } from '@/lib/site-url';
 
@@ -82,14 +83,27 @@ export async function updateSession(request: NextRequest) {
     const result = await supabase.auth.getUser();
     user = result.data.user;
     if (!user && result.error && hasSessionCookie) {
-      // Кука есть, а getUser() её не подтвердил — не различаем здесь
-      // "сеть не достучалась" от "Supabase reально отклонил": в обоих
-      // случаях не наказываем принудительным логаутом. Настоящую
-      // недействительную сессию (истёкшую/отозванную) всё равно отклонят
-      // обычные серверные вызовы на самой странице (они уже туннелированы,
-      // см. server.ts/service.ts) при реальном обращении к данным.
-      console.error('[middleware] getUser() вернул error при наличии куки, пропускаем без строгой проверки:', result.error);
-      verifyFailed = true;
+      // Кука есть, а getUser() её не подтвердил. Тут важно РАЗЛИЧАТЬ два
+      // случая, иначе гейт можно обойти любой подделанной кукой (ловилось
+      // вживую: `sb-...-auth-token=garbage` пускало на закрытые страницы):
+      //
+      //  - сетевой сбой/таймаут (тот самый затык VPS↔Supabase, ради
+      //    которого и сделан fail-open, см. прод-инцидент 2026-08-21) —
+      //    auth-js отдаёт AuthRetryableFetchError. Только его пропускаем
+      //    без строгой проверки: реальную сессию нельзя ронять из-за сети.
+      //  - Supabase ДЕЙСТВИТЕЛЬНО отклонил токен (истёк, отозван, подделан
+      //    — AuthApiError/AuthSessionMissingError). Это не сбой связи, а
+      //    ответ «сессии нет»: тогда verifyFailed НЕ ставим, и ниже
+      //    сработает обычный редирект на /login.
+      if (isAuthRetryableFetchError(result.error)) {
+        console.error('[middleware] getUser() не достучался (сетевой сбой), пропускаем без строгой проверки:', result.error);
+        verifyFailed = true;
+      } else {
+        // Явное отклонение сессии — молча уводим на вход (не error: это
+        // штатный разлогин, а не поломка), чистить куку не нужно, серверные
+        // вызовы на самой странице её всё равно не примут.
+        console.info('[middleware] сессия отклонена Supabase, редирект на вход');
+      }
     }
   } catch (err) {
     console.error('[middleware] getUser() упал, пропускаем без строгой проверки:', err);

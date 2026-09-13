@@ -17,6 +17,7 @@ export default function ContinueCard({
   localPoster = null,
   isMultiSeason = false,
   readOnly = false,
+  onRemoved,
 }: {
   progress: WatchProgress;
   /** Ссылка на нашу копию обложки, если она есть в реестре. Проверяется на
@@ -35,6 +36,10 @@ export default function ContinueCard({
    *  хуже, чем её отсутствие. Явно read-only, а не полагаемся на то, что
    *  сработает RLS. */
   readOnly?: boolean;
+  /** Карточку убрали из просмотра — родитель (ContinueCarousel) выкидывает
+   *  её ячейку из потока, иначе на месте карточки остаётся пустой столбец.
+   *  Не задан — карточка прячет себя сама (запасной путь). */
+  onRemoved?: () => void;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -70,8 +75,14 @@ export default function ContinueCard({
       toast('Не удалось убрать из просмотра', 'error');
       return;
     }
-    setHidden(true); // оптимистично прячем
     toast('Убрано из просмотра', 'success');
+    // Есть родитель со списком — пусть уберёт ячейку целиком (иначе пустой
+    // столбец до перезагрузки). Нет — прячем себя сами (запасной путь).
+    if (onRemoved) {
+      onRemoved();
+      return;
+    }
+    setHidden(true); // оптимистично прячем
     // router.refresh() здесь НЕ нужен, хотя напрашивается. Карточка уже
     // спрятана локально, а refresh перерисовывает всё серверное дерево
     // страницы разом — карусели и сетка мигают скелетонами, и клик по
@@ -125,8 +136,12 @@ export default function ContinueCard({
           <h3
             ref={titleRef}
             className={[
+              // min-h под две строки — карточки в карусели выравниваются по
+              // высоте по самой длинной (в две строки), а не скачут из-за
+              // однострочных названий. Свёрнутое — ровно две строки с
+              // многоточием, развёрнутое растёт вниз.
               'text-sm font-medium leading-snug text-gray-100',
-              expanded ? '' : 'line-clamp-2',
+              expanded ? '' : 'line-clamp-2 min-h-[2.5rem]',
             ].join(' ')}
           >
             {progress.anime_title}
