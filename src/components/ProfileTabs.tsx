@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import SignupCodeCard from '@/components/SignupCodeCard';
 import UserListView from '@/components/UserListView';
 import HistoryView from '@/components/HistoryView';
@@ -14,6 +14,7 @@ import FriendsPanel from '@/components/social/FriendsPanel';
 import MyComments from '@/components/social/MyComments';
 import PrivacySettings from '@/components/social/PrivacySettings';
 import RatingsView from '@/components/social/RatingsView';
+import { SlidingPill, useSlidingPill } from '@/components/useSlidingPill';
 import type { FriendEntry, PrivacySettings as Privacy, TitleRating } from '@/lib/social/types';
 import type { UserListItem, WatchedEpisode } from '@/lib/types';
 import type { Theme } from '@/lib/theme';
@@ -43,15 +44,23 @@ type Tab = 'list' | 'history' | 'ratings' | 'comments' | 'friends' | 'settings' 
 
 const TAB_VALUES: Tab[] = ['list', 'history', 'ratings', 'comments', 'friends', 'settings', 'admin', 'code'];
 
-/**
- * Старые адреса вкладок (?tab=privacy и т.п.) ведут в «Настройки» к нужному
- * разделу: приватность, оформление и пароль теперь живут там вместе.
- */
-const SETTINGS_SECTIONS: Record<string, string> = {
-  privacy: 'settings-privacy',
-  ui: 'settings-ui',
-  password: 'settings-password',
-};
+type SettingsSection = 'ui' | 'privacy' | 'password';
+
+/** Оформление — первым: это самый частый повод зайти в «Настройки», и
+ *  единственный раздел без сохранения по кнопке (применяется сразу по
+ *  клику на цвет). Приватность и пароль — по одному действию за визит. */
+const SETTINGS_TABS: { value: SettingsSection; label: string }[] = [
+  { value: 'ui', label: 'Оформление' },
+  { value: 'privacy', label: 'Приватность' },
+  { value: 'password', label: 'Пароль' },
+];
+
+/** Старые адреса вкладок (?tab=privacy и т.п.) ведут в «Настройки» сразу на
+ *  нужный подраздел — раньше все три лежали одной длинной страницей и сюда
+ *  вело простой scrollIntoView; переключатель ниже сделал это подвкладками
+ *  (тот же приём, что «Аниме»/«Фильмы и сериалы» в «Списке»), и открывать
+ *  нужно уже саму подвкладку, а не скроллить к якорю внутри неё. */
+const SETTINGS_SECTION_VALUES: SettingsSection[] = ['ui', 'privacy', 'password'];
 
 /**
  * Вкладки профиля. Раньше «Оформление», рубильники и смена пароля были
@@ -78,17 +87,13 @@ export default function ProfileTabs({
   code,
 }: Props) {
   const incoming = friendships.filter((f) => f.state === 'incoming').length;
+  const requestedSection = SETTINGS_SECTION_VALUES.find((s) => s === initialTab);
   // С ожидающими заявками профиль открывается сразу на «Друзьях»: сюда
   // приходят по точке на иконке профиля, и искать вкладку глазами незачем.
-  const requested: Tab | undefined =
-    initialTab && SETTINGS_SECTIONS[initialTab] ? 'settings' : TAB_VALUES.find((t) => t === initialTab);
+  const requested: Tab | undefined = requestedSection ? 'settings' : TAB_VALUES.find((t) => t === initialTab);
   const [tab, setTab] = useState<Tab>(requested ?? (incoming > 0 ? 'friends' : 'list'));
-
-  // Пришли по ссылке на конкретный раздел настроек — прокручиваем к нему.
-  useEffect(() => {
-    const anchor = initialTab ? SETTINGS_SECTIONS[initialTab] : undefined;
-    if (anchor) document.getElementById(anchor)?.scrollIntoView({ block: 'start' });
-  }, [initialTab]);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>(requestedSection ?? 'ui');
+  const { rootRef: settingsRootRef, setTabRef: setSettingsTabRef, pill: settingsPill } = useSlidingPill(settingsSection);
 
   const tabs: { value: Tab; label: string; badge?: number }[] = [
     { value: 'list', label: 'Список' },
@@ -165,16 +170,36 @@ export default function ProfileTabs({
       {tab === 'comments' && <MyComments />}
       {tab === 'friends' && <FriendsPanel initial={friendships} />}
       {tab === 'settings' && (
-        <div className="flex max-w-2xl flex-col gap-8">
-          <SettingsSection id="settings-privacy" title="Приватность">
-            <PrivacySettings initial={privacy} />
-          </SettingsSection>
-          <SettingsSection id="settings-ui" title="Оформление">
-            <ThemeSettings initialTheme={initialTheme} />
-          </SettingsSection>
-          <SettingsSection id="settings-password" title="Пароль">
-            <ChangePasswordForm />
-          </SettingsSection>
+        <div className="flex max-w-2xl flex-col gap-4">
+          {/* Подвыбор внутри «Настроек» — тот же переключатель, что у
+              «Аниме»/«Фильмы и сериалы» в «Списке» (общий SlidingPill):
+              раньше все три раздела лежали друг под другом одной длинной
+              страницей, теперь виден один, остальные — по клику. */}
+          <div
+            ref={settingsRootRef}
+            className="relative inline-flex w-fit rounded-full border border-white/10 bg-bg-card p-1"
+          >
+            <SlidingPill pill={settingsPill} />
+            {SETTINGS_TABS.map((s) => (
+              <button
+                key={s.value}
+                type="button"
+                ref={setSettingsTabRef(s.value)}
+                onClick={() => setSettingsSection(s.value)}
+                aria-pressed={settingsSection === s.value}
+                className={[
+                  'press relative z-10 rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200',
+                  settingsSection === s.value ? 'text-accent-fg' : 'text-gray-300 hover:text-white',
+                ].join(' ')}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+
+          {settingsSection === 'ui' && <ThemeSettings initialTheme={initialTheme} />}
+          {settingsSection === 'privacy' && <PrivacySettings initial={privacy} />}
+          {settingsSection === 'password' && <ChangePasswordForm />}
         </div>
       )}
       {tab === 'admin' && isAdmin && (
@@ -202,17 +227,6 @@ export default function ProfileTabs({
         </div>
       )}
       {tab === 'code' && isAdmin && <SignupCodeCard code={code} />}
-    </section>
-  );
-}
-
-function SettingsSection({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
-  return (
-    <section id={id} aria-labelledby={`${id}-title`} className="flex scroll-mt-24 flex-col gap-3">
-      <h2 id={`${id}-title`} className="text-lg font-semibold text-gray-100">
-        {title}
-      </h2>
-      {children}
     </section>
   );
 }
