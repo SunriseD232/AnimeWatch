@@ -87,7 +87,7 @@ export default function UserPresenceBadge({ onlineCount }: { onlineCount: number
           {loading && !summary ? (
             <p className="px-4 py-6 text-center text-sm text-gray-400">Загрузка…</p>
           ) : (
-            <div className="max-h-96 overflow-y-auto">
+            <div className="slim-scroll max-h-96 overflow-y-auto">
               <div className="border-b border-white/10 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-gray-400">
                 Онлайн ({onlineUsers.length})
               </div>

@@ -24,7 +24,7 @@ interface Props {
   isAuthed: boolean;
 }
 
-const PANEL_WIDTH = 240;
+const PANEL_WIDTH = 192;
 const EDGE_GAP = 12;
 
 /**
@@ -179,8 +179,13 @@ export default function ListButton({
     }
   }
 
+  // Компактный ряд — тот же язык, что у SortDropdown в каталоге: панель
+  // сама обрезает углы у крайних пунктов (overflow-hidden на обёртке), а не
+  // каждый пункт скруглён внутри своего отступа. Раньше при w-60/p-1.5/
+  // py-2.5 панель была заметно крупнее соседней «Оценить» и других
+  // выпадающих меню сайта — здесь вдвое компактнее по всем измерениям.
   const itemClass =
-    'flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition hover:bg-white/5 focus-visible:bg-white/5';
+    'flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-white/5 focus-visible:bg-white/5';
 
   return (
     <div ref={rootRef} className="relative">
@@ -212,8 +217,8 @@ export default function ListButton({
           ref={panelRef}
           role="menu"
           aria-label="Статус в списке"
-          style={{ left: panelLeft }}
-          className="glass-panel absolute z-20 mt-2 w-60 max-w-[calc(100vw-1.5rem)] rounded-2xl border border-white/10 p-1.5 shadow-2xl"
+          style={{ left: panelLeft, width: PANEL_WIDTH }}
+          className="glass-panel absolute z-20 mt-2 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl border border-white/10 shadow-2xl"
         >
           {LIST_STATUS_OPTIONS.map((o) => {
             const selected = status === o.value;
@@ -226,17 +231,17 @@ export default function ListButton({
                 onClick={() => choose(o.value)}
                 className={[itemClass, selected ? 'font-semibold text-gray-100' : 'text-gray-200'].join(' ')}
               >
-                <span className="grid h-4 w-4 place-items-center">
-                  {selected && <CheckIcon className="h-4 w-4 text-accent-text" />}
+                <span className="grid h-3.5 w-3.5 shrink-0 place-items-center">
+                  {selected && <CheckIcon className="h-3.5 w-3.5 text-accent-text" />}
                 </span>
                 {o.label}
               </button>
             );
           })}
           {status && (
-            <div className="mt-1 border-t border-white/10 pt-1">
+            <div className="border-t border-white/10">
               <button type="button" role="menuitem" onClick={toggleMute} className={`${itemClass} text-gray-200`}>
-                {muted ? <BellIcon className="h-4 w-4" /> : <BellOffIcon className="h-4 w-4" />}
+                {muted ? <BellIcon className="h-3.5 w-3.5" /> : <BellOffIcon className="h-3.5 w-3.5" />}
                 {muted ? 'Включить уведомления' : 'Не уведомлять о сериях'}
               </button>
               <button
@@ -245,7 +250,7 @@ export default function ListButton({
                 onClick={() => choose(null)}
                 className={`${itemClass} text-red-300 hover:bg-red-500/10 focus-visible:bg-red-500/10`}
               >
-                <span className="h-4 w-4" aria-hidden="true" />
+                <span className="h-3.5 w-3.5" aria-hidden="true" />
                 Убрать из списка
               </button>
             </div>

@@ -153,6 +153,7 @@ export default async function CinemaCatalogPage({
               key={item.id}
               anime={{
                 id: item.id,
+                contentType: 'cinema',
                 href: `/cinema/${item.id}`,
                 title: item.title,
                 poster: item.poster,

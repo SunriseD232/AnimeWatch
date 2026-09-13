@@ -193,6 +193,20 @@ body {
   animation: filters-panel-content-in 200ms 60ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
+/* Быстрое меню «+» на карточке каталога (QuickListButton) — «выезжает»
+   справа, а не просто возникает на месте: карточка внизу ленты, и внезапно
+   всплывающий блок терялся среди соседних постеров. Сдвиг небольшой (10px) —
+   это акцент направления, а не полноценный drawer. */
+@keyframes quick-add-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+}
+.animate-quick-add {
+  animation: quick-add-in 200ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
 /* Появление секций/карточек: мягкий подъём с растворением */
 @keyframes rise {
   from {

@@ -398,10 +398,18 @@ export default function NotificationBell({ initial }: { initial: AppNotification
   );
 }
 
+/**
+ * Точка «не прочитано» — в правом верхнем углу строки, а не в потоке
+ * флекс-разметки. Раньше стояла последним элементом гибкого ряда: у нижних
+ * строк (bottom-right) там уже сидят кнопки-действия, а сама точка
+ * оказывалась не у истинного края, а перед их зарезервированным отступом —
+ * зрительно «не доезжала» до угла. Абсолютное позиционирование кладёт её
+ * ровно в угол независимо от того, что творится в тексте строки.
+ */
 function UnreadDot({ read }: { read: boolean }) {
   if (read) return null;
   return (
-    <span className="relative mt-1 h-2 w-2 shrink-0 rounded-full bg-accent">
+    <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-accent">
       <span className="sr-only">Не прочитано</span>
     </span>
   );
@@ -412,7 +420,7 @@ function EpisodeRow({ n, onOpen }: { n: EpisodeNotification; onOpen: () => void 
     <Link
       href={`/${n.content_type === 'cinema' ? 'cinema' : 'anime'}/${n.shikimori_id}`}
       onClick={onOpen}
-      className={['flex gap-3 px-4 py-3 pr-11 transition hover:bg-white/5', n.read_at ? 'opacity-60' : ''].join(' ')}
+      className={['relative flex gap-3 px-4 py-3 pr-11 transition hover:bg-white/5', n.read_at ? 'opacity-60' : ''].join(' ')}
     >
       <div className="h-14 w-10 shrink-0 overflow-hidden rounded-lg bg-bg-soft">
         {n.poster_url && (
@@ -435,7 +443,7 @@ function SystemRow({ n, onOpen }: { n: SystemNotification; onOpen: () => void })
     <button
       type="button"
       onClick={onOpen}
-      className={['flex w-full gap-3 px-4 py-3 pr-10 text-left transition hover:bg-white/5', n.read_at ? 'opacity-60' : ''].join(' ')}
+      className={['relative flex w-full gap-3 px-4 py-3 pr-10 text-left transition hover:bg-white/5', n.read_at ? 'opacity-60' : ''].join(' ')}
     >
       <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-amber-500/15 text-amber-300">
         <AlertIcon className="h-5 w-5" />
@@ -482,7 +490,7 @@ function SocialRow({
         : 'теперь у вас в друзьях';
 
   return (
-    <div className={['flex gap-3 px-4 py-3 pr-10 transition hover:bg-white/5', n.read_at ? 'opacity-70' : ''].join(' ')}>
+    <div className={['relative flex gap-3 px-4 py-3 pr-10 transition hover:bg-white/5', n.read_at ? 'opacity-70' : ''].join(' ')}>
       <div className="relative shrink-0">
         <Avatar user={actor} size="md" />
         <span className="absolute -bottom-1 -right-1 grid h-5 w-5 place-items-center rounded-full bg-bg-card text-accent-text ring-2 ring-bg-card">

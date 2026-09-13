@@ -13,6 +13,7 @@ import PosterImage from '@/components/PosterImage';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
 import { SlidingPill, useSlidingPill } from '@/components/useSlidingPill';
+import StatusFilterDropdown from '@/components/StatusFilterDropdown';
 import { LIST_STATUS_LABELS, LIST_STATUS_OPTIONS } from '@/lib/listStatus';
 import { IconBadge, ListPlusIcon } from '@/components/social/icons';
 
@@ -276,26 +277,46 @@ export default function UserListView({
         })}
       </div>
 
-      {/* Фильтры статуса — одной прокручиваемой строкой, а не переносом в
-          три ряда на телефоне (профиль и так «перегружен кнопками»).
-          «Выбрать» пришпилен справа и не уезжает в прокрутку. */}
+      {/* Фильтры статуса. На телефоне шесть кнопок в ряд либо переносились
+          в три строки, либо (в прошлой правке) уезжали в горизонтальную
+          прокрутку — оба варианта отвлекали от списка, ради которого сюда
+          пришли. Там — один выпадающий список (StatusFilterDropdown), тот
+          же язык, что у сортировки каталога. На широких экранах — ряд
+          кнопок, но токены те же, что у радиогруппы в «Настройках»
+          (PrivacySettings): мягкая заливка и мягкое кольцо, а не плоская
+          акцентная пилюля — иначе один и тот же выбор «из вариантов»
+          выглядел бы по-разному в двух местах профиля.
+          «Выбрать» — всегда отдельной кнопкой, не частью списка/ряда. */}
       <div className="flex items-center gap-2">
-        <div className="no-scrollbar flex min-w-0 flex-1 gap-2 overflow-x-auto">
+        <div className="min-w-0 flex-1 sm:hidden">
+          <StatusFilterDropdown
+            label="Фильтр по статусу"
+            value={filter}
+            onChange={(v) => setFilter(v as UserListStatus | 'all')}
+            options={FILTERS}
+            counts={Object.fromEntries(
+              FILTERS.map((f) => [
+                f.value,
+                f.value === 'all' ? ofType.length : ofType.filter((i) => i.status === f.value).length,
+              ]),
+            )}
+          />
+        </div>
+        <div className="hidden min-w-0 flex-1 flex-wrap gap-2 sm:flex">
           {FILTERS.map((f) => {
             const count =
               f.value === 'all'
                 ? ofType.length
                 : ofType.filter((i) => i.status === f.value).length;
+            const selected = filter === f.value;
             return (
               <button
                 key={f.value}
                 type="button"
                 onClick={() => setFilter(f.value)}
                 className={[
-                  'press shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition',
-                  filter === f.value
-                    ? 'bg-accent/20 text-accent-text ring-1 ring-accent/40'
-                    : 'bg-bg-card text-gray-300 hover:bg-bg-soft',
+                  'press shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium ring-1 transition',
+                  selected ? 'bg-accent/10 text-accent-text ring-accent/60' : 'bg-bg-soft text-gray-300 ring-white/5 hover:ring-white/20',
                 ].join(' ')}
               >
                 {f.label}
@@ -309,10 +330,8 @@ export default function UserListView({
             type="button"
             onClick={toggleSelectMode}
             className={[
-              'press shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition',
-              selectMode
-                ? 'bg-accent/20 text-accent-text ring-1 ring-accent/40'
-                : 'bg-bg-card text-gray-300 hover:bg-bg-soft',
+              'press shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium ring-1 transition',
+              selectMode ? 'bg-accent/10 text-accent-text ring-accent/60' : 'bg-bg-soft text-gray-300 ring-white/5 hover:ring-white/20',
             ].join(' ')}
           >
             {selectMode ? 'Отмена' : 'Выбрать'}

@@ -4,7 +4,10 @@ import { useEffect, useRef, useState } from 'react';
 import PosterImage from '@/components/PosterImage';
 import Link from 'next/link';
 import { fixPosterUrl } from '@/lib/format';
-import { StarIcon, UsersIcon } from '@/components/social/icons';
+import { useQuickListStatus } from '@/components/useQuickListStatus';
+import { LIST_STATUS_OPTIONS } from '@/lib/listStatus';
+import type { ContentType } from '@/lib/types';
+import { CheckIcon, PlusIcon, StarIcon, UsersIcon } from '@/components/social/icons';
 
 /**
  * Строка каталога в списочном виде: постер слева, справа название, строка
@@ -18,6 +21,9 @@ import { StarIcon, UsersIcon } from '@/components/social/icons';
  */
 export interface ListRowAnime {
   id: number;
+  /** Для быстрого добавления в список прямо со строки (см. ListRowQuickAdd
+   *  ниже) — сам upsert различает аниме/кино по этому полю. */
+  contentType: ContentType;
   /** Куда ведёт карточка: /anime/<id> или /cinema/<id>. */
   href: string;
   title: string;
@@ -37,7 +43,15 @@ export interface ListRowAnime {
 export default function AnimeListRow({ anime }: { anime: ListRowAnime }) {
   const [expanded, setExpanded] = useState(false);
   const [clipped, setClipped] = useState(false);
+  const [listOpen, setListOpen] = useState(false);
   const textRef = useRef<HTMLParagraphElement>(null);
+  const { status, saving, choose } = useQuickListStatus({
+    shikimoriId: anime.id,
+    contentType: anime.contentType,
+    title: anime.title,
+    posterUrl: anime.poster,
+    source: 'list-row',
+  });
 
   // Меряем после отрисовки и на каждом ресайзе: текст, влезавший в широком
   // окне, в узком перестаёт влезать, и кнопка должна появиться.
@@ -112,12 +126,94 @@ export default function AnimeListRow({ anime }: { anime: ListRowAnime }) {
                 {anime.score}
               </span>
             )}
+            {/* Быстрое добавление в список — тот же кружок, что «+»/«i» на
+                карточке-плитке, только раскрывает не всплывающее меню, а
+                свою полосу статусов под строкой (см. панель ниже): в
+                списочном виде под рукой уже страница тайтла по клику на
+                название, отдельный портал был бы лишним слоем. */}
+            <button
+              type="button"
+              onClick={() => setListOpen((v) => !v)}
+              aria-haspopup="true"
+              aria-expanded={listOpen}
+              aria-busy={saving}
+              aria-label={status ? 'Изменить статус в списке' : 'Добавить в список'}
+              title={status ? 'В списке' : 'Добавить в список'}
+              // Видимый значок — 24px (WCAG-минимум впритык), область
+              // нажатия расширена псевдоэлементом до ~36px — тот же приём,
+              // что у «i»/«+» на карточке-плитке (ExpandTitleButton).
+              className={[
+                'press relative grid h-6 w-6 shrink-0 place-items-center rounded-full transition',
+                "before:absolute before:inset-[-6px] before:content-['']",
+                status
+                  ? 'bg-accent/90 text-accent-fg hover:bg-accent'
+                  : 'bg-bg-soft text-gray-400 hover:bg-white/10 hover:text-white',
+              ].join(' ')}
+            >
+              {status ? <CheckIcon className="h-3.5 w-3.5" /> : <PlusIcon className="h-3.5 w-3.5" />}
+            </button>
           </div>
         </div>
 
         {/* Тот же набор и порядок, что на странице тайтла: тип, статус, год,
             число серий — чтобы список читался так же, как карточка. */}
         {meta && <p className="mt-1 text-xs text-gray-400">{meta}</p>}
+
+        {/* Полоса статусов «выезжает» из-под строки — grid-template-rows
+            0fr→1fr, чистый CSS без измерения высоты в JS. Раскрывается
+            под самим тайтлом, а не всплывающим меню поверх контента: в
+            списочном виде рядом со строкой обычно следующая строка того же
+            списка, и плавающая панель либо перекрыла бы её, либо не
+            влезла бы вбок на телефоне. */}
+        <div
+          className={`grid transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            listOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+          }`}
+        >
+          <div className="overflow-hidden">
+            <div
+              role="radiogroup"
+              aria-label="Статус в списке"
+              className="mt-2 flex flex-wrap gap-1.5 border-t border-white/5 pt-2"
+            >
+              {LIST_STATUS_OPTIONS.map((o) => {
+                const selected = status === o.value;
+                return (
+                  <button
+                    key={o.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => {
+                      void choose(o.value);
+                      setListOpen(false);
+                    }}
+                    className={[
+                      'press rounded-lg px-2.5 py-1 text-xs font-medium ring-1 transition',
+                      selected
+                        ? 'bg-accent/10 text-accent-text ring-accent/60'
+                        : 'bg-bg-soft text-gray-300 ring-white/5 hover:ring-white/20',
+                    ].join(' ')}
+                  >
+                    {o.label}
+                  </button>
+                );
+              })}
+              {status && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void choose(null);
+                    setListOpen(false);
+                  }}
+                  className="press rounded-lg px-2.5 py-1 text-xs font-medium text-red-300 ring-1 ring-white/5 transition hover:bg-red-500/10 hover:ring-red-500/30"
+                >
+                  Убрать из списка
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
 
         {anime.description && (
           <div className="mt-2 min-h-0">

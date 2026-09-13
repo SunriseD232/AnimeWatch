@@ -95,7 +95,9 @@ export function SiteRatingChip() {
   );
 }
 
-const PANEL_WIDTH = 280;
+// Вдвое компактнее, чем было (280px, ячейки 44px): та же цель, что у
+// ListButton — панель не должна быть заметно крупнее соседних меню сайта.
+const PANEL_WIDTH = 216;
 const EDGE_GAP = 12;
 
 // Подписи к баллам — те же, что у Shikimori: зрители аниме к ним привыкли.
@@ -242,11 +244,11 @@ export function RatingControl() {
           ref={panelRef}
           role="dialog"
           aria-label="Оценка тайтла"
-          style={{ left: panelLeft }}
-          className="glass-panel absolute z-20 mt-2 w-[17.5rem] max-w-[calc(100vw-1.5rem)] rounded-2xl border border-white/10 p-3 shadow-2xl"
+          style={{ left: panelLeft, width: PANEL_WIDTH }}
+          className="glass-panel absolute z-20 mt-2 max-w-[calc(100vw-1.5rem)] rounded-2xl border border-white/10 p-2 shadow-2xl"
         >
           <div
-            className="grid grid-cols-5 gap-1.5"
+            className="grid grid-cols-5 gap-1"
             onMouseLeave={() => setPreview(null)}
           >
             {Array.from({ length: 10 }, (_, i) => i + 1).map((score) => {
@@ -262,7 +264,7 @@ export function RatingControl() {
                   aria-pressed={myScore === score}
                   aria-label={`${score} из 10 — ${SCORE_LABELS[score]}`}
                   className={[
-                    'grid h-11 place-items-center rounded-xl text-sm font-semibold tabular-nums transition',
+                    'grid h-8 place-items-center rounded-lg text-xs font-semibold tabular-nums transition',
                     active ? 'bg-accent text-accent-fg' : 'bg-white/5 text-gray-200 hover:bg-white/10',
                   ].join(' ')}
                 >
@@ -271,14 +273,14 @@ export function RatingControl() {
               );
             })}
           </div>
-          <p className="mt-2 h-5 text-center text-sm text-gray-300" aria-live="polite">
+          <p className="mt-1.5 h-4 text-center text-xs text-gray-300" aria-live="polite">
             {shown !== null ? SCORE_LABELS[shown] : 'Выберите балл'}
           </p>
           {myScore !== null && (
             <button
               type="button"
               onClick={() => choose(null)}
-              className="mt-2 w-full rounded-lg px-3 py-2 text-sm text-red-300 transition hover:bg-red-500/10"
+              className="mt-1 w-full rounded-lg px-3 py-1.5 text-xs text-red-300 transition hover:bg-red-500/10"
             >
               Убрать оценку
             </button>
