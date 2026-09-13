@@ -39,14 +39,73 @@ export interface TitleRating {
 
 export interface EpisodeComment {
   id: string;
+  /** Пустая строка у удалённого: текст наружу не отдаётся. */
   body: string;
   createdAt: string;
   editedAt: string | null;
+  /** Удалён, но оставлен заглушкой ради ответов под ним. */
+  deleted: boolean;
+  /** На что отвечают; null у верхнего комментария ветки. */
+  parentId: string | null;
+  /** Верхний комментарий ветки; null у него самого. */
+  rootId: string | null;
   author: PublicUser;
   /** Свой — можно править и удалять. */
   mine: boolean;
   /** Удалить можно своё, а админу — любое. */
   canDelete: boolean;
+}
+
+/** Верхний комментарий с числом ответов и, для коротких веток, самими ответами. */
+export interface CommentThread {
+  comment: EpisodeComment;
+  replyCount: number;
+  /** Загруженные ответы, по времени. Для длинных веток пусто до раскрытия. */
+  replies: EpisodeComment[];
+}
+
+/** Свой комментарий в разделе «Мои комментарии» — вне страницы серии. */
+export interface MyComment {
+  id: string;
+  body: string;
+  createdAt: string;
+  editedAt: string | null;
+  isReply: boolean;
+  replyCount: number;
+  contentType: ContentType;
+  shikimoriId: number;
+  season: number;
+  episode: number;
+  title: string | null;
+  posterUrl: string | null;
+}
+
+export type Visibility = 'everyone' | 'friends' | 'nobody';
+
+export interface PrivacySettings {
+  lists: Visibility;
+  ratings: Visibility;
+}
+
+export const DEFAULT_PRIVACY: PrivacySettings = { lists: 'friends', ratings: 'friends' };
+
+export function normalizeVisibility(value: unknown, fallback: Visibility = 'friends'): Visibility {
+  return value === 'everyone' || value === 'friends' || value === 'nobody' ? value : fallback;
+}
+
+/** Ссылка на серию, где живёт комментарий, с якорем на него самого. */
+export function commentHref(c: {
+  contentType: ContentType;
+  shikimoriId: number;
+  season: number;
+  episode: number;
+  id: string;
+}): string {
+  const base =
+    c.contentType === 'cinema'
+      ? `/cinema/watch/${c.shikimoriId}/${c.season}/${c.episode}`
+      : `/watch/${c.shikimoriId}/${c.episode}`;
+  return `${base}?comment=${c.id}`;
 }
 
 export const COMMENT_MAX_LENGTH = 2000;

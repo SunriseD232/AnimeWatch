@@ -1,13 +1,23 @@
 import { createClient } from '@/lib/supabase/server';
 import type { ContentType } from '@/lib/types';
 import { nameOf } from './names';
-import type { FriendEntry, FriendshipState, PublicUser, SiteRating, TitleRating } from './types';
+import {
+  normalizeVisibility,
+  type FriendEntry,
+  type FriendshipState,
+  type PrivacySettings,
+  type PublicUser,
+  type SiteRating,
+  type TitleRating,
+} from './types';
+import type { UserListStatus } from '@/lib/types';
 
 /**
  * Серверные чтения социальной части (миграция 0036).
  *
  * Всё идёт клиентом С СЕССИЕЙ пользователя, не service_role: кто что видит,
- * решает RLS — оценки только друзей, дружба только своя. Код здесь не
+ * решает RLS — оценки по настройке приватности владельца (миграция 0037),
+ * дружба только своя. Код здесь не
  * фильтрует чужое сам, и ошибиться в фильтре, показав лишнее, негде.
  */
 
@@ -182,7 +192,11 @@ export async function getTitleRatingContext(
   ]);
   const rows = (data ?? []) as { user_id: string; score: number }[];
   const mine = rows.find((r) => r.user_id === me);
-  const friendRows = rows.filter((r) => r.user_id !== me);
+  // RLS отдаёт оценки всех, кто разрешил их видеть, — в том числе незнакомых
+  // людей с приватностью «все». Строка же называется «Друзья оценили»,
+  // поэтому оставляем только друзей.
+  const friendIds = await getFriendIds(supabase);
+  const friendRows = rows.filter((r) => r.user_id !== me && friendIds.has(r.user_id));
   const users = await getPublicUsers(
     supabase,
     friendRows.map((r) => r.user_id),
@@ -193,3 +207,71 @@ export async function getTitleRatingContext(
     friends: friendRows.map((r) => ({ user: users.get(r.user_id) as PublicUser, score: r.score })),
   };
 }
+
+/** id друзей текущего пользователя (RLS отдаёт только его строки дружбы). */
+export async function getFriendIds(supabase: Supabase): Promise<Set<string>> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const me = session?.user.id;
+  const result = new Set<string>();
+  if (!me) return result;
+  const { data } = await supabase
+    .from('friendships')
+    .select('requester_id, addressee_id')
+    .eq('status', 'accepted');
+  for (const row of (data ?? []) as { requester_id: string; addressee_id: string }[]) {
+    result.add(row.requester_id === me ? row.addressee_id : row.requester_id);
+  }
+  return result;
+}
+
+/** Настройки приватности. Строки профиля нет — действуют умолчания. */
+export async function getPrivacy(supabase: Supabase, userId: string): Promise<PrivacySettings> {
+  const { data } = await supabase
+    .from('profiles')
+    .select('lists_visibility, ratings_visibility')
+    .eq('user_id', userId)
+    .maybeSingle();
+  return {
+    lists: normalizeVisibility(data?.lists_visibility),
+    ratings: normalizeVisibility(data?.ratings_visibility),
+  };
+}
+
+export interface VisibleListItem {
+  contentType: 'anime' | 'cinema';
+  shikimoriId: number;
+  title: string;
+  posterUrl: string | null;
+  status: UserListStatus;
+  createdAt: string;
+}
+
+/**
+ * Чужой список — только через функцию get_visible_user_list: RLS самого
+ * user_list отдаёт одно своё, и расширять её нельзя (см. миграцию 0037).
+ * Пустой ответ означает и «список пуст», и «скрыт» — различить это
+ * вызывающему поможет getPrivacy.
+ */
+export async function getVisibleList(supabase: Supabase, owner: string): Promise<VisibleListItem[]> {
+  const { data } = await supabase.rpc('get_visible_user_list', { owner });
+  return (
+    (data ?? []) as {
+      content_type: 'anime' | 'cinema';
+      shikimori_id: number;
+      anime_title: string;
+      poster_url: string | null;
+      status: UserListStatus;
+      created_at: string;
+    }[]
+  ).map((r) => ({
+    contentType: r.content_type,
+    shikimoriId: r.shikimori_id,
+    title: r.anime_title,
+    posterUrl: r.poster_url,
+    status: r.status,
+    createdAt: r.created_at,
+  }));
+}
+

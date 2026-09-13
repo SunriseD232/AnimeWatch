@@ -106,6 +106,7 @@ export async function GET(request: NextRequest, { params }: { params: RouteParam
 
   const tRaw = request.nextUrl.searchParams.get('t');
   const translationId = tRaw != null && Number.isFinite(Number(tRaw)) ? Number(tRaw) : undefined;
+  const translationTitle = request.nextUrl.searchParams.get('tl')?.slice(0, 200) || undefined;
 
   try {
     // Real-Debrid намеренно НЕ резолвим здесь — для него resolveStream
@@ -116,7 +117,7 @@ export async function GET(request: NextRequest, { params }: { params: RouteParam
     const resolved =
       source === 'realdebrid'
         ? null
-        : await resolveStream({ contentType, shikimoriId, season, episode, source, translationId });
+        : await resolveStream({ contentType, shikimoriId, season, episode, source, translationId, translationTitle });
 
     // Реальный домен Videoseed наружу не отдаём — те же подписанные
     // /api/proxy/raw ссылки, что и для сегментов (см. lib/extract/proxy.ts).

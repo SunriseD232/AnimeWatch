@@ -140,3 +140,126 @@ export function SendIcon({ className }: IconProps) {
     </Svg>
   );
 }
+
+export function ListPlusIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M11 12H3" />
+      <path d="M16 6H3" />
+      <path d="M16 18H3" />
+      <path d="M18 9v6" />
+      <path d="M21 12h-6" />
+    </Svg>
+  );
+}
+
+export function CheckIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M20 6 9 17l-5-5" />
+    </Svg>
+  );
+}
+
+export function BellIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    </Svg>
+  );
+}
+
+export function BellOffIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M8.7 3A6 6 0 0 1 18 8a21.3 21.3 0 0 0 .6 5" />
+      <path d="M17 17H3s3-2 3-9a4.67 4.67 0 0 1 .3-1.7" />
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+      <path d="m2 2 20 20" />
+    </Svg>
+  );
+}
+
+export function ReplyIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <polyline points="15 10 20 15 15 20" />
+      <path d="M4 4v7a4 4 0 0 0 4 4h12" />
+    </Svg>
+  );
+}
+
+export function LockIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </Svg>
+  );
+}
+
+export function GlobeIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+      <path d="M2 12h20" />
+    </Svg>
+  );
+}
+
+export function RepeatIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="m17 2 4 4-4 4" />
+      <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
+      <path d="m7 22-4-4 4-4" />
+      <path d="M21 13v1a4 4 0 0 1-4 4H3" />
+    </Svg>
+  );
+}
+
+export function PlusIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M5 12h14" />
+      <path d="M12 5v14" />
+    </Svg>
+  );
+}
+
+export function MinusIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M5 12h14" />
+    </Svg>
+  );
+}
+
+export function XIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </Svg>
+  );
+}
+
+export function ChevronRightIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="m9 18 6-6-6-6" />
+    </Svg>
+  );
+}
+
+export function AlertIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </Svg>
+  );
+}

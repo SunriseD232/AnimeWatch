@@ -8,11 +8,11 @@ import { getVpsRelayEnabled, getKodikPlayerEnabled } from '@/lib/settings';
 import { normalizeTheme } from '@/lib/theme';
 import type { UserListItem, WatchedEpisode } from '@/lib/types';
 import { getLocalPosterMap } from '@/lib/posterCacheServer';
-import { getUserRatings, listFriendships, toPublicUser } from '@/lib/social/server';
+import { getPrivacy, getUserRatings, listFriendships, toPublicUser } from '@/lib/social/server';
 
 export const metadata = { title: 'Профиль — MediaWatch' };
 
-export default async function ProfilePage() {
+export default async function ProfilePage({ searchParams }: { searchParams: { tab?: string } }) {
   const supabase = createClient();
   const {
     data: { user },
@@ -28,6 +28,7 @@ export default async function ProfilePage() {
     { data: profileRow },
     ratings,
     friendships,
+    privacy,
   ] = await Promise.all([
     supabase
       .from('user_list')
@@ -44,6 +45,7 @@ export default async function ProfilePage() {
     supabase.from('profiles').select('user_id, display_name, avatar_path').eq('user_id', user.id).maybeSingle(),
     getUserRatings(supabase, user.id),
     listFriendships(supabase, user.id),
+    getPrivacy(supabase, user.id),
   ]);
 
   const items = (data ?? []) as UserListItem[];
@@ -92,6 +94,8 @@ export default async function ProfilePage() {
         history={historyItems}
         ratings={ratings}
         friendships={friendships}
+        privacy={privacy}
+        initialTab={searchParams.tab ?? null}
         localPosters={Object.fromEntries(localPosters)}
         initialTheme={normalizeTheme(themeRow)}
         isAdmin={isAdmin}

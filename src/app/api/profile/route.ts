@@ -2,10 +2,13 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { normalizeDisplayName, validateDisplayName } from '@/lib/social/names';
+import { normalizeVisibility } from '@/lib/social/types';
 import { toPublicUser } from '@/lib/social/server';
 
 /**
- * PATCH /api/profile — отображаемое имя.
+ * PATCH /api/profile — отображаемое имя и настройки приватности. Любое поле
+ * необязательно: что не пришло, то не трогаем (upsert обновляет только
+ * переданные колонки).
  *
  * Пишет service_role, а не клиент с сессией: у таблицы profiles нет ни одной
  * политики на запись для authenticated (см. миграцию 0036 — иначе клиент
@@ -20,27 +23,29 @@ export async function PATCH(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Войдите, чтобы изменить профиль.' }, { status: 401 });
 
   const body = await request.json().catch(() => null);
-  const raw = typeof body?.displayName === 'string' ? body.displayName : '';
-  const displayName = normalizeDisplayName(raw);
+  const patch: Record<string, string | null> = { user_id: user.id, updated_at: new Date().toISOString() };
 
-  // Пустое — «убрать имя»: вернуться к нейтральной подписи тоже законно.
-  if (displayName.length > 0) {
-    const problem = validateDisplayName(displayName);
-    if (problem) return NextResponse.json({ error: problem }, { status: 400 });
+  if (typeof body?.displayName === 'string') {
+    const displayName = normalizeDisplayName(body.displayName);
+    // Пустое — «убрать имя»: вернуться к нейтральной подписи тоже законно.
+    if (displayName.length > 0) {
+      const problem = validateDisplayName(displayName);
+      if (problem) return NextResponse.json({ error: problem }, { status: 400 });
+    }
+    patch.display_name = displayName.length > 0 ? displayName : null;
+  }
+  if (body?.listsVisibility !== undefined) {
+    patch.lists_visibility = normalizeVisibility(body.listsVisibility);
+  }
+  if (body?.ratingsVisibility !== undefined) {
+    patch.ratings_visibility = normalizeVisibility(body.ratingsVisibility);
   }
 
   const service = createServiceClient();
   const { data, error } = await service
     .from('profiles')
-    .upsert(
-      {
-        user_id: user.id,
-        display_name: displayName.length > 0 ? displayName : null,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id' },
-    )
-    .select('user_id, display_name, avatar_path')
+    .upsert(patch, { onConflict: 'user_id' })
+    .select('user_id, display_name, avatar_path, lists_visibility, ratings_visibility')
     .single();
 
   if (error) {
@@ -48,9 +53,15 @@ export async function PATCH(request: NextRequest) {
     if (error.code === '23505') {
       return NextResponse.json({ error: 'Это имя уже занято. Попробуйте другое.' }, { status: 409 });
     }
-    console.error(`[profile] user=${user.id} name update failed: ${error.message}`);
-    return NextResponse.json({ error: 'Не удалось сохранить имя. Попробуйте ещё раз.' }, { status: 500 });
+    console.error(`[profile] user=${user.id} update failed: ${error.message}`);
+    return NextResponse.json({ error: 'Не удалось сохранить. Попробуйте ещё раз.' }, { status: 500 });
   }
 
-  return NextResponse.json({ user: toPublicUser(user.id, data) });
+  return NextResponse.json({
+    user: toPublicUser(user.id, data),
+    privacy: {
+      lists: normalizeVisibility(data.lists_visibility),
+      ratings: normalizeVisibility(data.ratings_visibility),
+    },
+  });
 }

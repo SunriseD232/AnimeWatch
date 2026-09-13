@@ -133,6 +133,10 @@ interface Props {
 
 const VOLUME_KEY = 'aw:ownPlayerVolume';
 const SPEED_KEY = 'aw:ownPlayerSpeed';
+// Пауза перед молчаливым повтором пробы после временной осечки: экстрактору
+// на VPS нужна секунда, чтобы освободиться, мгновенный повтор встал бы в ту
+// же очередь.
+const TRANSIENT_RETRY_DELAY_MS = 1_500;
 const NEXT_BUTTON_WINDOW_S = 45;
 const CONTROLS_HIDE_MS = 3_000;
 const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3, 3.5, 4, 4.5, 5];
@@ -494,6 +498,12 @@ export default function OwnPlayer({
 
   const query = new URLSearchParams();
   if (translationId != null) query.set('t', String(translationId));
+  // Подпись — страховка на сервере, если id к моменту запроса уже устарел
+  // (см. translationTitle в lib/extract/resolve.ts). Только когда id и
+  // подпись из одной записи: на переходном рендере find() промахнётся, и
+  // тогда лучше без подписи, чем с подписью чужой озвучки.
+  const requestedTitle = translations.find((t) => t.id === translationId)?.title;
+  if (requestedTitle) query.set('tl', requestedTitle);
   if (dashQualityHeight != null) query.set('q', String(dashQualityHeight));
   if (audioTrackIndex != null) query.set('audio', String(audioTrackIndex));
   const queryStr = query.toString();
@@ -530,6 +540,10 @@ export default function OwnPlayer({
   // попыток не набирался бы никогда, и плеер молотил бы бесконечно. Это те
   // же грабли, о которых предупреждает комментарий у того эффекта.
   const wantFreshRef = useRef(false);
+  // Для какого src уже сделан молчаливый повтор после временной осечки пробы
+  // (см. обработку !res.ok в эффекте пробы). Один повтор на адрес: иначе
+  // серия, которая не открывается никогда, крутилась бы без конца.
+  const transientRetrySrcRef = useRef<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -735,13 +749,27 @@ export default function OwnPlayer({
     return r.width > 0 && r.right > 0 && r.left < window.innerWidth;
   }, []);
 
-  const warnComboMissing = useCallback(() => {
-    if (!isPlayerOnScreen()) return;
-    const key = `${season}:${episode}`;
-    if (comboWarnedRef.current === key) return;
-    comboWarnedRef.current = key;
-    toast('Данное сочетание не нашлось, выбрано доступное', 'error');
-  }, [toast, season, episode, isPlayerOnScreen]);
+  // Сообщение — конкретное: что именно пропало и что включили взамен.
+  // Прежнее общее «Данное сочетание не нашлось, выбрано доступное» не давало
+  // понять, озвучка это, субтитры или сбой, и читалось как ошибка плеера.
+  const warnComboMissing = useCallback(
+    (message: string) => {
+      if (!isPlayerOnScreen()) return;
+      const key = `${season}:${episode}`;
+      if (comboWarnedRef.current === key) return;
+      comboWarnedRef.current = key;
+      toast(message, 'info');
+    },
+    [toast, season, episode, isPlayerOnScreen],
+  );
+  // Показывались ли субтитры в этом плеере (то есть в этом тайтле). Выбор
+  // субтитров хранится один на весь сайт, и без этой отметки «субтитров нет»
+  // всплывало на первой же серии ЛЮБОГО тайтла с озвучкой, если когда-то
+  // где-то их включали, — там, где всё работает как надо.
+  const subtitlesShownRef = useRef(false);
+  useEffect(() => {
+    if (activeSubtitleIndex != null) subtitlesShownRef.current = true;
+  }, [activeSubtitleIndex]);
 
   // Доп. аудиодорожки той же серии+перевода (см. ResolvedStream.audioTracks
   // — сейчас реально отдаёт только Alloha, напр. оригинал без перевода).
@@ -826,15 +854,17 @@ export default function OwnPlayer({
     // пришла пропом → сохранённая с прошлых серий и сеансов. Последняя и
     // делает выбор «липким» между тайтлами, а не только между сериями.
     const stored = readTrackPrefs();
-    const wantTitle =
-      activeTranslationTitleRef.current ?? initialTranslationTitle ?? stored.translation;
+    // Выбор ЭТОГО тайтла: то, что играло в этом плеере, или то, что сохранено
+    // в прогрессе этого тайтла. Запомненная озвучка с других тайтлов — только
+    // пожелание: её здесь может не быть вовсе, и это не повод предупреждать.
+    const titleChoice = activeTranslationTitleRef.current ?? initialTranslationTitle;
+    const wantTitle = titleChoice ?? stored.translation;
     const match = wantTitle ? translations.find((t) => t.title === wantTitle) : undefined;
     const resolved = match ?? translations[0] ?? null;
 
-    // Хотели конкретную и не нашли — предупреждаем и берём первую доступную.
-    // Только когда хотели: на первом заходе выбирать не из чего, и тост там
-    // был бы ложной тревогой.
-    if (wantTitle && !match && resolved) warnComboMissing();
+    if (titleChoice && !match && resolved) {
+      warnComboMissing(`В этой серии нет «${titleChoice}». Включили «${resolved.title}».`);
+    }
     // Обновляем ref ЗДЕСЬ, а не синхронно в теле рендера (см. коммент у
     // объявления ref выше) — на этот момент translations уже гарантированно
     // соответствует новой серии.
@@ -1005,13 +1035,28 @@ export default function OwnPlayer({
         dashQualitiesRef.current = res.headers.get('x-video-qualities');
         if (!res.ok) {
           if (cancelled) return;
+          const failure = res.headers.get('x-resolve-failure');
           logEvent('player.probe_failed', {
             source: effectiveSource,
             shikimoriId,
             season,
             episode,
             status: res.status,
+            failure,
+            translationId,
           });
+          // Не «озвучки нет», а «сейчас не открылось» (источник не ответил,
+          // экстрактор занят) — один раз молча повторяем ТУ ЖЕ озвучку с
+          // переизвлечением, и только если и это не помогло, просим замену.
+          // Раньше любая временная осечка сразу меняла выбор человека.
+          if (failure !== 'translation_missing' && transientRetrySrcRef.current !== src) {
+            transientRetrySrcRef.current = src;
+            wantFreshRef.current = true;
+            setTimeout(() => {
+              if (!cancelled) setReloadKey((k) => k + 1);
+            }, TRANSIENT_RETRY_DELAY_MS);
+            return;
+          }
           // Родитель может подобрать другую озвучку — тогда экран ошибки не
           // нужен, сейчас приедет новый src (см. Props.onTranslationUnavailable).
           // Второй аргумент — «молча»: замену делаем всегда, а вот
@@ -1071,6 +1116,15 @@ export default function OwnPlayer({
   // --- Подключение источника к <video>, когда он смонтирован (loadState === 'ready') ---
   useEffect(() => {
     if (loadState !== 'ready') return;
+    // «Готов» относится к ПРОШЛОМУ адресу. При переключении серии src меняется
+    // сразу (новый номер серии), а loadState всё ещё 'ready' от прошлой: без
+    // этой проверки hls.js тут же запрашивал новую серию со СТАРЫМ id озвучки
+    // (id у Yummy свои на каждую серию). Сервер честно отвечал «такой озвучки
+    // нет», и дальше по цепочке плеер менял выбор человека и показывал
+    // «сочетание не нашлось». На проде 13.09.2026 все девять таких отказов в
+    // логах — id предыдущей серии, проверено по API Yummy. Настоящий запуск
+    // придёт следом: эффект пробы выставит ready уже для нового src.
+    if (readySrcRef.current !== src) return;
     let cancelled = false;
     const video = videoRef.current;
     if (!video) return;
@@ -1373,8 +1427,12 @@ export default function OwnPlayer({
       return;
     }
     let cancelled = false;
+    const subsQuery = new URLSearchParams();
+    if (translationId != null) subsQuery.set('t', String(translationId));
+    if (requestedTitle) subsQuery.set('tl', requestedTitle);
+    const subsQueryStr = subsQuery.toString();
     const subsUrl = `/api/proxy/subtitles/${contentType}/${shikimoriId}/${season}/${episode}/${effectiveSource}${
-      translationId != null ? `?t=${translationId}` : ''
+      subsQueryStr ? `?${subsQueryStr}` : ''
     }`;
     fetch(subsUrl)
       .then((r) => (r.ok ? r.json() : { subtitles: [] }))
@@ -1424,7 +1482,13 @@ export default function OwnPlayer({
         }
         const idx = list.findIndex((sub) => sub.label === want);
         setActiveSubtitleIndex(idx >= 0 ? idx : null);
-        if (idx < 0) warnComboMissing();
+        if (idx < 0 && subtitlesShownRef.current) {
+          warnComboMissing(
+            list.length > 0
+              ? `У этой серии нет субтитров «${want}». Выберите другие в меню субтитров.`
+              : 'У этой озвучки нет субтитров, выключили их.',
+          );
+        }
       })
       .catch(() => {});
     return () => {

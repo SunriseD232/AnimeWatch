@@ -47,6 +47,7 @@ export interface WatchProgressInput {
 
 export type UserListStatus =
   | 'watching'
+  | 'rewatching'
   | 'planned'
   | 'completed'
   | 'dropped';
@@ -106,4 +107,22 @@ export interface SystemNotification {
   read_at: string | null;
 }
 
-export type AppNotification = EpisodeNotification | SystemNotification;
+/** Социальное уведомление (таблица social_notifications, миграция 0037). */
+export interface SocialNotification {
+  kind: 'social';
+  id: string;
+  user_id: string;
+  type: 'friend_request' | 'friend_accepted' | 'comment_reply';
+  actor: { id: string; name: string; avatarUrl: string | null } | null;
+  comment_id: string | null;
+  content_type: ContentType | null;
+  shikimori_id: number | null;
+  season: number | null;
+  episode: number | null;
+  title: string | null;
+  snippet: string | null;
+  created_at: string;
+  read_at: string | null;
+}
+
+export type AppNotification = EpisodeNotification | SystemNotification | SocialNotification;

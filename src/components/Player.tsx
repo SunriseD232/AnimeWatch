@@ -396,7 +396,13 @@ export default function Player({
     tracks: fallbackTracks,
     episodeKey: `${activeSeason}:${activeEpisode}`,
     onPick: setOwnPlayerTranslationId,
-    onSwitched: () => toast('Данное сочетание не нашлось, выбрано доступное', 'error'),
+    onSwitched: (next, failed) =>
+      toast(
+        failed
+          ? `«${failed.title}» сейчас не открывается. Включили «${next.title}».`
+          : `Выбранная озвучка не открылась. Включили «${next.title}».`,
+        'info',
+      ),
   });
 
   const next = computeStep(seasonsList, activeSeason, activeEpisode, 1);
@@ -1533,6 +1539,8 @@ export default function Player({
                 ? `Серия ${activeEpisode}`
                 : null
           }
+          title={animeTitle}
+          posterUrl={posterUrl}
         />
       )}
     </div>

@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { resolveStream } from '@/lib/extract/resolve';
+import { resolveStream, resolveStreamDetailed } from '@/lib/extract/resolve';
 import { fetchAndProxy, synthesizeMasterPlaylist } from '@/lib/extract/proxy';
 import type { ExtractSource } from '@/lib/extract/types';
 
@@ -160,6 +160,9 @@ async function handleGet(
   // ?t= — id выбранной озвучки (Yummy video_id), см. OwnPlayer/WatchPlayer.
   const tRaw = request.nextUrl.searchParams.get('t');
   const translationId = tRaw != null && Number.isFinite(Number(tRaw)) ? Number(tRaw) : undefined;
+  // ?tl= — подпись той же озвучки, страховка на случай устаревшего id (см.
+  // Args.translationTitle в resolve.ts).
+  const translationTitle = request.nextUrl.searchParams.get('tl')?.slice(0, 200) || undefined;
   // ?fresh=1 — принудительно обойти кэш resolved_streams. Нужен офлайн-
   // загрузке (см. OfflineDownloadManager.swift): сегменты уже переписаны на
   // подписанные /api/proxy/raw ссылки с ЗАМОРОЖЕННЫМ на момент резолва
@@ -197,13 +200,21 @@ async function handleGet(
     episode,
     source,
     translationId,
+    translationTitle,
     signal: request.signal,
     background: isWarm,
   };
-  const resolved = await resolveStream({ ...resolveArgs, forceFresh });
-  if (!resolved) {
-    return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  const outcome = await resolveStreamDetailed({ ...resolveArgs, forceFresh });
+  if ('failure' in outcome) {
+    // Статус прежний (404 — на него рассчитывают офлайн-загрузки), причина —
+    // заголовком: HEAD-проба тела не читает, а плееру важно отличить «такой
+    // озвучки нет» от «сейчас не открылось» (см. ResolveFailure).
+    return NextResponse.json(
+      { error: 'not_found', reason: outcome.failure },
+      { status: 404, headers: { 'X-Resolve-Failure': outcome.failure } },
+    );
   }
+  const resolved = outcome.stream;
 
   // Kodik отдаёт отдельный m3u8 на каждое качество, а не один master.m3u8 с
   // вариантами (см. ResolvedStream.qualities) — синтезируем master сами,

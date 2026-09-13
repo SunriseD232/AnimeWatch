@@ -37,8 +37,9 @@ export function useTranslationFallback({
   episodeKey: string;
   /** Применить выбранную замену (обычно setState с id). */
   onPick: (id: number) => void;
-  /** Замена состоялась — место для предупреждения зрителю. */
-  onSwitched?: (next: FallbackTrack) => void;
+  /** Замена состоялась — место для предупреждения зрителю. failed — та, что
+   *  не открылась (null, если её уже нет в списке). */
+  onSwitched?: (next: FallbackTrack, failed: FallbackTrack | null) => void;
   /** Сколько замен подряд разрешено в одной серии. */
   limit?: number;
 }) {
@@ -91,7 +92,7 @@ export function useTranslationFallback({
       // посреди профиля или каталога выглядит взявшимся из ниоткуда.
       if (!silent && !warnedRef.current.has(episodeKey)) {
         warnedRef.current.add(episodeKey);
-        onSwitched?.(next);
+        onSwitched?.(next, current ?? null);
       }
       return true;
     },

@@ -8,8 +8,9 @@ import {
   normalizeDisplayName,
   validateDisplayName,
 } from '@/lib/social/names';
-import { AVATAR_MAX_BYTES, type PublicUser } from '@/lib/social/types';
+import type { PublicUser } from '@/lib/social/types';
 import Avatar from './Avatar';
+import AvatarCropper from './AvatarCropper';
 import { CameraIcon, PencilIcon } from './icons';
 
 /**
@@ -19,7 +20,12 @@ import { CameraIcon, PencilIcon } from './icons';
  * вообще показывается, и человеку стоит знать, что остальные видят имя.
  */
 
-const ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,image/avif';
+const ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,image/avif,image/heic,image/heif';
+
+// Потолок на исходник перед кадрированием. Это не лимит аватара (кадр
+// ужимается в браузере до сотен килобайт, см. AvatarCropper), а защита вкладки:
+// декодировать стомегабайтную панораму браузер может и не пережить.
+const SOURCE_MAX_BYTES = 50 * 1024 * 1024;
 
 async function readError(res: Response, fallback: string): Promise<string> {
   const data = await res.json().catch(() => null);
@@ -47,6 +53,7 @@ export default function ProfileIdentity({
 
   const [uploading, setUploading] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [cropFile, setCropFile] = useState<File | null>(null);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -90,22 +97,28 @@ export default function ProfileIdentity({
     }
   }
 
-  async function uploadAvatar(file: File) {
+  function pickFile(file: File) {
     setAvatarError(null);
-    // Проверяем и здесь, до отправки: пять мегабайт по мобильной сети
-    // уходят долго, и узнать об отказе после этого обидно.
-    if (file.size > AVATAR_MAX_BYTES) {
-      setAvatarError('Файл больше 5 МБ. Выберите изображение поменьше.');
-      return;
-    }
     if (file.type && !file.type.startsWith('image/')) {
       setAvatarError('Это не изображение. Подойдёт JPEG, PNG, WebP или GIF.');
       return;
     }
+    if (file.size > SOURCE_MAX_BYTES) {
+      setAvatarError('Файл больше 50 МБ. Выберите изображение поменьше.');
+      return;
+    }
+    // Любой размер до потолка идёт в кадрирование: вырезанный кадр ужимается
+    // в браузере, и лимит сервера в 5 МБ ему не страшен.
+    setCropFile(file);
+  }
+
+  async function uploadAvatar(blob: Blob) {
+    setCropFile(null);
+    setAvatarError(null);
     setUploading(true);
     try {
       const form = new FormData();
-      form.append('file', file);
+      form.append('file', new File([blob], 'avatar.jpg', { type: blob.type || 'image/jpeg' }));
       const res = await fetch('/api/profile/avatar', { method: 'POST', body: form });
       if (!res.ok) throw new Error(await readError(res, 'Не удалось загрузить аватар. Попробуйте ещё раз.'));
       const data = (await res.json()) as { user: PublicUser };
@@ -168,7 +181,8 @@ export default function ProfileIdentity({
             aria-hidden="true"
             onChange={(e) => {
               const file = e.target.files?.[0];
-              if (file) void uploadAvatar(file);
+              if (file) pickFile(file);
+              e.target.value = '';
             }}
           />
         </div>
@@ -287,6 +301,10 @@ export default function ProfileIdentity({
       </div>
 
       <div className="flex justify-center sm:self-start">{actions}</div>
+
+      {cropFile && (
+        <AvatarCropper file={cropFile} onCancel={() => setCropFile(null)} onConfirm={(blob) => void uploadAvatar(blob)} />
+      )}
     </section>
   );
 }

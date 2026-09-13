@@ -27,6 +27,11 @@ interface Args {
    *  для Alloha VPS сам перебирает кандидатов; для source, которым embedUrl
    *  обязателен (sibnet), извлечение без него вернёт null. */
   translationId?: number;
+  /** Подпись той же озвучки («Озвучка JAM · Kodik»). Страховка на случай,
+   *  когда id уже не тот: у Yummy video_id свои на каждую серию и
+   *  переназначаются при обновлении раздачи, а подпись стабильна. Ищем по ней,
+   *  только если по id ничего не нашлось. */
+  translationTitle?: string;
   /** Пропустить кэш и извлечь заново — для повтора после того, как
    *  закэшированная ссылка уже протухла у апстрима раньше своего TTL
    *  (видел на Videoseed: подписанные CDN-ссылки живут короче 15 минут). */
@@ -68,8 +73,20 @@ interface Args {
  * этого signal уже игнорируются — общая работа, которую уже ждут другие
  * вызовы, не отменяется.
  */
+/**
+ * Почему не получилось. Плееру это важно различать: «такой озвучки в серии
+ * нет» — повод сразу выбрать другую, а «сейчас не открылось» (источник
+ * тормозит, список озвучек не загрузился, экстрактор занят) — повод
+ * повторить ту же самую. Раньше оба случая были одним 404, и плеер на
+ * любой временной осечке менял выбор человека и показывал «сочетание не
+ * нашлось» там, где всё работает.
+ */
+export type ResolveFailure = 'translation_missing' | 'unavailable';
+
+export type ResolveOutcome = { stream: ResolvedStream } | { failure: ResolveFailure };
+
 interface InFlight {
-  promise: Promise<ResolvedStream | null>;
+  promise: Promise<ResolveOutcome>;
   joined: boolean;
 }
 
@@ -89,6 +106,12 @@ function resolutionKey(args: Args): string {
 }
 
 export async function resolveStream(args: Args): Promise<ResolvedStream | null> {
+  const outcome = await resolveStreamDetailed(args);
+  return 'stream' in outcome ? outcome.stream : null;
+}
+
+/** То же, что resolveStream, но с причиной неудачи — см. ResolveFailure. */
+export async function resolveStreamDetailed(args: Args): Promise<ResolveOutcome> {
   const key = resolutionKey(args);
   const existing = inFlightResolutions.get(key);
   if (existing) {
@@ -97,7 +120,7 @@ export async function resolveStream(args: Args): Promise<ResolvedStream | null> 
   }
 
   const controller = new AbortController();
-  const entry: InFlight = { joined: false, promise: Promise.resolve(null) };
+  const entry: InFlight = { joined: false, promise: Promise.resolve({ failure: 'unavailable' }) };
   if (args.signal) {
     if (args.signal.aborted) {
       controller.abort();
@@ -122,10 +145,11 @@ async function resolveStreamUncoalesced({
   episode,
   source,
   translationId,
+  translationTitle,
   forceFresh,
   signal,
   background,
-}: Args): Promise<ResolvedStream | null> {
+}: Args): Promise<ResolveOutcome> {
   const supabase = createServiceClient();
   // 0 — слот "без явного выбора озвучки" (старое поведение, VPS сам перебирает).
   const translationSlot = translationId ?? 0;
@@ -143,7 +167,7 @@ async function resolveStreamUncoalesced({
       .maybeSingle();
 
     if (cached && new Date(cached.expires_at).getTime() > Date.now()) {
-      return {
+      return { stream: {
         url: cached.url,
         headers: (cached.headers as Record<string, string>) ?? {},
         isHls: cached.is_hls,
@@ -151,7 +175,7 @@ async function resolveStreamUncoalesced({
         qualities: (cached.qualities as ResolvedStream['qualities']) ?? undefined,
         subtitles: (cached.subtitles as ResolvedStream['subtitles']) ?? undefined,
         audioTracks: (cached.audio_tracks as ResolvedStream['audioTracks']) ?? undefined,
-      };
+      } };
     }
   }
 
@@ -180,7 +204,19 @@ async function resolveStreamUncoalesced({
   if (translationId != null) {
     if (contentType === 'anime') {
       const yummy = await getYummyEpisode(shikimoriId, episode);
-      const found = yummy?.translations.find((t) => t.id === translationId);
+      // Список озвучек не пришёл вовсе (Yummy не ответил за 8 секунд, в
+      // логах прода это «yummyFetch упал: aborted due to timeout»). Это не
+      // «озвучки нет»: клиент получил этот же список секундой раньше. Честно
+      // говорим «не сейчас», и плеер повторит, а не сменит выбор.
+      if (!yummy) {
+        console.error(
+          `[resolve] список озвучек Yummy не получен для anime ${shikimoriId} e${episode} (${source}) — временно недоступно`,
+        );
+        return { failure: 'unavailable' };
+      }
+      const found =
+        yummy.translations.find((t) => t.id === translationId) ??
+        (translationTitle ? yummy.translations.find((t) => t.title === translationTitle) : undefined);
       embedUrl = found?.embedUrl;
       translationMissing = !embedUrl;
       // Подпись без суффикса источника: «Субтитры Манипулятор · CVH» →
@@ -202,7 +238,14 @@ async function resolveStreamUncoalesced({
       translationLabel = translation?.title.replace(/\s*·\s*Videoseed$/, '');
     } else if (source === 'alloha' && contentType === 'cinema') {
       const alloha = await getAllohaSources(shikimoriId);
-      embedUrl = alloha.ownPlayerTranslations.find((t) => t.id === translationId)?.embedUrl;
+      // Пустой список — Alloha не ответила, а не «озвучки нет» (см. Yummy выше).
+      if (alloha.ownPlayerTranslations.length === 0) return { failure: 'unavailable' };
+      embedUrl = (
+        alloha.ownPlayerTranslations.find((t) => t.id === translationId) ??
+        (translationTitle
+          ? alloha.ownPlayerTranslations.find((t) => t.title === translationTitle)
+          : undefined)
+      )?.embedUrl;
       translationMissing = !embedUrl;
     }
   }
@@ -211,10 +254,10 @@ async function resolveStreamUncoalesced({
     console.error(
       `[resolve] озвучка ${translationId} не найдена у ${contentType} ${shikimoriId} s${season}e${episode} (${source}) — отвечаем сразу, без перебора`,
     );
-    return null;
+    return { failure: 'translation_missing' };
   }
 
-  if (signal?.aborted) return null;
+  if (signal?.aborted) return { failure: 'unavailable' };
   // realdebrid не идёт через VPS-экстрактор (Puppeteer тут не нужен) — magnet
   // → прямая ссылка резолвится отдельной связкой Torrentio+Real-Debrid, см.
   // lib/video/realdebridResolve.ts. Результат кэшируется и проксируется тем
@@ -228,7 +271,7 @@ async function resolveStreamUncoalesced({
           signal,
           background,
         );
-  if (!resolved) return null;
+  if (!resolved) return { failure: 'unavailable' };
 
   await supabase.from('resolved_streams').upsert(
     {
@@ -250,7 +293,7 @@ async function resolveStreamUncoalesced({
     { onConflict: 'content_type,shikimori_id,season,episode,source,translation_id' },
   );
 
-  return resolved;
+  return { stream: resolved };
 }
 
 /** Источники, реально отдающие свои субтитры при извлечении (см.

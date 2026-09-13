@@ -13,30 +13,21 @@ import PosterImage from '@/components/PosterImage';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
 import { SlidingPill, useSlidingPill } from '@/components/useSlidingPill';
+import { LIST_STATUS_LABELS, LIST_STATUS_OPTIONS } from '@/lib/listStatus';
 
 const TYPE_TABS: { value: ContentType; label: string }[] = [
   { value: 'anime', label: 'Аниме' },
   { value: 'cinema', label: 'Фильмы и сериалы' },
 ];
 
-const STATUS_OPTIONS: { value: UserListStatus; label: string }[] = [
-  { value: 'watching', label: 'Смотрю' },
-  { value: 'planned', label: 'В планах' },
-  { value: 'completed', label: 'Просмотрено' },
-  { value: 'dropped', label: 'Брошено' },
-];
+const STATUS_OPTIONS = LIST_STATUS_OPTIONS;
 
 const FILTERS: { value: UserListStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'Все' },
   ...STATUS_OPTIONS,
 ];
 
-const STATUS_LABELS: Record<UserListStatus, string> = {
-  watching: 'Смотрю',
-  planned: 'В планах',
-  completed: 'Просмотрено',
-  dropped: 'Брошено',
-};
+const STATUS_LABELS = LIST_STATUS_LABELS;
 
 /** Карточка тайтла в списке — своё состояние раскрытия названия на каждую. */
 function ListCard({

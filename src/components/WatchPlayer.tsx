@@ -230,7 +230,13 @@ export default function WatchPlayer({
     tracks: ownPlayerTranslations,
     episodeKey: String(activeEpisode),
     onPick: setOwnPlayerTranslationId,
-    onSwitched: () => toast('Данное сочетание не нашлось, выбрано доступное', 'error'),
+    onSwitched: (next, failed) =>
+      toast(
+        failed
+          ? `«${failed.title}» сейчас не открывается. Включили «${next.title}».`
+          : `Выбранная озвучка не открылась. Включили «${next.title}».`,
+        'info',
+      ),
   });
 
   const playingRef = useRef(false);
@@ -1115,6 +1121,8 @@ export default function WatchPlayer({
           season={1}
           episode={activeEpisode}
           label={total > 1 ? `Серия ${activeEpisode}` : null}
+          title={animeTitle}
+          posterUrl={posterUrl}
         />
       )}
 

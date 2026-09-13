@@ -11,9 +11,9 @@ import SiteLogoLink from './SiteLogoLink';
 import TipsLink from './TipsLink';
 import UserPresenceBadge from './UserPresenceBadge';
 import Avatar from './social/Avatar';
-import { countIncomingRequests, toPublicUser } from '@/lib/social/server';
+import { countIncomingRequests, getPublicUsers, toPublicUser } from '@/lib/social/server';
 import type { PublicUser } from '@/lib/social/types';
-import type { AppNotification } from '@/lib/types';
+import type { AppNotification, SocialNotification } from '@/lib/types';
 
 export default async function Navbar() {
   const supabase = createClient();
@@ -38,7 +38,7 @@ export default async function Navbar() {
     // Системные уведомления (например, Vibix trial) видят только админы —
     // но это уже гарантирует RLS на стороне system_notifications, здесь
     // фильтровать не нужно: у обычного пользователя там просто нет строк.
-    const [{ data: episodeRows }, { data: systemRows }, { data: profileRow }, incoming] = await Promise.all([
+    const [{ data: episodeRows }, { data: systemRows }, { data: profileRow }, incoming, { data: socialRows }] = await Promise.all([
       supabase
         .from('episode_notifications')
         .select('*')
@@ -57,6 +57,12 @@ export default async function Navbar() {
         .eq('user_id', user.id)
         .maybeSingle(),
       countIncomingRequests(supabase, user.id),
+      // Заявки в друзья и ответы на комментарии (миграция 0037).
+      supabase
+        .from('social_notifications')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(30),
     ]);
     me = toPublicUser(user.id, profileRow);
     incomingRequests = incoming;
@@ -68,7 +74,25 @@ export default async function Navbar() {
       (row) => ({ ...row, kind: 'system' as const }),
     );
 
-    notifications = [...episodeNotifications, ...systemNotifications].sort(
+    const socialList = (socialRows ?? []) as (Omit<SocialNotification, 'kind' | 'type' | 'actor'> & {
+      kind: SocialNotification['type'];
+      actor_id: string | null;
+    })[];
+    const actors = await getPublicUsers(
+      supabase,
+      socialList.map((row) => row.actor_id).filter((a): a is string => !!a),
+    );
+    const socialNotifications: AppNotification[] = socialList.map(({ kind, actor_id, ...row }) => {
+      const actor = actor_id ? actors.get(actor_id) : undefined;
+      return {
+        ...row,
+        kind: 'social' as const,
+        type: kind,
+        actor: actor ? { id: actor.id, name: actor.name, avatarUrl: actor.avatarUrl } : null,
+      };
+    });
+
+    notifications = [...episodeNotifications, ...systemNotifications, ...socialNotifications].sort(
       (a, b) => b.created_at.localeCompare(a.created_at),
     );
   }

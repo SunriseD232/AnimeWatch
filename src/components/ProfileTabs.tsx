@@ -11,8 +11,10 @@ import VibixTrialStatus from '@/components/VibixTrialStatus';
 import RelayToggle from '@/components/RelayToggle';
 import KodikPlayerToggle from '@/components/KodikPlayerToggle';
 import FriendsPanel from '@/components/social/FriendsPanel';
+import MyComments from '@/components/social/MyComments';
+import PrivacySettings from '@/components/social/PrivacySettings';
 import RatingsView from '@/components/social/RatingsView';
-import type { FriendEntry, TitleRating } from '@/lib/social/types';
+import type { FriendEntry, PrivacySettings as Privacy, TitleRating } from '@/lib/social/types';
 import type { UserListItem, WatchedEpisode } from '@/lib/types';
 import type { Theme } from '@/lib/theme';
 
@@ -23,6 +25,9 @@ interface Props {
   ratings: TitleRating[];
   /** Друзья и заявки в обе стороны. */
   friendships: FriendEntry[];
+  privacy: Privacy;
+  /** Вкладка из адреса (?tab=friends) — сюда ведут уведомления. */
+  initialTab?: string | null;
   /** Готовые ссылки на наши копии обложек — см. getLocalPosterMap. */
   localPosters: Record<string, string>;
   /** Тема из БД, прочитанная на сервере (см. ThemeSettings). */
@@ -34,7 +39,19 @@ interface Props {
   code: string | null;
 }
 
-type Tab = 'list' | 'history' | 'ratings' | 'friends' | 'ui' | 'password' | 'admin' | 'code';
+type Tab =
+  | 'list'
+  | 'history'
+  | 'ratings'
+  | 'comments'
+  | 'friends'
+  | 'privacy'
+  | 'ui'
+  | 'password'
+  | 'admin'
+  | 'code';
+
+const TAB_VALUES: Tab[] = ['list', 'history', 'ratings', 'comments', 'friends', 'privacy', 'ui', 'password', 'admin', 'code'];
 
 /**
  * Вкладки профиля. Раньше «Оформление», рубильники и смена пароля были
@@ -51,6 +68,8 @@ export default function ProfileTabs({
   history,
   ratings,
   friendships,
+  privacy,
+  initialTab,
   localPosters,
   initialTheme,
   isAdmin,
@@ -61,13 +80,16 @@ export default function ProfileTabs({
   const incoming = friendships.filter((f) => f.state === 'incoming').length;
   // С ожидающими заявками профиль открывается сразу на «Друзьях»: сюда
   // приходят по точке на иконке профиля, и искать вкладку глазами незачем.
-  const [tab, setTab] = useState<Tab>(incoming > 0 ? 'friends' : 'list');
+  const requested = TAB_VALUES.find((t) => t === initialTab);
+  const [tab, setTab] = useState<Tab>(requested ?? (incoming > 0 ? 'friends' : 'list'));
 
   const tabs: { value: Tab; label: string; badge?: number }[] = [
     { value: 'list', label: 'Список' },
     { value: 'history', label: 'История' },
     { value: 'ratings', label: 'Оценки' },
+    { value: 'comments', label: 'Комментарии' },
     { value: 'friends', label: 'Друзья', badge: incoming },
+    { value: 'privacy', label: 'Приватность' },
     { value: 'ui', label: 'UI' },
     { value: 'password', label: 'Пароль' },
     ...(isAdmin
@@ -127,7 +149,9 @@ export default function ProfileTabs({
           }
         />
       )}
+      {tab === 'comments' && <MyComments />}
       {tab === 'friends' && <FriendsPanel initial={friendships} />}
+      {tab === 'privacy' && <PrivacySettings initial={privacy} />}
       {tab === 'ui' && <ThemeSettings initialTheme={initialTheme} />}
       {tab === 'password' && <ChangePasswordForm />}
       {tab === 'admin' && isAdmin && (
