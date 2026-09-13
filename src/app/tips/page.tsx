@@ -124,7 +124,7 @@ export default function TipsPage() {
           </div>
         </div>
 
-        <p className="text-xs leading-relaxed text-gray-500">
+        <p className="text-xs leading-relaxed text-gray-400">
           Совет: если для тайтла доступен «Наш плеер» — позиция там всегда
           точная и сохраняется автоматически. Остальные источники — запасной
           вариант на случай, если «Наш плеер» недоступен для конкретной

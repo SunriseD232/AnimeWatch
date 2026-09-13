@@ -191,7 +191,7 @@ export default async function AnimePage({
                 <Link
                   key={g.id}
                   href={`/catalog?genres=${g.id}`}
-                  className="press rounded-md bg-bg-card px-2 py-1 text-xs text-gray-300 transition hover:bg-accent/15 hover:text-accent"
+                  className="press rounded-md bg-bg-card px-2 py-1 text-xs text-gray-300 transition hover:bg-accent/15 hover:text-accent-text"
                 >
                   {g.russian}
                 </Link>

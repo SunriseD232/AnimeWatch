@@ -153,14 +153,14 @@ export function FiltersPanel({ options }: { options: Record<string, FilterOption
       </div>
 
       <div className="mt-4 flex items-start justify-between gap-3">
-        <p className="text-xs leading-snug text-gray-500">
+        <p className="text-xs leading-snug text-gray-400">
           Первое нажатие включает пункт, второе — исключает, третье снимает.
         </p>
         {hasFilters && (
           <button
             type="button"
             onClick={reset}
-            className="press shrink-0 text-xs font-medium text-accent hover:text-accent-hover"
+            className="press shrink-0 text-xs font-medium text-accent-text hover:text-accent-hover"
           >
             Сбросить
           </button>

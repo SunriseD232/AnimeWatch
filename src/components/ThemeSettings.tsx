@@ -107,13 +107,13 @@ export default function ThemeSettings({ initialTheme }: Props) {
             привязана к аккаунту и подхватится на других устройствах.
           </p>
         </div>
-        {justSaved && <span className="text-xs text-accent">Сохранено</span>}
+        {justSaved && <span className="text-xs text-accent-text">Сохранено</span>}
       </div>
 
       {/* ——— Интерфейс (акцент) ——— */}
       <div className="mt-5">
         <p className="font-medium text-gray-200">Интерфейс</p>
-        <p className="mt-0.5 text-xs text-gray-500">
+        <p className="mt-0.5 text-xs text-gray-400">
           Кнопки, ссылки, активные вкладки, шкала перемотки в плеере
         </p>
 
@@ -173,7 +173,7 @@ export default function ThemeSettings({ initialTheme }: Props) {
       {/* ——— Основная тема (фон) ——— */}
       <div className="mt-6">
         <p className="font-medium text-gray-200">Основная тема</p>
-        <p className="mt-0.5 text-xs text-gray-500">
+        <p className="mt-0.5 text-xs text-gray-400">
           Фон страницы и карточек. Все варианты тёмные — интерфейс построен на светлом тексте.
         </p>
 
@@ -200,7 +200,7 @@ export default function ThemeSettings({ initialTheme }: Props) {
                   ))}
                 </div>
                 <p className="mt-2 font-medium text-gray-100">{preset.label}</p>
-                <p className="mt-0.5 text-xs leading-snug text-gray-500">{preset.hint}</p>
+                <p className="mt-0.5 text-xs leading-snug text-gray-400">{preset.hint}</p>
               </button>
             );
           })}

@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import * as Sentry from '@sentry/nextjs';
+import { AlertIcon, IconBadge } from '@/components/social/icons';
 
 export default function Error({
   error,
@@ -16,7 +17,9 @@ export default function Error({
 
   return (
     <div className="mx-auto mt-16 flex max-w-md flex-col items-center gap-4 text-center">
-      <div className="text-5xl">😵</div>
+      <IconBadge>
+        <AlertIcon className="h-7 w-7" />
+      </IconBadge>
       <h1 className="text-2xl font-bold">Что-то пошло не так</h1>
       <p className="text-sm text-gray-400">
         Произошла ошибка при загрузке страницы. Попробуйте ещё раз.

@@ -32,7 +32,7 @@ export default function PublicListView({
   if (items.length === 0) {
     return (
       <div className="flex items-center gap-3 rounded-2xl bg-bg-card px-5 py-6 text-sm text-gray-300 ring-1 ring-white/5">
-        <ListPlusIcon className="h-5 w-5 text-accent" />
+        <ListPlusIcon className="h-5 w-5 text-accent-text" />
         <span>Список пока пуст.</span>
       </div>
     );

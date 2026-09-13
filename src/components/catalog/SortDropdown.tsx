@@ -97,7 +97,7 @@ export default function SortDropdown({
                     if (!active) onChange(o.value);
                   }}
                   className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition ${
-                    active ? 'bg-accent/15 text-accent' : 'text-gray-200 hover:bg-white/5'
+                    active ? 'bg-accent/15 text-accent-text' : 'text-gray-200 hover:bg-white/5'
                   }`}
                 >
                   <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4 shrink-0">

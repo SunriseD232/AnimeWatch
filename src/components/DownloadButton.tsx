@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import DownloadPicker from '@/components/DownloadPicker';
+import { DownloadIcon } from '@/components/social/icons';
 
 interface SeasonInfo {
   season: number;
@@ -55,7 +56,7 @@ export default function DownloadButton({
         onClick={() => setOpen(true)}
         className="press flex items-center gap-2 rounded-full border border-white/10 bg-bg-card px-4 py-2.5 text-sm font-medium text-gray-100 hover:bg-bg-soft"
       >
-        <span>⬇</span>
+        <DownloadIcon className="h-4 w-4" />
         <span>Скачать</span>
       </button>
       <DownloadPicker

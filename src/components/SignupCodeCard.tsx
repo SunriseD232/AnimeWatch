@@ -11,7 +11,7 @@ export default function SignupCodeCard({ code }: Props) {
       </p>
 
       {code ? (
-        <p className="rounded-lg border border-white/10 bg-bg-card px-4 py-3 text-center font-mono text-lg tracking-[0.15em] text-accent">
+        <p className="rounded-lg border border-white/10 bg-bg-card px-4 py-3 text-center font-mono text-lg tracking-[0.15em] text-accent-text">
           {code}
         </p>
       ) : (

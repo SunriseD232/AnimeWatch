@@ -85,7 +85,7 @@ export function SiteRatingChip() {
       className="relative inline-flex items-center gap-1.5 rounded-md bg-accent/15 px-2 py-1 font-semibold text-gray-100"
       title="Средняя оценка пользователей MediaWatch"
     >
-      <UsersIcon className="h-3.5 w-3.5 text-accent" />
+      <UsersIcon className="h-3.5 w-3.5 text-accent-text" />
       <span>
         {site.average.toFixed(1)}
         <span className="sr-only"> из 10 у зрителей MediaWatch,</span>
@@ -232,7 +232,7 @@ export function RatingControl() {
             : 'border-white/10 bg-bg-card text-gray-100 hover:bg-bg-soft',
         ].join(' ')}
       >
-        <StarIcon className={`h-4 w-4 ${myScore !== null ? 'text-accent' : ''}`} filled={myScore !== null} />
+        <StarIcon className={`h-4 w-4 ${myScore !== null ? 'text-accent-text' : ''}`} filled={myScore !== null} />
         <span>{myScore !== null ? `Ваша оценка: ${myScore}` : 'Оценить'}</span>
         <ChevronDownIcon className="h-4 w-4 opacity-60" />
       </button>

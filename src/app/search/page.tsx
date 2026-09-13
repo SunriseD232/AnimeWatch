@@ -20,7 +20,7 @@ async function AnimeResults({ query }: { query: string }) {
       return (
         <p className="text-sm text-gray-400">
           По запросу «{query}» ничего не найдено.{' '}
-          <Link href="/catalog" className="text-accent hover:underline">
+          <Link href="/catalog" className="text-accent-text hover:underline">
             Посмотрите каталог
           </Link>
         </p>
@@ -54,7 +54,7 @@ async function CinemaResults({ query }: { query: string }) {
       return (
         <p className="text-sm text-gray-400">
           По запросу «{query}» ничего не найдено.{' '}
-          <Link href="/cinema/catalog" className="text-accent hover:underline">
+          <Link href="/cinema/catalog" className="text-accent-text hover:underline">
             Посмотрите каталог
           </Link>
         </p>
@@ -125,7 +125,7 @@ export default function SearchPage({
         {query ? (
           <>
             Результаты по запросу{' '}
-            <span className="text-accent">«{query}»</span>
+            <span className="text-accent-text">«{query}»</span>
           </>
         ) : (
           `Поиск ${noun}`

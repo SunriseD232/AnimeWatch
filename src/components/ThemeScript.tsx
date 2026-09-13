@@ -51,10 +51,38 @@ export default function ThemeScript() {
       var l = 0.2126 * c((n >> 16) & 255) + 0.7152 * c((n >> 8) & 255) + 0.0722 * c(n & 255);
       return l > 0.189 ? '11 11 15' : '255 255 255';
     };
+    // Акцент для текста на тёмных поверхностях — см. accentText в lib/theme.ts
+    // (порог 4.6:1 против подложки акцентом 15% поверх карточки палитры).
+    var lum = function (h) {
+      var n = parseInt(h.slice(1), 16);
+      var c = function (v) {
+        v = v / 255;
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+      };
+      return 0.2126 * c((n >> 16) & 255) + 0.7152 * c((n >> 8) & 255) + 0.0722 * c(n & 255);
+    };
+    var toHex = function (r, g, b) {
+      return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
+    };
+    var text = function (h, card) {
+      var a = parseInt(h.slice(1), 16), k = parseInt(card.slice(1), 16);
+      var mx = function (sh) { return Math.round(((k >> sh) & 255) + ((((a >> sh) & 255) - ((k >> sh) & 255)) * 0.15)); };
+      var surface = lum(toHex(mx(16), mx(8), mx(0)));
+      for (var step = 0; step <= 20; step++) {
+        var t2 = step * 0.05;
+        var up = function (sh) { var v = (a >> sh) & 255; return Math.round(v + (255 - v) * t2); };
+        var cand = toHex(up(16), up(8), up(0));
+        var l = lum(cand);
+        var ratio = (Math.max(l, surface) + 0.05) / (Math.min(l, surface) + 0.05);
+        if (ratio >= 4.6) return ch(cand);
+      }
+      return '255 255 255';
+    };
     var s = document.documentElement.style;
     s.setProperty('--accent', ch(hex));
     s.setProperty('--accent-hover', lighten(hex));
     s.setProperty('--accent-fg', fg(hex));
+    s.setProperty('--accent-text', text(hex, pal[2]));
     s.setProperty('--bg', ch(pal[0]));
     s.setProperty('--bg-soft', ch(pal[1]));
     s.setProperty('--bg-card', ch(pal[2]));

@@ -22,6 +22,8 @@ import { useVideoseedEstimator } from '@/hooks/useVideoseedEstimator';
 import VibixPlayer from '@/components/VibixPlayer';
 import { usePipPlayerHost } from '@/components/pip/PipPlayerHost';
 import EpisodeComments from '@/components/social/EpisodeComments';
+import { XIcon } from '@/components/social/icons';
+import { FilmIcon, IconBadge } from '@/components/social/icons';
 
 interface Props {
   shikimoriId: number;
@@ -1158,7 +1160,7 @@ export default function Player({
         <div className="min-w-0">
           <Link
             href={detailHref}
-            className="line-clamp-1 text-lg font-bold hover:text-accent"
+            className="line-clamp-1 text-lg font-bold hover:text-accent-text"
           >
             {animeTitle}
           </Link>
@@ -1194,10 +1196,10 @@ export default function Player({
             <button
               type="button"
               onClick={() => setShowOtherBanner(false)}
-              className="text-gray-400 hover:text-white"
+              className="press grid h-8 w-8 place-items-center rounded-full text-gray-400 hover:bg-white/5 hover:text-white"
               aria-label="Закрыть"
             >
-              ✕
+              <XIcon className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -1206,7 +1208,7 @@ export default function Player({
       {/* Переключатель плеера — когда есть альтернативы Kodik */}
       {(hasVibix || hasAlloha || hasOwnPlayer) && (
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 max-w-full items-center gap-2">
             <span className="shrink-0 text-gray-400">Плеер:</span>
             {/* overflow-x-auto + whitespace-nowrap — на узких экранах 4 вкладки
                 (Наш плеер/Vibix/Kodik/Alloha) не влезают в строку без этого:
@@ -1376,7 +1378,9 @@ export default function Player({
           // серверной конфигурации (KODIK_TOKEN и т.п. — это не забота
           // зрителя).
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-bg-soft p-6 text-center">
-            <div className="text-4xl">🎬</div>
+            <IconBadge>
+              <FilmIcon className="h-7 w-7" />
+            </IconBadge>
             <p className="text-sm font-medium text-gray-200">
               Этот источник сейчас недоступен
             </p>
@@ -1517,7 +1521,7 @@ export default function Player({
       {!isAuthed && (
         <p className="rounded-lg border border-white/5 bg-bg-card px-4 py-3 text-sm text-gray-400">
           Вы смотрите как гость — прогресс не сохраняется.{' '}
-          <Link href="/login" className="text-accent hover:underline">
+          <Link href="/login" className="text-accent-text hover:underline">
             Войдите
           </Link>
           , чтобы синхронизировать позицию между устройствами.

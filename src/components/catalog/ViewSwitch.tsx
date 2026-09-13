@@ -77,7 +77,7 @@ function ViewButton({
       title={label}
       className={`press rounded-lg p-1.5 transition ${
         active
-          ? 'bg-accent/15 text-accent'
+          ? 'bg-accent/15 text-accent-text'
           : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
       }`}
     >

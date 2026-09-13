@@ -158,6 +158,49 @@ export function accentForeground(hex: string): string {
   return relativeLuminance(hex) > 0.189 ? ACCENT_FG_DARK : ACCENT_FG_LIGHT;
 }
 
+/**
+ * Акцент для ТЕКСТА и значков на тёмных поверхностях — отдельно от акцента
+ * для заливок.
+ *
+ * Мелкий текст цветом акцента на карточке или акцентной подложке
+ * (`bg-accent/15 text-accent`) у части цветов не дотягивает до 4.5:1: axe на
+ * главной замерил фиолетовый #bf5af2 на такой подложке — 4.41:1. Затемнять
+ * или менять сам акцент нельзя (это выбор пользователя, и заливки с ним в
+ * порядке), поэтому для текста берём тот же цвет, осветлённый ровно
+ * настолько, чтобы читался. Даже синему по умолчанию на «Графите» это нужно:
+ * сам он даёт на подложке 4.09:1.
+ *
+ * Мерим против худшей из поверхностей, где такой текст встречается: подложки
+ * акцентом 15% поверх карточки палитры — она светлее голой карточки.
+ */
+const ACCENT_TEXT_MIN_CONTRAST = 4.6;
+
+function contrastRatio(a: number, b: number): number {
+  const hi = Math.max(a, b);
+  const lo = Math.min(a, b);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+function mixHex(from: string, to: string, amount: number): string {
+  const a = parseInt(from.slice(1), 16);
+  const b = parseInt(to.slice(1), 16);
+  const mix = (shift: number) =>
+    Math.round(((a >> shift) & 255) + ((((b >> shift) & 255) - ((a >> shift) & 255)) * amount));
+  return `#${((mix(16) << 16) | (mix(8) << 8) | mix(0)).toString(16).padStart(6, '0')}`;
+}
+
+export function accentText(accent: string, card: string): string {
+  const base = isHexColor(accent) ? accent : DEFAULT_THEME.accent;
+  const surface = relativeLuminance(mixHex(card, base, 0.15));
+  for (let step = 0; step <= 20; step++) {
+    const candidate = lightenHex(base, step * 0.05);
+    if (contrastRatio(relativeLuminance(candidate), surface) >= ACCENT_TEXT_MIN_CONTRAST) {
+      return hexToChannels(candidate);
+    }
+  }
+  return ACCENT_FG_LIGHT;
+}
+
 /** Оттенок наведения: осветление к белому на `amount`. Отдельной настройки
  *  на hover нет намеренно — она бы только позволила выбрать несочетающуюся
  *  пару. 0.14 подобрано так, чтобы #2997ff дал #46a6ff — прежний ручной
@@ -180,6 +223,7 @@ export function themeToCssVars(theme: Theme): Record<string, string> {
     '--accent': hexToChannels(t.accent),
     '--accent-hover': hexToChannels(lightenHex(t.accent)),
     '--accent-fg': accentForeground(t.accent),
+    '--accent-text': accentText(t.accent, palette.card),
     '--bg': hexToChannels(palette.bg),
     '--bg-soft': hexToChannels(palette.soft),
     '--bg-card': hexToChannels(palette.card),

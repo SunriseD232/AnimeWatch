@@ -53,7 +53,7 @@ export default function PrivacySettings({ initial }: { initial: Privacy }) {
   }
 
   return (
-    <div className="flex max-w-2xl flex-col gap-4">
+    <div className="flex flex-col gap-4">
       <Section
         title="Мой список"
         description="Что вы смотрите, пересматриваете, планируете и бросили — на вашей странице для других."
@@ -98,9 +98,9 @@ function Section({
       className="flex flex-col gap-3 rounded-2xl bg-bg-card p-4 ring-1 ring-white/5 sm:p-5"
     >
       <div>
-        <h2 id={headingId} className="text-base font-semibold text-gray-100">
+        <h3 id={headingId} className="text-base font-semibold text-gray-100">
           {title}
-        </h2>
+        </h3>
         <p id={descId} className="mt-0.5 text-sm text-gray-400">
           {description}
         </p>
@@ -138,7 +138,7 @@ function Section({
                 selected ? 'bg-accent/10 ring-accent/60' : 'bg-bg-soft ring-white/5 hover:ring-white/20',
               ].join(' ')}
             >
-              <Icon className={`mt-0.5 h-4 w-4 ${selected ? 'text-accent' : 'text-gray-400'}`} />
+              <Icon className={`mt-0.5 h-4 w-4 ${selected ? 'text-accent-text' : 'text-gray-400'}`} />
               <span className="flex flex-col">
                 <span className="text-sm font-semibold text-gray-100">{label}</span>
                 <span className="text-xs text-gray-400">{hint}</span>

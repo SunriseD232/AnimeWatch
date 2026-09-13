@@ -126,7 +126,7 @@ export default function FriendsPanel({ initial }: { initial: FriendEntry[] }) {
       {incoming.length > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="text-base font-semibold text-gray-100">
-            Заявки в друзья <span className="text-accent">· {incoming.length}</span>
+            Заявки в друзья <span className="text-accent-text">· {incoming.length}</span>
           </h2>
           <ul className="flex flex-col gap-2">
             {incoming.map((e) => (
@@ -149,7 +149,7 @@ export default function FriendsPanel({ initial }: { initial: FriendEntry[] }) {
         </h2>
         {friends.length === 0 ? (
           <div className="flex items-start gap-3 rounded-2xl bg-bg-card px-5 py-6 text-sm text-gray-300 ring-1 ring-white/5">
-            <UsersIcon className="mt-0.5 h-5 w-5 text-accent" />
+            <UsersIcon className="mt-0.5 h-5 w-5 text-accent-text" />
             <div className="flex flex-col gap-1">
               <p className="font-medium text-gray-100">Друзей пока нет</p>
               <p>

@@ -24,7 +24,7 @@ export default function FriendRatings({ friends }: { friends: { user: PublicUser
               <Avatar user={user} size="xs" />
               <span className="max-w-[9rem] truncate text-gray-200">{user.name}</span>
               <span className="inline-flex items-center gap-0.5 font-semibold tabular-nums text-gray-100">
-                <StarIcon className="h-3 w-3 text-accent" filled />
+                <StarIcon className="h-3 w-3 text-accent-text" filled />
                 <span className="sr-only">оценка </span>
                 {score}
               </span>

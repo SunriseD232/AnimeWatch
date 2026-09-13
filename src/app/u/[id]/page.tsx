@@ -70,7 +70,7 @@ export default async function UserPage({ params }: { params: { id: string } }) {
       <section className="flex flex-col items-center gap-5 text-center sm:flex-row sm:items-center sm:text-left">
         <Avatar user={person} size="xl" className="ring-1 ring-white/10" />
         <div className="flex min-w-0 flex-1 flex-col items-center gap-3 sm:items-start">
-          <h1 className="max-w-full truncate text-4xl font-bold leading-tight">{person.name}</h1>
+          <h1 className="max-w-full text-3xl font-bold leading-tight [overflow-wrap:anywhere] sm:text-4xl">{person.name}</h1>
           <FriendButton userId={id} name={person.name} initialState={state} refreshOnChange />
         </div>
       </section>
@@ -94,7 +94,7 @@ export default async function UserPage({ params }: { params: { id: string } }) {
       </section>
 
       <p className="text-sm text-gray-400">
-        <Link href="/profile?tab=friends" className="text-accent hover:underline">
+        <Link href="/profile?tab=friends" className="text-accent-text hover:underline">
           Ваши друзья и заявки
         </Link>{' '}
         — в профиле, во вкладке «Друзья».

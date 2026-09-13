@@ -163,7 +163,7 @@ export default function CatalogMobileDrawer({
             </CollapsibleSection>
           ))}
 
-          <p className="py-3 text-xs leading-snug text-gray-500">
+          <p className="py-3 text-xs leading-snug text-gray-400">
             Первое нажатие включает пункт, второе — исключает (крестик), третье снимает.
           </p>
         </div>

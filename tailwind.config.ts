@@ -44,6 +44,10 @@ const config: Config = {
           // проходит по контрасту ни на одном пресете, см. accentForeground
           // в lib/theme.ts. Пара всегда вместе: `bg-accent text-accent-fg`.
           fg: 'rgb(var(--accent-fg) / <alpha-value>)',
+          // Акцент для текста и значков на тёмных поверхностях — осветлён
+          // до 4.6:1 там, где сам акцент не дотягивает (accentText в
+          // lib/theme.ts). `text-accent` для текста больше не используем.
+          text: 'rgb(var(--accent-text) / <alpha-value>)',
         },
       },
       fontFamily: {

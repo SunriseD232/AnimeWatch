@@ -9,6 +9,7 @@ import { useToast } from '@/components/ToastProvider';
 import ExpandTitleButton from '@/components/ExpandTitleButton';
 import type { WatchProgress } from '@/lib/types';
 import { fixPosterUrl, formatTime, watchPercent } from '@/lib/format';
+import { XIcon } from '@/components/social/icons';
 
 /** Карточка блока «Продолжить просмотр» с кнопкой убрать из списка. */
 export default function ContinueCard({
@@ -39,7 +40,7 @@ export default function ContinueCard({
   const { toast } = useToast();
   const [hidden, setHidden] = useState(false);
   const [removing, setRemoving] = useState(false);
-  // Двухшаговое удаление: первый клик по ✕ показывает подтверждение.
+  // Двухшаговое удаление: первый клик по крестику показывает подтверждение.
   const [confirming, setConfirming] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -172,7 +173,7 @@ export default function ContinueCard({
           title="Убрать из просмотра"
           className="press hover-reveal absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full bg-black/70 text-sm text-white backdrop-blur transition hover:bg-red-600"
         >
-          ✕
+          <XIcon className="h-4 w-4" />
         </button>
       )}
     </div>

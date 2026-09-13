@@ -104,7 +104,7 @@ export default function MyComments() {
   if (items.length === 0) {
     return (
       <div className="flex items-start gap-3 rounded-2xl bg-bg-card px-5 py-6 text-sm text-gray-300 ring-1 ring-white/5">
-        <MessageIcon className="mt-0.5 h-5 w-5 text-accent" />
+        <MessageIcon className="mt-0.5 h-5 w-5 text-accent-text" />
         <div>
           <p className="font-medium text-gray-100">Комментариев пока нет</p>
           <p className="mt-1">Обсуждение есть под плеером у каждой серии. Всё, что вы там напишете, соберётся здесь.</p>

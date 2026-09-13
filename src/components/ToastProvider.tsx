@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { XIcon } from '@/components/social/icons';
 
 type ToastKind = 'info' | 'error' | 'success';
 
@@ -74,9 +75,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 type="button"
                 onClick={() => dismiss(t.id)}
                 aria-label="Закрыть уведомление"
-                className="press -m-1 shrink-0 rounded p-1 text-red-200 hover:text-white"
+                className="press -m-1 grid h-7 w-7 shrink-0 place-items-center rounded-full text-red-200 hover:bg-white/10 hover:text-white"
               >
-                ✕
+                <XIcon className="h-4 w-4" />
               </button>
             )}
           </div>

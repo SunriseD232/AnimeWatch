@@ -465,7 +465,7 @@ export default function EpisodeComments({
 
       {state === 'ready' && threads.length === 0 && (
         <div className="flex items-center gap-3 rounded-xl bg-white/5 px-4 py-4 text-sm text-gray-300">
-          <MessageIcon className="h-5 w-5 text-accent" />
+          <MessageIcon className="h-5 w-5 text-accent-text" />
           <span>
             {label ? 'Об этой серии пока никто не написал.' : 'Пока никто не написал.'} Поделитесь впечатлением
             первым.

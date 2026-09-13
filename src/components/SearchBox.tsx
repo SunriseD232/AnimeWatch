@@ -248,7 +248,7 @@ export default function SearchBox() {
                   {s.title}
                 </span>
                 {s.year && (
-                  <span className="shrink-0 text-xs text-gray-500">
+                  <span className="shrink-0 text-xs text-gray-400">
                     {s.year}
                   </span>
                 )}
@@ -270,7 +270,7 @@ export default function SearchBox() {
                   via: 'dropdown',
                 });
               }}
-              className="flex items-center justify-between gap-2 border-t border-white/10 px-3 py-2.5 text-sm font-medium text-accent transition hover:bg-white/5"
+              className="flex items-center justify-between gap-2 border-t border-white/10 px-3 py-2.5 text-sm font-medium text-accent-text transition hover:bg-white/5"
             >
               Показать все результаты
               <span aria-hidden="true">→</span>

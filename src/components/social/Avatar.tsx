@@ -1,3 +1,6 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
 import type { PublicUser } from '@/lib/social/types';
 
 /**
@@ -34,16 +37,28 @@ export default function Avatar({
   className?: string;
 }) {
   const { box, px } = SIZES[size];
-  if (user.avatarUrl) {
+  // Файл аватара мог пропасть (переезд диска, ручная чистка) — тогда вместо
+  // тёмного пустого круга показываем букву, как у тех, кто фото не ставил.
+  const [broken, setBroken] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
+  // Картинка из серверной разметки может успеть не загрузиться ДО гидрации —
+  // тогда onError уже прозвучал без слушателя. Досматриваем вручную.
+  useEffect(() => {
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth === 0) setBroken(true);
+  }, [user.avatarUrl]);
+  if (user.avatarUrl && !broken) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
+        ref={imgRef}
         src={user.avatarUrl}
         alt=""
         width={px}
         height={px}
         loading="lazy"
         decoding="async"
+        onError={() => setBroken(true)}
         className={`${box} shrink-0 rounded-full bg-bg-soft object-cover ${className}`}
       />
     );
@@ -51,7 +66,7 @@ export default function Avatar({
   return (
     <span
       aria-hidden="true"
-      className={`${box} grid shrink-0 select-none place-items-center rounded-full bg-accent/15 font-semibold text-accent ${className}`}
+      className={`${box} grid shrink-0 select-none place-items-center rounded-full bg-accent/15 font-semibold text-accent-text ${className}`}
     >
       {initialOf(user.name)}
     </span>

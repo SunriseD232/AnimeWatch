@@ -142,7 +142,7 @@ export default function FriendButton({
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="inline-flex min-h-10 items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-gray-100">
-        <UserCheckIcon className="h-4 w-4 text-accent" />
+        <UserCheckIcon className="h-4 w-4 text-accent-text" />
         В друзьях
       </span>
       <button type="button" onClick={() => setConfirming(true)} className={quietDanger}>

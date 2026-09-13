@@ -467,7 +467,7 @@ function SocialRow({
     <div className={['flex gap-3 px-4 py-3 pr-10 transition hover:bg-white/5', n.read_at ? 'opacity-70' : ''].join(' ')}>
       <div className="relative shrink-0">
         <Avatar user={actor} size="md" />
-        <span className="absolute -bottom-1 -right-1 grid h-5 w-5 place-items-center rounded-full bg-bg-card text-accent ring-2 ring-bg-card">
+        <span className="absolute -bottom-1 -right-1 grid h-5 w-5 place-items-center rounded-full bg-bg-card text-accent-text ring-2 ring-bg-card">
           <Icon className="h-3 w-3" />
         </span>
       </div>

@@ -43,7 +43,7 @@ export default function ChangePasswordForm() {
 
   return (
     <div className="max-w-sm rounded-2xl border border-white/10 bg-bg-card p-5">
-      <h2 className="mb-4 text-sm font-semibold text-gray-100">Сменить пароль</h2>
+      <h3 className="mb-4 text-sm font-semibold text-gray-100">Новый пароль</h3>
       <form onSubmit={submit} className="flex flex-col gap-3">
         <input
           type="password"

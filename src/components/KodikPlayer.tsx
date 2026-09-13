@@ -10,6 +10,7 @@ import {
 } from '@/lib/video/kodik-events';
 import type { Translation } from '@/lib/video/types';
 import type { ContentType } from '@/lib/types';
+import { FilmIcon, IconBadge } from '@/components/social/icons';
 
 interface Props {
   shikimoriId: number;
@@ -172,7 +173,9 @@ export default function KodikPlayer({
       <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10">
         {fallback ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-bg-soft p-6 text-center">
-            <div className="text-4xl">🎬</div>
+            <IconBadge>
+              <FilmIcon className="h-7 w-7" />
+            </IconBadge>
             {/* «Попробуйте позже» годится, когда источник ЛЁГ. Но у этого
                 же экрана есть второй случай: тайтла нет ни у одного
                 источника вовсе (Kodik не знает его по id, альтернатив нет) —

@@ -14,6 +14,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
 import { SlidingPill, useSlidingPill } from '@/components/useSlidingPill';
 import { LIST_STATUS_LABELS, LIST_STATUS_OPTIONS } from '@/lib/listStatus';
+import { IconBadge, ListPlusIcon } from '@/components/social/icons';
 
 const TYPE_TABS: { value: ContentType; label: string }[] = [
   { value: 'anime', label: 'Аниме' },
@@ -70,7 +71,7 @@ function ListCard({
             нет постера
           </div>
         )}
-        <span className="absolute left-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+        <span className="absolute left-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-accent-text">
           {STATUS_LABELS[item.status]}
         </span>
       </div>
@@ -290,7 +291,7 @@ export default function UserListView({
                 className={[
                   'press rounded-lg px-3 py-1.5 text-sm font-medium transition',
                   filter === f.value
-                    ? 'bg-accent/20 text-accent ring-1 ring-accent/40'
+                    ? 'bg-accent/20 text-accent-text ring-1 ring-accent/40'
                     : 'bg-bg-card text-gray-300 hover:bg-bg-soft',
                 ].join(' ')}
               >
@@ -307,7 +308,7 @@ export default function UserListView({
             className={[
               'press rounded-lg px-3 py-1.5 text-sm font-medium transition',
               selectMode
-                ? 'bg-accent/20 text-accent ring-1 ring-accent/40'
+                ? 'bg-accent/20 text-accent-text ring-1 ring-accent/40'
                 : 'bg-bg-card text-gray-300 hover:bg-bg-soft',
             ].join(' ')}
           >
@@ -355,9 +356,9 @@ export default function UserListView({
           key={type}
           className="animate-tab-swap flex flex-col items-center gap-3 rounded-2xl border border-white/5 bg-bg-card px-6 py-10 text-center"
         >
-          <span className="text-3xl" aria-hidden="true">
-            🗂️
-          </span>
+          <IconBadge>
+            <ListPlusIcon className="h-7 w-7" />
+          </IconBadge>
           <p className="text-sm text-gray-400">Здесь пока пусто.</p>
           <Link
             href={type === 'cinema' ? '/cinema/catalog' : '/catalog'}

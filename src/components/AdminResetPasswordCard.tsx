@@ -80,7 +80,7 @@ export default function AdminResetPasswordCard({ userId }: { userId: string }) {
           {saving ? 'Сохраняем…' : 'Сохранить'}
         </button>
       </div>
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-gray-400">
         Пользователь не получит уведомление — email-рассылка на этой VPS не
         настроена, сообщите новый пароль лично.
       </p>

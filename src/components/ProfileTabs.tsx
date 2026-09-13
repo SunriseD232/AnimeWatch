@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import SignupCodeCard from '@/components/SignupCodeCard';
 import UserListView from '@/components/UserListView';
 import HistoryView from '@/components/HistoryView';
@@ -39,19 +39,19 @@ interface Props {
   code: string | null;
 }
 
-type Tab =
-  | 'list'
-  | 'history'
-  | 'ratings'
-  | 'comments'
-  | 'friends'
-  | 'privacy'
-  | 'ui'
-  | 'password'
-  | 'admin'
-  | 'code';
+type Tab = 'list' | 'history' | 'ratings' | 'comments' | 'friends' | 'settings' | 'admin' | 'code';
 
-const TAB_VALUES: Tab[] = ['list', 'history', 'ratings', 'comments', 'friends', 'privacy', 'ui', 'password', 'admin', 'code'];
+const TAB_VALUES: Tab[] = ['list', 'history', 'ratings', 'comments', 'friends', 'settings', 'admin', 'code'];
+
+/**
+ * Старые адреса вкладок (?tab=privacy и т.п.) ведут в «Настройки» к нужному
+ * разделу: приватность, оформление и пароль теперь живут там вместе.
+ */
+const SETTINGS_SECTIONS: Record<string, string> = {
+  privacy: 'settings-privacy',
+  ui: 'settings-ui',
+  password: 'settings-password',
+};
 
 /**
  * Вкладки профиля. Раньше «Оформление», рубильники и смена пароля были
@@ -80,8 +80,15 @@ export default function ProfileTabs({
   const incoming = friendships.filter((f) => f.state === 'incoming').length;
   // С ожидающими заявками профиль открывается сразу на «Друзьях»: сюда
   // приходят по точке на иконке профиля, и искать вкладку глазами незачем.
-  const requested = TAB_VALUES.find((t) => t === initialTab);
+  const requested: Tab | undefined =
+    initialTab && SETTINGS_SECTIONS[initialTab] ? 'settings' : TAB_VALUES.find((t) => t === initialTab);
   const [tab, setTab] = useState<Tab>(requested ?? (incoming > 0 ? 'friends' : 'list'));
+
+  // Пришли по ссылке на конкретный раздел настроек — прокручиваем к нему.
+  useEffect(() => {
+    const anchor = initialTab ? SETTINGS_SECTIONS[initialTab] : undefined;
+    if (anchor) document.getElementById(anchor)?.scrollIntoView({ block: 'start' });
+  }, [initialTab]);
 
   const tabs: { value: Tab; label: string; badge?: number }[] = [
     { value: 'list', label: 'Список' },
@@ -89,9 +96,10 @@ export default function ProfileTabs({
     { value: 'ratings', label: 'Оценки' },
     { value: 'comments', label: 'Комментарии' },
     { value: 'friends', label: 'Друзья', badge: incoming },
-    { value: 'privacy', label: 'Приватность' },
-    { value: 'ui', label: 'UI' },
-    { value: 'password', label: 'Пароль' },
+    // Приватность, оформление и пароль — одной вкладкой. По отдельности это
+    // было восемь вкладок, и на телефоне они занимали три строки над
+    // содержимым, которое человек пришёл смотреть.
+    { value: 'settings', label: 'Настройки' },
     ...(isAdmin
       ? [
           { value: 'admin' as Tab, label: 'Администратор' },
@@ -121,7 +129,7 @@ export default function ProfileTabs({
               <span
                 className={[
                   'relative grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-xs font-bold tabular-nums',
-                  tab === t.value ? 'bg-accent-fg text-accent' : 'bg-accent text-accent-fg',
+                  tab === t.value ? 'bg-accent-fg text-accent-text' : 'bg-accent text-accent-fg',
                 ].join(' ')}
               >
                 {t.badge}
@@ -151,9 +159,19 @@ export default function ProfileTabs({
       )}
       {tab === 'comments' && <MyComments />}
       {tab === 'friends' && <FriendsPanel initial={friendships} />}
-      {tab === 'privacy' && <PrivacySettings initial={privacy} />}
-      {tab === 'ui' && <ThemeSettings initialTheme={initialTheme} />}
-      {tab === 'password' && <ChangePasswordForm />}
+      {tab === 'settings' && (
+        <div className="flex max-w-2xl flex-col gap-8">
+          <SettingsSection id="settings-privacy" title="Приватность">
+            <PrivacySettings initial={privacy} />
+          </SettingsSection>
+          <SettingsSection id="settings-ui" title="Оформление">
+            <ThemeSettings initialTheme={initialTheme} />
+          </SettingsSection>
+          <SettingsSection id="settings-password" title="Пароль">
+            <ChangePasswordForm />
+          </SettingsSection>
+        </div>
+      )}
       {tab === 'admin' && isAdmin && (
         <div className="flex flex-col gap-4">
           {/* Ссылка на страницу состояния — единственный вход в неё: сама
@@ -169,7 +187,7 @@ export default function ProfileTabs({
                 Индексы каталогов, рейтинги, кэш обложек — когда обновлялись и чем закончилось
               </span>
             </span>
-            <span aria-hidden="true" className="shrink-0 text-accent">
+            <span aria-hidden="true" className="shrink-0 text-accent-text">
               →
             </span>
           </Link>
@@ -179,6 +197,17 @@ export default function ProfileTabs({
         </div>
       )}
       {tab === 'code' && isAdmin && <SignupCodeCard code={code} />}
+    </section>
+  );
+}
+
+function SettingsSection({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
+  return (
+    <section id={id} aria-labelledby={`${id}-title`} className="flex scroll-mt-24 flex-col gap-3">
+      <h2 id={`${id}-title`} className="text-lg font-semibold text-gray-100">
+        {title}
+      </h2>
+      {children}
     </section>
   );
 }

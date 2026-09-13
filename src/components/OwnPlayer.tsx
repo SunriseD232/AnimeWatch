@@ -21,6 +21,7 @@ import type { YummyTranslation } from '@/lib/video/yummy';
 import type HlsType from 'hls.js';
 import type { MediaPlayerClass } from 'dashjs';
 import { ExternalDisplay } from '@/native/externalDisplay';
+import { IconBadge, SignalOffIcon } from '@/components/social/icons';
 
 interface SkipSegment {
   time: number;
@@ -321,7 +322,7 @@ function RadioOption({
           active ? 'border-accent bg-accent' : 'border-white/30',
         ].join(' ')}
       />
-      <span className={active ? 'text-accent' : 'text-gray-200'}>{label}</span>
+      <span className={active ? 'text-accent-text' : 'text-gray-200'}>{label}</span>
     </button>
   );
 }
@@ -2347,7 +2348,9 @@ export default function OwnPlayer({
     return (
       <div className="relative flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-2xl bg-bg-card p-6 text-center ring-1 ring-white/10">
         {translationSelector}
-        <div className="text-4xl">📡</div>
+        <IconBadge>
+          <SignalOffIcon className="h-7 w-7" />
+        </IconBadge>
         <p className="text-sm font-medium text-gray-200">Эта серия недоступна в нашем плеере</p>
         <p className="max-w-md text-xs leading-relaxed text-gray-400">
           У источника {SOURCE_LABELS[effectiveSource]} нет этой серии — попробуйте другой плеер выше.
@@ -2852,7 +2855,7 @@ export default function OwnPlayer({
                               storeSubtitleStyle(DEFAULT_SUBTITLE_STYLE);
                               setSubtitleStyle(DEFAULT_SUBTITLE_STYLE);
                             }}
-                            className="press rounded-md px-2 py-1.5 text-left text-xs font-medium text-accent hover:bg-white/10"
+                            className="press rounded-md px-2 py-1.5 text-left text-xs font-medium text-accent-text hover:bg-white/10"
                           >
                             Сбросить оформление
                           </button>

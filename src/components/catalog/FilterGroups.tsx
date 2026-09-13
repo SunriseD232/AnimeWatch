@@ -48,7 +48,7 @@ export function RangeGroup({ def }: { def: RangeGroupDef }) {
         aria-label={`${def.title} — от`}
         className={INPUT_CLS}
       />
-      <span className="shrink-0 text-xs text-gray-500">—</span>
+      <span className="shrink-0 text-xs text-gray-400">—</span>
       <input
         type="number"
         inputMode="numeric"

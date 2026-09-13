@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { XIcon } from '@/components/social/icons';
 
 interface Props {
   /** Готовый embed-URL — для аниме он уже есть из Shikimori, без доп. запроса. */
@@ -103,7 +104,7 @@ export default function TrailerButton({ embedUrl, fetchUrl, label = 'Трейл�
               aria-label="Закрыть"
               className="press absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
             >
-              ✕
+              <XIcon className="h-4 w-4" />
             </button>
             <iframe
               src={`${resolvedUrl}?autoplay=1`}

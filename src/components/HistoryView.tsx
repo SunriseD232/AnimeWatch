@@ -4,6 +4,7 @@ import Link from 'next/link';
 import type { WatchedEpisode } from '@/lib/types';
 import { fixPosterUrl, formatDateTime } from '@/lib/format';
 import PosterImage from '@/components/PosterImage';
+import { ClockIcon, IconBadge } from '@/components/social/icons';
 
 export default function HistoryView({
   items,
@@ -16,9 +17,9 @@ export default function HistoryView({
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/5 bg-bg-card px-6 py-10 text-center">
-        <span className="text-3xl" aria-hidden="true">
-          🕘
-        </span>
+        <IconBadge>
+          <ClockIcon className="h-7 w-7" />
+        </IconBadge>
         <p className="text-sm text-gray-400">
           История просмотра пока пуста — досмотренные серии появятся здесь.
         </p>
@@ -58,7 +59,7 @@ export default function HistoryView({
               Серия {ep.episode}
             </span>
           </div>
-          <span className="shrink-0 text-xs text-gray-500">
+          <span className="shrink-0 text-xs text-gray-400">
             {formatDateTime(ep.watched_at)}
           </span>
         </Link>

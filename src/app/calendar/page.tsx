@@ -5,6 +5,7 @@ import { getAnime, imageUrl } from '@/lib/shikimori';
 import { mapWithConcurrency } from '@/lib/concurrency';
 import { getLocalPosterIds, localPosterUrl } from '@/lib/posterCacheServer';
 import type { UserListItem } from '@/lib/types';
+import { CalendarIcon, IconBadge } from '@/components/social/icons';
 
 export const metadata = { title: 'Календарь выхода серий — MediaWatch' };
 
@@ -97,9 +98,9 @@ export default async function CalendarPage() {
 
       {rows.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/5 bg-bg-card px-6 py-10 text-center">
-          <span className="text-3xl" aria-hidden="true">
-            📅
-          </span>
+          <IconBadge>
+            <CalendarIcon className="h-7 w-7" />
+          </IconBadge>
           <p className="text-sm text-gray-400">
             Нет онгоингов с известной датой следующей серии — либо в «Смотрю»
             пусто, либо там только завершённые тайтлы.
@@ -139,7 +140,7 @@ export default async function CalendarPage() {
                   Серия {row.nextEpisode}
                 </span>
               </div>
-              <span className="shrink-0 text-xs font-medium text-accent">
+              <span className="shrink-0 text-xs font-medium text-accent-text">
                 {relativeLabel(row.nextEpisodeAt)}
               </span>
             </Link>

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
+import { CheckIcon } from '@/components/social/icons';
 
 interface Props {
   shikimoriId: number;
@@ -20,7 +21,7 @@ interface Props {
 
 /**
  * Сетка кнопок серий. Досмотренные серии (и серии до текущей) подсвечены,
- * текущая — акцентом. У ещё не отмеченных серий — маленькая кнопка «✓» в
+ * текущая — акцентом. У ещё не отмеченных серий — маленькая кнопка с галочкой в
  * углу: пишет прямо в watched_episodes (см. ListButton — тот же паттерн
  * прямого клиентского supabase-запроса), не открывая плеер.
  */
@@ -89,7 +90,7 @@ export default function EpisodeGrid({
                 isCurrent
                   ? 'bg-accent text-accent-fg ring-accent'
                   : isWatched
-                    ? 'bg-accent/15 text-accent ring-accent/30'
+                    ? 'bg-accent/15 text-accent-text ring-accent/30'
                     : 'bg-bg-card text-gray-300 ring-white/5 hover:bg-bg-soft hover:text-white',
               ].join(' ')}
               aria-current={isCurrent ? 'true' : undefined}
@@ -103,9 +104,9 @@ export default function EpisodeGrid({
                 disabled={pending === ep}
                 aria-label={`Отметить серию ${ep} просмотренной`}
                 title="Отметить просмотренной"
-                className="press absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-bg-soft text-[10px] text-gray-400 ring-1 ring-white/10 transition hover:text-accent hover:ring-accent/60 disabled:opacity-40"
+                className="press absolute -right-2 -top-2 grid h-6 w-6 place-items-center rounded-full bg-bg-soft text-gray-400 ring-1 ring-white/10 transition hover:text-accent-text hover:ring-accent/60 disabled:opacity-40"
               >
-                ✓
+                <CheckIcon className="h-3.5 w-3.5" />
               </button>
             )}
           </div>

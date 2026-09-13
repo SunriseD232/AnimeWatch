@@ -68,6 +68,16 @@ export default function ListButton({
       if (e.key === 'Escape') {
         setOpen(false);
         triggerRef.current?.focus();
+        return;
+      }
+      // Модель меню: стрелки ходят по пунктам по кругу (WAI-ARIA menu).
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        const items = [...(panelRef.current?.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]') ?? [])];
+        if (items.length === 0) return;
+        e.preventDefault();
+        const index = items.indexOf(document.activeElement as HTMLButtonElement);
+        const step = e.key === 'ArrowDown' ? 1 : -1;
+        items[(index + step + items.length) % items.length]?.focus();
       }
     };
     document.addEventListener('mousedown', onClick);
@@ -189,7 +199,7 @@ export default function ListButton({
         ].join(' ')}
       >
         {current ? (
-          <CheckIcon className="h-4 w-4 text-accent" />
+          <CheckIcon className="h-4 w-4 text-accent-text" />
         ) : (
           <ListPlusIcon className="h-4 w-4" />
         )}
@@ -217,7 +227,7 @@ export default function ListButton({
                 className={[itemClass, selected ? 'font-semibold text-gray-100' : 'text-gray-200'].join(' ')}
               >
                 <span className="grid h-4 w-4 place-items-center">
-                  {selected && <CheckIcon className="h-4 w-4 text-accent" />}
+                  {selected && <CheckIcon className="h-4 w-4 text-accent-text" />}
                 </span>
                 {o.label}
               </button>

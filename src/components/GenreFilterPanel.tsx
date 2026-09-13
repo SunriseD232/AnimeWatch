@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Checkbox from '@/components/Checkbox';
+import { CheckIcon, XIcon } from '@/components/social/icons';
 
 export interface FilterOption {
   value: string;
@@ -132,7 +133,7 @@ export default function GenreFilterPanel({ genres, sorts, defaultSort, anonsTogg
           <button
             type="button"
             onClick={resetAll}
-            className="press text-sm font-medium text-accent hover:text-accent-hover"
+            className="press text-sm font-medium text-accent-text hover:text-accent-hover"
           >
             Сбросить фильтры
           </button>
@@ -158,7 +159,11 @@ export default function GenreFilterPanel({ genres, sorts, defaultSort, anonsTogg
                     : 'bg-bg-card text-gray-300 ring-1 ring-white/5 hover:bg-bg-soft hover:text-white',
               ].join(' ')}
             >
-              {isIncluded ? '✓ ' : isExcluded ? '✕ ' : ''}
+              {isIncluded ? (
+                <CheckIcon className="-ml-0.5 mr-1 inline h-3.5 w-3.5 align-[-2px]" />
+              ) : isExcluded ? (
+                <XIcon className="-ml-0.5 mr-1 inline h-3.5 w-3.5 align-[-2px]" />
+              ) : null}
               {g.label}
             </button>
           );

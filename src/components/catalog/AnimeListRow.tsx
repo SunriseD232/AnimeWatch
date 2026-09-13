@@ -83,7 +83,7 @@ export default function AnimeListRow({ anime }: { anime: ListRowAnime }) {
           sources={[poster, fixPosterUrl(anime.posterFallback ?? null)]}
           alt={anime.title}
           className="absolute inset-0 h-full w-full object-cover"
-          placeholderClassName="grid h-full w-full place-items-center text-center text-xs text-gray-500"
+          placeholderClassName="grid h-full w-full place-items-center text-center text-xs text-gray-400"
         />
       </Link>
 
@@ -91,7 +91,7 @@ export default function AnimeListRow({ anime }: { anime: ListRowAnime }) {
         <div className="flex items-start justify-between gap-3">
           <Link
             href={anime.href}
-            className="line-clamp-2 font-semibold text-gray-100 transition hover:text-accent"
+            className="line-clamp-2 font-semibold text-gray-100 transition hover:text-accent-text"
           >
             {anime.title}
           </Link>
@@ -134,7 +134,7 @@ export default function AnimeListRow({ anime }: { anime: ListRowAnime }) {
                 // Акцентом — то есть цветом, который пользователь выбрал в
                 // профиле (см. lib/theme.ts): кнопка обязана попадать в тему,
                 // а не быть отдельным синим пятном.
-                className="press mt-1 text-xs font-medium text-accent hover:text-accent-hover"
+                className="press mt-1 text-xs font-medium text-accent-text hover:text-accent-hover"
               >
                 {expanded ? 'свернуть' : 'ещё…'}
               </button>

@@ -266,7 +266,7 @@ export default function ProfileIdentity({
         ) : (
           <>
             <div className="flex max-w-full items-center gap-2">
-              <h1 className="truncate text-4xl font-bold leading-tight">{user.name}</h1>
+              <h1 className="min-w-0 text-3xl font-bold leading-tight [overflow-wrap:anywhere] sm:text-4xl">{user.name}</h1>
               <button
                 type="button"
                 onClick={startEditing}
@@ -281,7 +281,7 @@ export default function ProfileIdentity({
               <button
                 type="button"
                 onClick={startEditing}
-                className="text-sm font-medium text-accent hover:underline"
+                className="text-sm font-medium text-accent-text hover:underline"
               >
                 Задайте имя, чтобы друзья вас узнали
               </button>

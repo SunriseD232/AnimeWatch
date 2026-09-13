@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '@/components/ToastProvider';
 import { OfflineDownload } from '@/native/offlineDownload';
 import type { OwnPlayerTranslation } from '@/lib/extract/types';
+import { XIcon } from '@/components/social/icons';
 
 interface SeasonInfo {
   season: number;
@@ -325,7 +326,7 @@ export default function DownloadPicker({
             aria-label="Закрыть"
             className="press flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white hover:bg-black/60"
           >
-            ✕
+            <XIcon className="h-4 w-4" />
           </button>
         </div>
 
@@ -362,7 +363,7 @@ export default function DownloadPicker({
                 <button
                   type="button"
                   onClick={toggleAll}
-                  className="press text-xs font-medium text-accent hover:text-accent-hover"
+                  className="press text-xs font-medium text-accent-text hover:text-accent-hover"
                 >
                   {selected.size === allKeys.length ? 'Снять всё' : 'Выбрать всё'}
                 </button>
@@ -377,7 +378,7 @@ export default function DownloadPicker({
                         <button
                           type="button"
                           onClick={() => toggleSeason(s.season, s.episodes)}
-                          className="press text-xs text-accent hover:text-accent-hover"
+                          className="press text-xs text-accent-text hover:text-accent-hover"
                         >
                           Весь сезон
                         </button>

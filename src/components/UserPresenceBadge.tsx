@@ -87,7 +87,7 @@ export default function UserPresenceBadge({ onlineCount }: { onlineCount: number
                 Онлайн ({onlineUsers.length})
               </div>
               {onlineUsers.length === 0 ? (
-                <p className="px-4 py-3 text-sm text-gray-500">Никого нет</p>
+                <p className="px-4 py-3 text-sm text-gray-400">Никого нет</p>
               ) : (
                 onlineUsers.map((u) => (
                   <UserRow key={u.id} entry={u} onNavigate={() => setOpen(false)} />
@@ -98,7 +98,7 @@ export default function UserPresenceBadge({ onlineCount }: { onlineCount: number
                 Остальные ({restUsers.length})
               </div>
               {restUsers.length === 0 ? (
-                <p className="px-4 py-3 text-sm text-gray-500">Никого нет</p>
+                <p className="px-4 py-3 text-sm text-gray-400">Никого нет</p>
               ) : (
                 restUsers.map((u) => (
                   <UserRow key={u.id} entry={u} onNavigate={() => setOpen(false)} />
@@ -129,7 +129,7 @@ function UserRow({ entry, onNavigate }: { entry: AdminUserEntry; onNavigate: () 
         />
         <span className="truncate">{entry.email}</span>
       </span>
-      <span className="shrink-0 text-xs text-gray-500">
+      <span className="shrink-0 text-xs text-gray-400">
         {entry.online ? 'сейчас' : entry.lastSeenAt ? formatDateTime(entry.lastSeenAt) : 'не заходил'}
       </span>
     </Link>

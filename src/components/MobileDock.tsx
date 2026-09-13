@@ -71,7 +71,7 @@ export default function MobileDock({
           <span
             className={[
               'grid h-12 w-12 place-items-center rounded-2xl transition',
-              isHome ? 'bg-accent text-accent-fg' : 'bg-accent/15 text-accent',
+              isHome ? 'bg-accent text-accent-fg' : 'bg-accent/15 text-accent-text',
             ].join(' ')}
           >
             {/* Треугольник во всю плитку: на 24-й сетке он занимал меньше
@@ -119,7 +119,7 @@ function DockLink({
       aria-current={active ? 'page' : undefined}
       className={[
         'press flex h-full flex-1 flex-col items-center justify-center gap-1 px-2 text-[11px] font-medium leading-none transition',
-        active ? 'text-accent' : 'text-gray-400 hover:text-gray-200',
+        active ? 'text-accent-text' : 'text-gray-400 hover:text-gray-200',
       ].join(' ')}
     >
       {children}
