@@ -24,6 +24,7 @@ import type { ContentType, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
 import { logEvent } from '@/lib/clientLog';
 import { usePipPlayerHost } from '@/components/pip/PipPlayerHost';
+import EpisodeComments from '@/components/social/EpisodeComments';
 
 interface SkipSegment {
   time: number;
@@ -1103,6 +1104,18 @@ export default function WatchPlayer({
           </Link>
           , чтобы синхронизировать позицию между устройствами.
         </p>
+      )}
+
+      {/* Обсуждение идёт за activeEpisode, а не за пропом episode: серии
+          здесь переключаются без навигации (см. switchEpisode). */}
+      {isAuthed && (
+        <EpisodeComments
+          contentType={contentType}
+          shikimoriId={shikimoriId}
+          season={1}
+          episode={activeEpisode}
+          label={total > 1 ? `Серия ${activeEpisode}` : null}
+        />
       )}
 
       {/* Предыдущий сезон/продолжение/похожее теперь рендерятся страницей

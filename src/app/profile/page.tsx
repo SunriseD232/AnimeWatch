@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import ProfileTabs from '@/components/ProfileTabs';
+import ProfileIdentity from '@/components/social/ProfileIdentity';
 import { isAdminEmail } from '@/lib/admin';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import { getTodaysSignupCode } from '@/lib/signupCode';
@@ -7,6 +8,7 @@ import { getVpsRelayEnabled, getKodikPlayerEnabled } from '@/lib/settings';
 import { normalizeTheme } from '@/lib/theme';
 import type { UserListItem, WatchedEpisode } from '@/lib/types';
 import { getLocalPosterMap } from '@/lib/posterCacheServer';
+import { getUserRatings, listFriendships, toPublicUser } from '@/lib/social/server';
 
 export const metadata = { title: 'Профиль — MediaWatch' };
 
@@ -19,7 +21,14 @@ export default async function ProfilePage() {
   // Подстраховка (основная защита — в middleware).
   if (!user) redirect('/login?redirect=/profile');
 
-  const [{ data }, { data: history }, { data: themeRow }] = await Promise.all([
+  const [
+    { data },
+    { data: history },
+    { data: themeRow },
+    { data: profileRow },
+    ratings,
+    friendships,
+  ] = await Promise.all([
     supabase
       .from('user_list')
       .select('*')
@@ -32,12 +41,15 @@ export default async function ProfilePage() {
     // Тема пользователя — рендерим настройки сразу с сохранёнными
     // значениями, без промежуточного запроса с клиента (см. lib/theme.ts).
     supabase.from('user_theme').select('accent, palette').eq('user_id', user.id).maybeSingle(),
+    supabase.from('profiles').select('user_id, display_name, avatar_path').eq('user_id', user.id).maybeSingle(),
+    getUserRatings(supabase, user.id),
+    listFriendships(supabase, user.id),
   ]);
 
   const items = (data ?? []) as UserListItem[];
   const historyItems = (history ?? []) as WatchedEpisode[];
 
-  // Ссылки на наши копии обложек — одним запросом на оба списка сразу.
+  // Ссылки на наши копии обложек — одним запросом на все списки сразу.
   // Проверяем ЗДЕСЬ, а не собираем в карточке: ссылка на несуществующий файл
   // это 404 у каждого тайтла, которого нет в кэше.
   const localPosters = await getLocalPosterMap([
@@ -49,6 +61,10 @@ export default async function ProfilePage() {
       kind: h.content_type === 'cinema' ? ('cinema' as const) : ('anime' as const),
       id: h.shikimori_id,
     })),
+    ...ratings.map((r) => ({
+      kind: r.contentType === 'cinema' ? ('cinema' as const) : ('anime' as const),
+      id: r.shikimoriId,
+    })),
   ]);
   const isAdmin = isAdminEmail(user.email);
   const relayEnabled = isAdmin ? await getVpsRelayEnabled(true) : false;
@@ -56,24 +72,26 @@ export default async function ProfilePage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl font-bold">Профиль</h1>
-          <p className="text-sm text-gray-400">{user.email}</p>
-        </div>
-        <form action="/auth/signout" method="post">
-          <button
-            type="submit"
-            className="rounded-lg border border-white/10 bg-bg-card px-4 py-2 text-sm font-medium text-gray-200 transition hover:bg-red-950/60 hover:text-red-200"
-          >
-            Выйти
-          </button>
-        </form>
-      </section>
+      <ProfileIdentity
+        initialUser={toPublicUser(user.id, profileRow)}
+        email={user.email ?? null}
+        actions={
+          <form action="/auth/signout" method="post">
+            <button
+              type="submit"
+              className="rounded-full border border-white/10 bg-bg-card px-4 py-2 text-sm font-medium text-gray-200 transition hover:bg-red-950/60 hover:text-red-200"
+            >
+              Выйти
+            </button>
+          </form>
+        }
+      />
 
       <ProfileTabs
         items={items}
         history={historyItems}
+        ratings={ratings}
+        friendships={friendships}
         localPosters={Object.fromEntries(localPosters)}
         initialTheme={normalizeTheme(themeRow)}
         isAdmin={isAdmin}

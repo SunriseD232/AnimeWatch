@@ -3,6 +3,7 @@ import AnimeListRow from '@/components/catalog/AnimeListRow';
 import Pagination from '@/components/Pagination';
 import { getCinemaCatalog, getCinemaEpisodesTotalMap } from '@/lib/videoseed-catalog';
 import { getEpisodeProgressMap } from '@/lib/watch/progressMap';
+import { getSiteRatings } from '@/lib/social/server';
 import { getCinemaCatalogFromIndex } from '@/lib/cinemaIndexQuery';
 import {
   CINEMA_FILTER_CONFIG,
@@ -134,10 +135,11 @@ export default async function CinemaCatalogPage({
     );
   }
 
-  const progressMap = await getEpisodeProgressMap(
-    'cinema',
-    data.items.map((item) => item.id),
-  );
+  const ids = data.items.map((item) => item.id);
+  const [progressMap, siteRatings] = await Promise.all([
+    getEpisodeProgressMap('cinema', ids),
+    getSiteRatings('cinema', ids),
+  ]);
   const episodesTotalMap = await getCinemaEpisodesTotalMap([...progressMap.keys()]);
 
   return (
@@ -162,6 +164,7 @@ export default async function CinemaCatalogPage({
                 year: item.year,
                 episodesLabel: null,
                 score: item.rating !== null ? item.rating.toFixed(1) : null,
+                siteScore: siteRatings.get(item.id) ?? null,
                 description: item.description ?? null,
               }}
             />
@@ -177,6 +180,7 @@ export default async function CinemaCatalogPage({
               item={item}
               currentEpisode={progressMap.get(item.id) ?? null}
               episodesTotal={episodesTotalMap.get(item.id) ?? null}
+              siteRating={siteRatings.get(item.id) ?? null}
               priority={i < 6}
             />
           ))}

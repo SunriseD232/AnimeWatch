@@ -5,6 +5,8 @@ import { useRef, useState } from 'react';
 import type { CinemaShort } from '@/lib/videoseed-catalog';
 import ExpandTitleButton from '@/components/ExpandTitleButton';
 import PosterImage from '@/components/PosterImage';
+import { StarIcon, UsersIcon } from '@/components/social/icons';
+import type { SiteRating } from '@/lib/social/types';
 
 /**
  * Карточка фильма/сериала. Постеры приходят с хоста Videoseed
@@ -24,12 +26,16 @@ export default function CinemaCard({
   episodesTotal = null,
   /** См. одноимённый проп в AnimeCard. */
   priority = false,
+  /** Средняя оценка пользователей сайта (title_rating_summary) — страница
+   *  запрашивает её пачкой на все карточки. Нет оценок — значка нет. */
+  siteRating = null,
 }: {
   item: CinemaShort;
   currentEpisode?: number | null;
   /** См. одноимённый проп в AnimeCard. */
   priority?: boolean;
   episodesTotal?: number | null;
+  siteRating?: SiteRating | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -79,8 +85,25 @@ export default function CinemaCard({
             placeholderClassName="grid h-full w-full place-items-center text-gray-400"
           />
           {item.rating !== null && (
-            <span className="absolute right-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-xs font-medium text-amber-300">
-              ★ {item.rating.toFixed(1)}
+            <span
+              className="absolute right-1.5 top-1.5 inline-flex items-center gap-1 rounded-md bg-black/70 px-1.5 py-0.5 text-xs font-medium text-amber-300"
+              title="Рейтинг TMDB"
+            >
+              <StarIcon className="h-3 w-3" filled />
+              {item.rating.toFixed(1)}
+            </span>
+          )}
+          {/* Оценка зрителей сайта — слева, отдельно от TMDB справа, и со
+              своим значком «люди» вместо звезды: две звёздочки с разными
+              цифрами на одной карточке читались бы как опечатка. */}
+          {siteRating && siteRating.votes > 0 && (
+            <span
+              className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-md bg-accent px-1.5 py-0.5 text-xs font-semibold text-accent-fg"
+              title={`Оценка зрителей MediaWatch, голосов: ${siteRating.votes}`}
+            >
+              <UsersIcon className="h-3 w-3" />
+              {siteRating.average.toFixed(1)}
+              <span className="sr-only"> — оценка зрителей MediaWatch</span>
             </span>
           )}
           {showProgress && (

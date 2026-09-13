@@ -14,6 +14,10 @@ import { formatTime } from '@/lib/format';
 import { buildVideoseedEmbedUrl } from '@/lib/video/videoseed';
 import { getVibixEmbed } from '@/lib/video/vibix';
 import { createVideoSource } from '@/lib/video/kodik';
+import FriendRatings from '@/components/social/FriendRatings';
+import { StarIcon } from '@/components/social/icons';
+import { RatingControl, SiteRatingChip, TitleRatingProvider } from '@/components/social/TitleRating';
+import { getSiteRatings, getTitleRatingContext, type TitleRatingContext } from '@/lib/social/server';
 
 /**
  * «Похожее» — самая необязательная секция страницы (и потенциально самая
@@ -48,12 +52,16 @@ async function SimilarCinemaTitles({ id, genre }: { id: number; genre: string | 
     }
   }
   if (similar.length === 0) return null;
+  const siteRatings = await getSiteRatings(
+    'cinema',
+    similar.map((s) => s.id),
+  );
   return (
     <section className="flex flex-col gap-3">
       <h2 className="text-lg font-semibold">Похожее</h2>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
         {similar.map((s) => (
-          <CinemaCard key={s.id} item={s} />
+          <CinemaCard key={s.id} item={s} siteRating={siteRatings.get(s.id) ?? null} />
         ))}
       </div>
     </section>
@@ -131,6 +139,7 @@ export default async function CinemaPage({
           .select('season, episode')
           .eq('content_type', 'cinema')
           .eq('shikimori_id', id),
+        getTitleRatingContext(supabase, user.id, 'cinema', id),
       ])
     : null;
 
@@ -142,9 +151,11 @@ export default async function CinemaPage({
   let progress: WatchProgress | null = null;
   let listItem: UserListItem | null = null;
   let watched: { season: number; episode: number }[] = [];
+  let rating: TitleRatingContext | null = null;
 
   if (progressResult) {
-    const [{ data: p }, { data: l }, { data: w }] = progressResult;
+    const [{ data: p }, { data: l }, { data: w }, ratingContext] = progressResult;
+    rating = ratingContext;
     progress = (p as WatchProgress | null) ?? null;
     listItem = (l as UserListItem | null) ?? null;
     watched = (w ?? []) as { season: number; episode: number }[];
@@ -190,14 +201,20 @@ export default async function CinemaPage({
         </div>
 
         <div className="flex flex-1 flex-col gap-3">
+          <OptionalRatingProvider userId={user?.id ?? null} rating={rating} id={id} title={title} poster={item.poster}>
           <h1 className="text-2xl font-bold leading-tight">{title}</h1>
 
           <div className="flex flex-wrap gap-2 text-xs">
             {item.rating !== null && (
-              <span className="rounded-md bg-amber-500/15 px-2 py-1 font-medium text-amber-300">
-                ★ {item.rating.toFixed(1)}
+              <span
+                className="inline-flex items-center gap-1.5 rounded-md bg-amber-500/15 px-2 py-1 font-medium text-amber-300"
+                title="Рейтинг TMDB"
+              >
+                <StarIcon className="h-3.5 w-3.5" filled />
+                {item.rating.toFixed(1)}
               </span>
             )}
+            {rating && <SiteRatingChip />}
             {item.kind && (
               <span className="rounded-md bg-bg-card px-2 py-1 text-gray-300">
                 {item.kind}
@@ -282,10 +299,13 @@ export default async function CinemaPage({
               />
             )}
             {/* Для сериалов трейлер — внутри CinemaEpisodes, по сезонам */}
+            {rating && <RatingControl />}
             {!item.isSerial && item.idImdb && (
               <TrailerButton fetchUrl={`/api/trailer?imdbId=${item.idImdb}`} />
             )}
           </div>
+          {rating && <FriendRatings friends={rating.friends} />}
+          </OptionalRatingProvider>
         </div>
       </div>
       </div>
@@ -322,5 +342,37 @@ export default async function CinemaPage({
         <SimilarCinemaTitles id={id} genre={item.genres[0] ?? null} />
       </Suspense>
     </div>
+  );
+}
+
+/** См. одноимённую обёртку на странице аниме: без пользователя прозрачна. */
+function OptionalRatingProvider({
+  userId,
+  rating,
+  id,
+  title,
+  poster,
+  children,
+}: {
+  userId: string | null;
+  rating: TitleRatingContext | null;
+  id: number;
+  title: string;
+  poster: string | null;
+  children: React.ReactNode;
+}) {
+  if (!userId || !rating) return <>{children}</>;
+  return (
+    <TitleRatingProvider
+      contentType="cinema"
+      shikimoriId={id}
+      userId={userId}
+      title={title}
+      posterUrl={poster}
+      initialScore={rating.myScore}
+      initialSite={rating.site}
+    >
+      {children}
+    </TitleRatingProvider>
   );
 }

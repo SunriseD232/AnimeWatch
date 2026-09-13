@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import PosterImage from '@/components/PosterImage';
 import Link from 'next/link';
 import { fixPosterUrl } from '@/lib/format';
+import { StarIcon, UsersIcon } from '@/components/social/icons';
 
 /**
  * Строка каталога в списочном виде: постер слева, справа название, строка
@@ -28,6 +29,8 @@ export interface ListRowAnime {
   year: number | null;
   episodesLabel: string | null;
   score: string | null;
+  /** Средняя оценка зрителей сайта — пока только у кино (см. CinemaCard). */
+  siteScore?: { average: number; votes: number } | null;
   description: string | null;
 }
 
@@ -92,11 +95,24 @@ export default function AnimeListRow({ anime }: { anime: ListRowAnime }) {
           >
             {anime.title}
           </Link>
-          {anime.score && anime.score !== '0.0' && (
-            <span className="shrink-0 rounded-md bg-bg-soft px-1.5 py-0.5 text-xs font-semibold text-yellow-400">
-              ★ {anime.score}
-            </span>
-          )}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {anime.siteScore && anime.siteScore.votes > 0 && (
+              <span
+                className="relative inline-flex items-center gap-1 rounded-md bg-accent px-1.5 py-0.5 text-xs font-semibold text-accent-fg"
+                title={`Оценка зрителей MediaWatch, голосов: ${anime.siteScore.votes}`}
+              >
+                <UsersIcon className="h-3 w-3" />
+                {anime.siteScore.average.toFixed(1)}
+                <span className="sr-only"> — оценка зрителей MediaWatch</span>
+              </span>
+            )}
+            {anime.score && anime.score !== '0.0' && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-bg-soft px-1.5 py-0.5 text-xs font-semibold text-yellow-400">
+                <StarIcon className="h-3 w-3" filled />
+                {anime.score}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Тот же набор и порядок, что на странице тайтла: тип, статус, год,

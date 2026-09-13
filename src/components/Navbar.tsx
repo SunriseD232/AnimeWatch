@@ -10,6 +10,9 @@ import SearchBox from './SearchBox';
 import SiteLogoLink from './SiteLogoLink';
 import TipsLink from './TipsLink';
 import UserPresenceBadge from './UserPresenceBadge';
+import Avatar from './social/Avatar';
+import { countIncomingRequests, toPublicUser } from '@/lib/social/server';
+import type { PublicUser } from '@/lib/social/types';
 import type { AppNotification } from '@/lib/types';
 
 export default async function Navbar() {
@@ -29,11 +32,13 @@ export default async function Navbar() {
   const onlineCount = isAdmin ? await getOnlineUserCount() : null;
 
   let notifications: AppNotification[] = [];
+  let me: PublicUser | null = null;
+  let incomingRequests = 0;
   if (user) {
     // Системные уведомления (например, Vibix trial) видят только админы —
     // но это уже гарантирует RLS на стороне system_notifications, здесь
     // фильтровать не нужно: у обычного пользователя там просто нет строк.
-    const [{ data: episodeRows }, { data: systemRows }] = await Promise.all([
+    const [{ data: episodeRows }, { data: systemRows }, { data: profileRow }, incoming] = await Promise.all([
       supabase
         .from('episode_notifications')
         .select('*')
@@ -44,7 +49,17 @@ export default async function Navbar() {
         .select('*')
         .order('created_at', { ascending: false })
         .limit(10),
+      // Аватар в шапке и точка «есть заявки в друзья» — оба запроса по
+      // индексу и на одного пользователя, шапку они не замедляют.
+      supabase
+        .from('profiles')
+        .select('user_id, display_name, avatar_path')
+        .eq('user_id', user.id)
+        .maybeSingle(),
+      countIncomingRequests(supabase, user.id),
     ]);
+    me = toPublicUser(user.id, profileRow);
+    incomingRequests = incoming;
 
     const episodeNotifications: AppNotification[] = (episodeRows ?? []).map(
       (row) => ({ ...row, kind: 'episode' as const }),
@@ -95,21 +110,31 @@ export default async function Navbar() {
                 вовсе — профиль переехал в нижний док (MobileDock). */}
             <Link
               href="/profile"
-              aria-label="Профиль"
+              aria-label={incomingRequests > 0 ? `Профиль, заявок в друзья: ${incomingRequests}` : 'Профиль'}
               title="Профиль"
-              className="press hidden h-9 w-9 place-items-center rounded-full text-gray-300 transition hover:bg-white/5 hover:text-white md:grid"
+              className="press relative hidden h-9 w-9 place-items-center rounded-full text-gray-300 transition hover:bg-white/5 hover:text-white md:grid"
             >
-              <svg
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                className="h-5 w-5 fill-none stroke-current"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="8" r="3.5" />
-                <path d="M4.5 20a7.5 7.5 0 0 1 15 0" />
-              </svg>
+              {me?.avatarUrl ? (
+                <Avatar user={me} size="sm" />
+              ) : (
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  className="h-5 w-5 fill-none stroke-current"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="8" r="3.5" />
+                  <path d="M4.5 20a7.5 7.5 0 0 1 15 0" />
+                </svg>
+              )}
+              {incomingRequests > 0 && (
+                <span
+                  aria-hidden="true"
+                  className="absolute right-0.5 top-0.5 h-2.5 w-2.5 rounded-full bg-accent ring-2 ring-bg"
+                />
+              )}
             </Link>
           </div>
         ) : (
@@ -134,7 +159,7 @@ export default async function Navbar() {
 
       {/* Нижний док — только вошедшим и только на телефоне: гостю на форме
         входа некуда по нему ходить. */}
-      {user && <MobileDock cookieMode={cookieMode} />}
+      {user && <MobileDock cookieMode={cookieMode} hasFriendRequests={incomingRequests > 0} />}
     </>
   );
 }

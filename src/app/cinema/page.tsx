@@ -19,6 +19,7 @@ import { getTmdbSeriesOngoing } from '@/lib/tmdb';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
 import { getEpisodeProgressMap } from '@/lib/watch/progressMap';
+import { getSiteRatings } from '@/lib/social/server';
 import { withLocalPosters } from '@/lib/posterCacheServer';
 import { getCinemaCatalogFromIndex } from '@/lib/cinemaIndexQuery';
 import { EMPTY_TRI } from '@/lib/catalogFilters';
@@ -240,7 +241,10 @@ async function DiscoverGrid({ tab, page }: { tab: string; page: number }) {
   // знает и вернул бы ссылки на их хост — те же картинки, но за 330–340 мс
   // вместо 24 (см. withLocalPosters).
   const items = fromIndex ? data.items : await withLocalPosters(data.items);
-  const progressMap = await getEpisodeProgressMap('cinema', items.map((item) => item.id));
+  const [progressMap, siteRatings] = await Promise.all([
+    getEpisodeProgressMap('cinema', items.map((item) => item.id)),
+    getSiteRatings('cinema', items.map((item) => item.id)),
+  ]);
   const episodesTotalMap = await getCinemaEpisodesTotalMap([...progressMap.keys()]);
 
   return (
@@ -252,6 +256,7 @@ async function DiscoverGrid({ tab, page }: { tab: string; page: number }) {
             item={item}
             currentEpisode={progressMap.get(item.id) ?? null}
             episodesTotal={episodesTotalMap.get(item.id) ?? null}
+            siteRating={siteRatings.get(item.id) ?? null}
             // Первый ряд — вне очереди: это и есть то, что видно сразу.
             priority={i < 6}
           />

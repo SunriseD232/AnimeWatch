@@ -19,6 +19,10 @@ import type { UserListItem, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
 import { KIND_LABELS, STATUS_LABELS } from '@/lib/animeLabels';
 import { getIndexedTitle } from '@/lib/animeIndexQuery';
+import FriendRatings from '@/components/social/FriendRatings';
+import { StarIcon } from '@/components/social/icons';
+import { RatingControl, SiteRatingChip, TitleRatingProvider } from '@/components/social/TitleRating';
+import { getTitleRatingContext, type TitleRatingContext } from '@/lib/social/server';
 
 
 export default async function AnimePage({
@@ -67,9 +71,10 @@ export default async function AnimePage({
   let progress: WatchProgress | null = null;
   let listItem: UserListItem | null = null;
   let watchedEpisodes: number[] = [];
+  let rating: TitleRatingContext | null = null;
 
   if (user) {
-    const [{ data: p }, { data: l }, { data: w }] = await Promise.all([
+    const [{ data: p }, { data: l }, { data: w }, ratingContext] = await Promise.all([
       supabase
         .from('watch_progress')
         .select('*')
@@ -87,7 +92,9 @@ export default async function AnimePage({
         .select('episode')
         .eq('content_type', 'anime')
         .eq('shikimori_id', id),
+      getTitleRatingContext(supabase, user.id, 'anime', id),
     ]);
+    rating = ratingContext;
     progress = (p as WatchProgress | null) ?? null;
     listItem = (l as UserListItem | null) ?? null;
     watchedEpisodes = ((w ?? []) as { episode: number }[]).map(
@@ -133,6 +140,7 @@ export default async function AnimePage({
           </div>
 
           <div className="flex flex-1 flex-col gap-3">
+          <OptionalRatingProvider user={user} rating={rating} id={id} title={title} poster={poster}>
           <div>
             <h1 className="text-2xl font-bold leading-tight">{title}</h1>
             {anime.name !== title && (
@@ -142,10 +150,15 @@ export default async function AnimePage({
 
           <div className="flex flex-wrap gap-2 text-xs">
             {anime.score && Number(anime.score) > 0 && (
-              <span className="rounded-md bg-amber-500/15 px-2 py-1 font-medium text-amber-300">
-                ★ {anime.score}
+              <span
+                className="inline-flex items-center gap-1.5 rounded-md bg-amber-500/15 px-2 py-1 font-medium text-amber-300"
+                title="Оценка на Shikimori"
+              >
+                <StarIcon className="h-3.5 w-3.5" filled />
+                {anime.score}
               </span>
             )}
+            {rating && <SiteRatingChip />}
             {anime.kind && (
               <span className="rounded-md bg-bg-card px-2 py-1 text-gray-300">
                 {KIND_LABELS[anime.kind] ?? anime.kind}
@@ -231,8 +244,11 @@ export default async function AnimePage({
                 totalEpisodes={total}
               />
             )}
+            {rating && <RatingControl />}
             {trailerUrl && <TrailerButton embedUrl={trailerUrl} />}
           </div>
+          {rating && <FriendRatings friends={rating.friends} />}
+          </OptionalRatingProvider>
         </div>
       </div>
       </div>
@@ -268,5 +284,41 @@ export default async function AnimePage({
         <RelatedAnimeSections id={id} />
       </Suspense>
     </div>
+  );
+}
+
+/**
+ * Оценки есть только у вошедшего. Гостю страница тайтла не показывается
+ * вовсе (auth-gate), но обёртка не должна падать, если это когда-нибудь
+ * поменяется, — без пользователя она просто прозрачна.
+ */
+function OptionalRatingProvider({
+  user,
+  rating,
+  id,
+  title,
+  poster,
+  children,
+}: {
+  user: { id: string } | null;
+  rating: TitleRatingContext | null;
+  id: number;
+  title: string;
+  poster: string | null;
+  children: React.ReactNode;
+}) {
+  if (!user || !rating) return <>{children}</>;
+  return (
+    <TitleRatingProvider
+      contentType="anime"
+      shikimoriId={id}
+      userId={user.id}
+      title={title}
+      posterUrl={poster}
+      initialScore={rating.myScore}
+      initialSite={rating.site}
+    >
+      {children}
+    </TitleRatingProvider>
   );
 }

@@ -21,6 +21,7 @@ import { logEvent } from '@/lib/clientLog';
 import { useVideoseedEstimator } from '@/hooks/useVideoseedEstimator';
 import VibixPlayer from '@/components/VibixPlayer';
 import { usePipPlayerHost } from '@/components/pip/PipPlayerHost';
+import EpisodeComments from '@/components/social/EpisodeComments';
 
 interface Props {
   shikimoriId: number;
@@ -1515,6 +1516,24 @@ export default function Player({
           </Link>
           , чтобы синхронизировать позицию между устройствами.
         </p>
+      )}
+
+      {/* Обсуждение — за активными сезоном и серией плеера (см. тот же блок
+          в WatchPlayer). У фильма подписи серии нет. */}
+      {isAuthed && (
+        <EpisodeComments
+          contentType={contentType}
+          shikimoriId={shikimoriId}
+          season={activeSeason}
+          episode={activeEpisode}
+          label={
+            multiSeason
+              ? `Сезон ${activeSeason}, серия ${activeEpisode}`
+              : showEpisode
+                ? `Серия ${activeEpisode}`
+                : null
+          }
+        />
       )}
     </div>
   );

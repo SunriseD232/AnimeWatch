@@ -7,6 +7,7 @@ import { searchCinema } from '@/lib/videoseed-catalog';
 import { searchAnime } from '@/lib/shikimori';
 import { searchAnimeFromIndex } from '@/lib/animeIndexQuery';
 import { searchCinemaFromIndex } from '@/lib/cinemaIndexQuery';
+import { getSiteRatings } from '@/lib/social/server';
 
 export const metadata = { title: 'Поиск — MediaWatch' };
 
@@ -45,6 +46,10 @@ async function AnimeResults({ query }: { query: string }) {
 async function CinemaResults({ query }: { query: string }) {
   try {
     const items = (await searchCinemaFromIndex(query, 20)) ?? (await searchCinema(query, 20));
+    const siteRatings = await getSiteRatings(
+      'cinema',
+      items.map((item) => item.id),
+    );
     if (items.length === 0) {
       return (
         <p className="text-sm text-gray-400">
@@ -58,7 +63,7 @@ async function CinemaResults({ query }: { query: string }) {
     return (
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
         {items.map((item) => (
-          <CinemaCard key={item.id} item={item} />
+          <CinemaCard key={item.id} item={item} siteRating={siteRatings.get(item.id) ?? null} />
         ))}
       </div>
     );

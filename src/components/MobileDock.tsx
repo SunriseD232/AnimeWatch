@@ -21,7 +21,14 @@ import { homeHref, modeFromPathname } from '@/lib/mode';
  * кино, а не аниме. Определяем по пути, а не по куке — путь честнее
  * показывает, где пользователь прямо сейчас.
  */
-export default function MobileDock({ cookieMode }: { cookieMode: ContentType }) {
+export default function MobileDock({
+  cookieMode,
+  hasFriendRequests = false,
+}: {
+  cookieMode: ContentType;
+  /** Точка на «Профиле», пока кто-то ждёт ответа на заявку в друзья. */
+  hasFriendRequests?: boolean;
+}) {
   const pathname = usePathname();
   const isCinema = pathname.startsWith('/cinema');
 
@@ -77,10 +84,18 @@ export default function MobileDock({ cookieMode }: { cookieMode: ContentType }) 
         </Link>
 
         <DockLink href="/profile" label="Профиль" active={isProfile}>
-          <svg viewBox="0 0 24 24" aria-hidden="true" className="h-6 w-6 fill-none stroke-current" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="8" r="3.5" />
-            <path d="M4.5 20a7.5 7.5 0 0 1 15 0" />
-          </svg>
+          <span className="relative">
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="h-6 w-6 fill-none stroke-current" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="8" r="3.5" />
+              <path d="M4.5 20a7.5 7.5 0 0 1 15 0" />
+            </svg>
+            {hasFriendRequests && (
+              <>
+                <span aria-hidden="true" className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-accent ring-2 ring-bg" />
+                <span className="sr-only">Есть заявки в друзья.</span>
+              </>
+            )}
+          </span>
         </DockLink>
       </div>
     </nav>

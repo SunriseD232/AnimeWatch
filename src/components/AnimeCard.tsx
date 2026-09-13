@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import { episodeCount, imageUrl, type ShikimoriAnimeShort } from '@/lib/shikimoriShared';
 import ExpandTitleButton from '@/components/ExpandTitleButton';
 import PosterImage from '@/components/PosterImage';
+import { StarIcon } from '@/components/social/icons';
 
 const KIND_LABELS: Record<string, string> = {
   tv: 'ТВ',
@@ -65,8 +66,9 @@ export default function AnimeCard({
             placeholderClassName="grid h-full w-full place-items-center text-gray-400"
           />
           {anime.score && Number(anime.score) > 0 && (
-            <span className="absolute right-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-xs font-medium text-amber-300">
-              ★ {anime.score}
+            <span className="absolute right-1.5 top-1.5 inline-flex items-center gap-1 rounded-md bg-black/70 px-1.5 py-0.5 text-xs font-medium text-amber-300">
+              <StarIcon className="h-3 w-3" filled />
+              {anime.score}
             </span>
           )}
           {isAnons && (

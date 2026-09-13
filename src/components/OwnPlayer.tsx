@@ -322,6 +322,32 @@ function RadioOption({
   );
 }
 
+// --- Ориентация в полноэкранном режиме --------------------------------------
+// На телефоне, держа его вертикально, «на весь экран» давало горизонтальную
+// полосу видео посередине и две огромные чёрные рамки сверху и снизу.
+// Поворачиваем в горизонталь сами — так же ведут себя плееры YouTube и
+// Кинопоиска. Только на сенсорных экранах (на ноутбуке ориентации нет, а
+// lock() там бросает) и только для горизонтального ролика: вертикальное
+// видео в горизонтали стало бы ещё меньше.
+type LockableOrientation = ScreenOrientation & {
+  lock?: (orientation: 'landscape') => Promise<void>;
+};
+
+function lockLandscape(video: HTMLVideoElement | null) {
+  if (typeof window === 'undefined' || !window.matchMedia('(pointer: coarse)').matches) return;
+  if (video && video.videoWidth > 0 && video.videoWidth < video.videoHeight) return;
+  const orientation = screen.orientation as LockableOrientation | undefined;
+  orientation?.lock?.('landscape').catch(() => {});
+}
+
+function unlockOrientation() {
+  try {
+    screen.orientation?.unlock?.();
+  } catch {
+    // Браузеры без блокировки ориентации бросают — это не ошибка.
+  }
+}
+
 /**
  * Собственный плеер MediaWatch. Источник байтов — /api/proxy: сервер сам
  * извлекает у эмбед-плеера (Alloha/Videoseed) прямую ссылку на видео и
@@ -1811,8 +1837,13 @@ export default function OwnPlayer({
 
   // --- Фуллскрин --------------------------------------------------------------
   useEffect(() => {
-    const onFsChange = () =>
-      setFullscreen(document.fullscreenElement === containerRef.current);
+    const onFsChange = () => {
+      const active = document.fullscreenElement === containerRef.current;
+      setFullscreen(active);
+      // Выход из полноэкранного — отпускаем ориентацию, иначе телефон так и
+      // остался бы в горизонтальной на обычной странице.
+      if (!active) unlockOrientation();
+    };
     document.addEventListener('fullscreenchange', onFsChange);
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
@@ -1826,7 +1857,10 @@ export default function OwnPlayer({
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
     } else if (container.requestFullscreen) {
-      container.requestFullscreen().catch(() => {});
+      container
+        .requestFullscreen({ navigationUI: 'hide' })
+        .then(() => lockLandscape(video))
+        .catch(() => {});
     } else if (video?.webkitEnterFullscreen) {
       video.webkitEnterFullscreen();
     }
@@ -2341,6 +2375,15 @@ export default function OwnPlayer({
           // не окна: в полноэкранном режиме и в маленьком окне это разные
           // вещи, а vw знает только про окно.
           'group relative aspect-video w-full overflow-hidden rounded-2xl bg-black ring-1 ring-white/10 outline-none focus:ring-accent/40 [container-type:inline-size]',
+          // Полноэкранный режим — без рамок. Скругление, обводка и акцентное
+          // кольцо фокуса нужны плееру на странице, а на весь экран они
+          // оставались как есть: по углам экрана вырезались чёрные дуги
+          // скругления, поверх видео висела обводка, а после любого клика
+          // (фокус возвращается на контейнер, см. onClick выше) — ещё и
+          // акцентная рамка. Селектор :fullscreen, а не состояние fullscreen:
+          // стиль применяется в тот же кадр, что и сам переход, без мигания
+          // рамки до ререндера.
+          '[&:fullscreen]:rounded-none [&:fullscreen]:ring-0 [&:fullscreen]:outline-none [&:fullscreen:focus]:ring-0 [&:fullscreen:focus-visible]:outline-none',
           // Курсор прячем вместе с панелью управления — тот же признак
           // (controlsVisible || !playing), что решает видимость самой панели
           // ниже, чтобы не рассинхронизировать. На паузе/буферизации курсор
@@ -2479,6 +2522,12 @@ export default function OwnPlayer({
         <div
           className={[
             'absolute inset-x-0 bottom-0 z-10 flex flex-col gap-1 bg-gradient-to-t from-black/90 via-black/50 to-transparent px-3 pb-2 pt-8 transition-opacity duration-300',
+            // На весь экран у телефона с вырезом панель уходила бы под
+            // скругления и «чёлку» в горизонтальной ориентации — отступаем на
+            // безопасную зону, но не меньше обычного.
+            fullscreen
+              ? 'pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(0.5rem,env(safe-area-inset-bottom))]'
+              : '',
             // select-none — быстрые повторные клики по перемотке (двойной
             // клик и чаще) иначе триггерят нативное выделение текста браузером
             // (воспроизведено вживую: страница вокруг ползунка подсвечивается,
