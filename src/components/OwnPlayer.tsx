@@ -859,7 +859,18 @@ export default function OwnPlayer({
     // в прогрессе этого тайтла. Запомненная озвучка с других тайтлов — только
     // пожелание: её здесь может не быть вовсе, и это не повод предупреждать.
     const titleChoice = activeTranslationTitleRef.current ?? initialTranslationTitle;
-    const wantTitle = titleChoice ?? stored.translation;
+    // У кино в прогрессе лежит ещё и id озвучки, и он стабилен (см.
+    // Props.savedTranslationId). Начальное состояние выше его уже пробует,
+    // но ТОЛЬКО на первом рендере — а список озвучек почти всегда приходит
+    // позже, отдельным запросом, и там сверять было ещё не с чем. Без этой
+    // ветки свежий заход на фильм с пустым translation_title (его пишет не
+    // каждый плеер) уезжал на «липкую» подпись с ДРУГИХ тайтлов, то есть
+    // выбранная в прошлый раз озвучка не восстанавливалась.
+    const savedById =
+      !titleChoice && contentType === 'cinema' && savedTranslationId != null
+        ? translations.find((t) => t.id === savedTranslationId)
+        : undefined;
+    const wantTitle = titleChoice ?? savedById?.title ?? stored.translation;
     const match = wantTitle ? translations.find((t) => t.title === wantTitle) : undefined;
     const resolved = match ?? translations[0] ?? null;
 
@@ -874,7 +885,16 @@ export default function OwnPlayer({
       storeTrackPrefs({ translation: resolved.title });
     }
     setTranslationId(resolved?.id ?? null);
-  }, [episode, season, translations, translationsStale, initialTranslationTitle, warnComboMissing]);
+  }, [
+    episode,
+    season,
+    translations,
+    translationsStale,
+    initialTranslationTitle,
+    contentType,
+    savedTranslationId,
+    warnComboMissing,
+  ]);
 
   // --- Громкость: восстановление/сохранение ---------------------------------
   // Читаем сохранённое значение сразу (до монтирования <video> — он рисуется
@@ -1461,7 +1481,6 @@ export default function OwnPlayer({
         const comboKey = `${season}:${episode}:${translationId ?? ''}`;
         const comboChanged = restoredComboRef.current !== comboKey;
         restoredComboRef.current = comboKey;
-        if (!comboChanged) return;
 
         // Доп. аудиодорожку переносим ТАК ЖЕ, как субтитры, — по подписи.
         // Раньше она сбрасывалась на основную при каждой смене серии: индекс
@@ -1469,13 +1488,30 @@ export default function OwnPlayer({
         // («Оригинал», «(Russian) ...») стабильна, по ней и ищем. Не нашли —
         // остаёмся на основной, это осмысленный запасной вариант, в отличие
         // от субтитров, где молчаливое выключение хуже предупреждения.
-        const tracks = Array.isArray(data.audioTracks) ? data.audioTracks : [];
-        const wantAudio = prefs.audio;
-        if (wantAudio) {
-          const audioIdx = tracks.findIndex((t) => t.label === wantAudio);
-          setAudioTrackIndex(audioIdx >= 0 ? audioIdx : null);
+        // Только при смене сочетания: внутри той же серии и озвучки список
+        // тот же, а переприсвоение затирало бы только что выбранную вручную
+        // дорожку (её смена сама меняет src и приводит нас сюда).
+        if (comboChanged) {
+          const tracks = Array.isArray(data.audioTracks) ? data.audioTracks : [];
+          const wantAudio = prefs.audio;
+          if (wantAudio) {
+            const audioIdx = tracks.findIndex((t) => t.label === wantAudio);
+            setAudioTrackIndex(audioIdx >= 0 ? audioIdx : null);
+          }
         }
 
+        // А вот субтитры восстанавливаем НА КАЖДОМ успешном проходе, не
+        // только при смене сочетания. Причина: guard в начале эффекта на
+        // время перезагрузки src гасит выбор (setActiveSubtitleIndex(null) —
+        // индексы старого списка недействительны), и если после этого не
+        // восстановить, выбор пропадает насовсем. А смена src внутри той же
+        // серии и озвучки — обычное дело: другое качество, другая
+        // аудиодорожка, тихий ретрай после сбоя источника. Ровно так
+        // субтитры и терялись при заходе через «Продолжить просмотр»:
+        // включены в прошлый раз, а на экране их нет.
+        // Перебить ручной выбор это не может: он пишется в те же prefs
+        // сразу при клике (см. меню субтитров), то есть prefs.subtitle и
+        // есть текущий выбор пользователя.
         const want = prefs.subtitle;
         if (!want) {
           setActiveSubtitleIndex(null);
@@ -1483,7 +1519,10 @@ export default function OwnPlayer({
         }
         const idx = list.findIndex((sub) => sub.label === want);
         setActiveSubtitleIndex(idx >= 0 ? idx : null);
-        if (idx < 0 && subtitlesShownRef.current) {
+        // Предупреждаем — только при реальной смене серии/озвучки: на смене
+        // качества или аудиодорожки список субтитров тот же, и повторный
+        // тост про «нет таких субтитров» был бы шумом на ровном месте.
+        if (comboChanged && idx < 0 && subtitlesShownRef.current) {
           warnComboMissing(
             list.length > 0
               ? `У этой серии нет субтитров «${want}». Выберите другие в меню субтитров.`
@@ -2155,7 +2194,17 @@ export default function OwnPlayer({
       // жду синхронного пересчёта activeTranslation на следующем рендере
       // (см. коммент у объявления activeTranslationTitleRef выше).
       const picked = translations.find((t) => t.id === id);
-      if (picked) activeTranslationTitleRef.current = picked.title;
+      if (picked) {
+        activeTranslationTitleRef.current = picked.title;
+        // Запоминаем выбор НА ВЕСЬ САЙТ прямо здесь. Раньше в localStorage
+        // писал только эффект восстановления ниже — а он крутится на смену
+        // серии/списка озвучек, и при ручной смене озвучки ВНУТРИ уже
+        // играющего контента не срабатывал вовсе. У сериала выбор всё же
+        // доезжал до хранилища при переходе на следующую серию, а у фильма
+        // (одна «серия») переход не наступает никогда — и озвучка не
+        // запоминалась ни для этого фильма, ни для следующих.
+        storeTrackPrefs({ translation: picked.title });
+      }
       pinnedTranslationRef.current = { key: `${season}:${episode}`, id };
       logEvent('player.change_translation', {
         shikimoriId,
