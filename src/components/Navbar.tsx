@@ -123,7 +123,7 @@ export default async function Navbar() {
               <CalendarLink />
               <TipsLink />
             </div>
-            <NotificationBell initial={notifications} />
+            <NotificationBell initial={notifications} userId={user.id} />
             {/* Иконка вместо слова: подпись «Профиль» занимала в шапке
                 больше места, чем колокольчик с календарём вместе взятые, а
                 человечек читается без пояснений. На телефоне ссылки тут нет

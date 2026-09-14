@@ -12,8 +12,36 @@ import { nameOf } from '@/lib/social/names';
 import { commentHref } from '@/lib/social/types';
 import type { AppNotification, EpisodeNotification, SocialNotification, SystemNotification } from '@/lib/types';
 
+/**
+ * Realtime отдаёт время ровно так, как его пишет Postgres:
+ * «2026-09-14 18:32:33.606923+00» — пробел вместо T и смещение без минут.
+ * Chrome такую строку не разбирает (Invalid Date), и в уведомлении,
+ * прилетевшем вживую, было «NaN дн назад»; то же уведомление после
+ * перезагрузки страницы приходило уже из REST нормальным ISO и выглядело
+ * правильно. Приводим к ISO, а совсем неразбираемое время просто не
+ * показываем — подпись «когда» не стоит сломанной строки на экране.
+ */
+/**
+ * Пришла ли в событии настоящая строка. Подписка и так фильтрует по своему
+ * user_id (см. ниже), но пустой payload Realtime отдаёт и в других случаях
+ * — например, когда RLS не пускает к строке, — а строить из него
+ * уведомление нельзя: получается «Кто-то ... NaN дн назад». Признак
+ * настоящей строки — наличие id.
+ */
+function isRealRow(row: unknown): boolean {
+  return !!row && typeof row === 'object' && typeof (row as { id?: unknown }).id === 'string';
+}
+
+function parseTime(iso: string): number {
+  const direct = new Date(iso).getTime();
+  if (Number.isFinite(direct)) return direct;
+  return new Date(iso.replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00')).getTime();
+}
+
 function timeAgo(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
+  const at = parseTime(iso);
+  if (!Number.isFinite(at)) return '';
+  const diffMs = Date.now() - at;
   const min = Math.floor(diffMs / 60_000);
   if (min < 1) return 'только что';
   if (min < 60) return `${min} мин назад`;
@@ -66,7 +94,14 @@ const EMPTY_TEXT: Record<Section, string> = {
  * на вставки во все три таблицы. У социальных ещё и на удаления: отозванная
  * заявка убирает своё уведомление триггером, и оно должно пропасть и здесь.
  */
-export default function NotificationBell({ initial }: { initial: AppNotification[] }) {
+export default function NotificationBell({
+  initial,
+  userId,
+}: {
+  initial: AppNotification[];
+  /** Чьи уведомления слушать в Realtime — см. фильтр подписки ниже. */
+  userId: string;
+}) {
   const [items, setItems] = useState(initial);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -123,15 +158,34 @@ export default function NotificationBell({ initial }: { initial: AppNotification
 
   useEffect(() => {
     const supabase = createClient();
+    // Слушаем ТОЛЬКО свои строки. Без фильтра подписка получала вставки по
+    // всем пользователям сразу, а на чужую строку (её не отдаёт RLS)
+    // Realtime присылает событие с ПУСТЫМ new — и из него собиралось
+    // уведомление-призрак: автора нет («Кто-то»), времени нет («NaN дн
+    // назад»), вида нет, поэтому текст падал в ветку по умолчанию
+    // («теперь у вас в друзьях»). Ровно это и видел пользователь, приняв
+    // заявку: уведомление на самом деле адресовано другой стороне.
+    const mine = `user_id=eq.${userId}`;
     const channel = supabase
       .channel(`notif-${Math.random().toString(36).slice(2)}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'episode_notifications' }, (payload) => {
-        setItems((prev) => [{ ...(payload.new as Omit<EpisodeNotification, 'kind'>), kind: 'episode' }, ...prev]);
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'system_notifications' }, (payload) => {
-        setItems((prev) => [{ ...(payload.new as Omit<SystemNotification, 'kind'>), kind: 'system' }, ...prev]);
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'social_notifications' }, async (payload) => {
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'episode_notifications', filter: mine },
+        (payload) => {
+          if (!isRealRow(payload.new)) return;
+          setItems((prev) => [{ ...(payload.new as Omit<EpisodeNotification, 'kind'>), kind: 'episode' }, ...prev]);
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'system_notifications', filter: mine },
+        (payload) => {
+          if (!isRealRow(payload.new)) return;
+          setItems((prev) => [{ ...(payload.new as Omit<SystemNotification, 'kind'>), kind: 'system' }, ...prev]);
+        },
+      )
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'social_notifications', filter: mine }, async (payload) => {
+        if (!isRealRow(payload.new)) return;
         const row = payload.new as Record<string, unknown>;
         const actorId = typeof row.actor_id === 'string' ? row.actor_id : null;
         let actor: SocialNotification['actor'] = null;
@@ -169,7 +223,7 @@ export default function NotificationBell({ initial }: { initial: AppNotification
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [userId]);
 
   async function markRead(notification: AppNotification) {
     if (notification.read_at) return;
