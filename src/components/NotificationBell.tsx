@@ -7,7 +7,7 @@ import { useDismissOnOutside } from '@/components/useAnchoredPanel';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
 import Avatar from '@/components/social/Avatar';
-import { AlertIcon, BellOffIcon, CheckCheckIcon, ReplyIcon, UserCheckIcon, UserPlusIcon, XIcon } from '@/components/social/icons';
+import { AlertIcon, BellOffIcon, CheckCheckIcon, ReplyIcon, UserPlusIcon, UserXIcon, XIcon } from '@/components/social/icons';
 import { nameOf } from '@/lib/social/names';
 import { commentHref } from '@/lib/social/types';
 import type { AppNotification, EpisodeNotification, SocialNotification, SystemNotification } from '@/lib/types';
@@ -481,7 +481,6 @@ function SocialRow({
         ? `/u/${actor.id}`
         : '/profile?tab=friends';
 
-  const Icon = n.type === 'comment_reply' ? ReplyIcon : n.type === 'friend_request' ? UserPlusIcon : UserCheckIcon;
   const headline =
     n.type === 'comment_reply'
       ? 'ответ на ваш комментарий'
@@ -491,11 +490,18 @@ function SocialRow({
 
   return (
     <div className={['relative flex gap-3 px-4 py-3 pr-10 transition hover:bg-white/5', n.read_at ? 'opacity-70' : ''].join(' ')}>
+      {/* Значок на аватаре — только у ответа на комментарий: он там
+          единственный признак, что это ветка обсуждения, а не что-то про
+          друзей. У заявки тот же смысл несут кнопки ответа ниже (тот же
+          человечек с плюсом), у принятой заявки — сам текст строки, и
+          мелкий кружок под аватаркой был лишней деталью. */}
       <div className="relative shrink-0">
         <Avatar user={actor} size="md" />
-        <span className="absolute -bottom-1 -right-1 grid h-5 w-5 place-items-center rounded-full bg-bg-card text-accent-text ring-2 ring-bg-card">
-          <Icon className="h-3 w-3" />
-        </span>
+        {n.type === 'comment_reply' && (
+          <span className="absolute -bottom-1 -right-1 grid h-5 w-5 place-items-center rounded-full bg-bg-card text-accent-text ring-2 ring-bg-card">
+            <ReplyIcon className="h-3 w-3" />
+          </span>
+        )}
       </div>
       <div className="min-w-0 flex-1">
         <Link href={where} onClick={onOpen} className="block rounded-md focus-visible:outline-offset-4">
@@ -515,21 +521,31 @@ function SocialRow({
           )}
           <p className="mt-0.5 text-[11px] text-gray-400">{timeAgo(n.created_at)}</p>
         </Link>
+        {/* Ответ на заявку — два кружка без подписей: человечек с плюсом
+            (принять) и с крестиком (отклонить). Цвета СМЫСЛОВЫЕ, а не
+            акцентные: «принять» и «отклонить» — пара «подтверждение/отказ»,
+            и акцент (у каждого свой — хоть розовый) рядом с красным читался
+            бы как два одинаково важных действия. Оттенки взяты те, что дают
+            белому значку ≥3:1 на заливке (emerald-600 3.8:1, red-500 3.8:1). */}
         {n.type === 'friend_request' && n.actor && (
           <div className="mt-2 flex gap-2">
             <button
               type="button"
               onClick={() => onAnswer(true)}
-              className="press rounded-full bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition hover:bg-accent-hover"
+              aria-label={`Принять заявку в друзья: ${actor.name}`}
+              title="Принять"
+              className="press grid h-8 w-8 place-items-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700"
             >
-              Принять
+              <UserPlusIcon className="h-4 w-4" />
             </button>
             <button
               type="button"
               onClick={() => onAnswer(false)}
-              className="press rounded-full px-3 py-1.5 text-xs font-medium text-gray-300 ring-1 ring-white/10 transition hover:bg-white/5"
+              aria-label={`Отклонить заявку в друзья: ${actor.name}`}
+              title="Отклонить"
+              className="press grid h-8 w-8 place-items-center rounded-full bg-red-500 text-white transition hover:bg-red-600"
             >
-              Отклонить
+              <UserXIcon className="h-4 w-4" />
             </button>
           </div>
         )}

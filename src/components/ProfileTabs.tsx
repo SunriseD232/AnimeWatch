@@ -92,8 +92,6 @@ export default function ProfileTabs({
   // приходят по точке на иконке профиля, и искать вкладку глазами незачем.
   const requested: Tab | undefined = requestedSection ? 'settings' : TAB_VALUES.find((t) => t === initialTab);
   const [tab, setTab] = useState<Tab>(requested ?? (incoming > 0 ? 'friends' : 'list'));
-  const [settingsSection, setSettingsSection] = useState<SettingsSection>(requestedSection ?? 'ui');
-  const { rootRef: settingsRootRef, setTabRef: setSettingsTabRef, pill: settingsPill } = useSlidingPill(settingsSection);
 
   const tabs: { value: Tab; label: string; badge?: number }[] = [
     { value: 'list', label: 'Список' },
@@ -170,37 +168,7 @@ export default function ProfileTabs({
       {tab === 'comments' && <MyComments />}
       {tab === 'friends' && <FriendsPanel initial={friendships} />}
       {tab === 'settings' && (
-        <div className="flex max-w-2xl flex-col gap-4">
-          {/* Подвыбор внутри «Настроек» — тот же переключатель, что у
-              «Аниме»/«Фильмы и сериалы» в «Списке» (общий SlidingPill):
-              раньше все три раздела лежали друг под другом одной длинной
-              страницей, теперь виден один, остальные — по клику. */}
-          <div
-            ref={settingsRootRef}
-            className="relative inline-flex w-fit rounded-full border border-white/10 bg-bg-card p-1"
-          >
-            <SlidingPill pill={settingsPill} />
-            {SETTINGS_TABS.map((s) => (
-              <button
-                key={s.value}
-                type="button"
-                ref={setSettingsTabRef(s.value)}
-                onClick={() => setSettingsSection(s.value)}
-                aria-pressed={settingsSection === s.value}
-                className={[
-                  'press relative z-10 rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200',
-                  settingsSection === s.value ? 'text-accent-fg' : 'text-gray-300 hover:text-white',
-                ].join(' ')}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-
-          {settingsSection === 'ui' && <ThemeSettings initialTheme={initialTheme} />}
-          {settingsSection === 'privacy' && <PrivacySettings initial={privacy} />}
-          {settingsSection === 'password' && <ChangePasswordForm />}
-        </div>
+        <SettingsTabs initialSection={requestedSection ?? 'ui'} privacy={privacy} initialTheme={initialTheme} />
       )}
       {tab === 'admin' && isAdmin && (
         <div className="flex flex-col gap-4">
@@ -228,5 +196,60 @@ export default function ProfileTabs({
       )}
       {tab === 'code' && isAdmin && <SignupCodeCard code={code} />}
     </section>
+  );
+}
+
+/**
+ * Подвыбор внутри «Настроек» — тот же переключатель, что у «Аниме»/«Фильмы
+ * и сериалы» в «Списке» (общий SlidingPill): виден один раздел, остальные
+ * по клику.
+ *
+ * ОТДЕЛЬНЫМ КОМПОНЕНТОМ, а не куском разметки внутри ProfileTabs, ровно
+ * по одной причине: useSlidingPill меряет ползунок в useLayoutEffect, и
+ * пересчитывает его только при смене активного раздела. Пока хук жил в
+ * ProfileTabs, эффект отрабатывал ОДИН раз — при монтировании профиля,
+ * когда вкладки «Настройки» в разметке ещё нет и мерить нечего; клик по
+ * «Настройкам» активный раздел не менял, эффект не перезапускался, и
+ * подсветка не появлялась вовсе (ползунок null). Здесь компонент
+ * монтируется вместе с самой вкладкой — эффект впервые отрабатывает уже
+ * на живой разметке, как и у UserListView.
+ */
+function SettingsTabs({
+  initialSection,
+  privacy,
+  initialTheme,
+}: {
+  initialSection: SettingsSection;
+  privacy: Privacy;
+  initialTheme: Theme;
+}) {
+  const [section, setSection] = useState<SettingsSection>(initialSection);
+  const { rootRef, setTabRef, pill } = useSlidingPill(section);
+
+  return (
+    <div className="flex max-w-2xl flex-col gap-4">
+      <div ref={rootRef} className="relative inline-flex w-fit rounded-full border border-white/10 bg-bg-card p-1">
+        <SlidingPill pill={pill} />
+        {SETTINGS_TABS.map((s) => (
+          <button
+            key={s.value}
+            type="button"
+            ref={setTabRef(s.value)}
+            onClick={() => setSection(s.value)}
+            aria-pressed={section === s.value}
+            className={[
+              'press relative z-10 rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200',
+              section === s.value ? 'text-accent-fg' : 'text-gray-300 hover:text-white',
+            ].join(' ')}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {section === 'ui' && <ThemeSettings initialTheme={initialTheme} />}
+      {section === 'privacy' && <PrivacySettings initial={privacy} />}
+      {section === 'password' && <ChangePasswordForm />}
+    </div>
   );
 }
