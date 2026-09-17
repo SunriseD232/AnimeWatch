@@ -15,7 +15,7 @@ import {
   type SubtitleStyle,
 } from '@/lib/subtitleStyle';
 import { formatTime } from '@/lib/format';
-import { pickQualityHeight, pickQualityLevel, readPreferredQuality } from '@/lib/playerQuality';
+import { MAX_QUALITY, pickQualityHeight, pickQualityLevel, readPreferredQuality } from '@/lib/playerQuality';
 import type { ContentType } from '@/lib/types';
 import type { ExtractSource, Subtitle } from '@/lib/extract/types';
 import type { YummyTranslation } from '@/lib/video/yummy';
@@ -698,19 +698,6 @@ export default function OwnPlayer({
   // вариантами в master.m3u8 — иначе список пуст, и селектор скрыт).
   const [qualityLevels, setQualityLevels] = useState<QualityLevel[]>([]);
   const [currentLevel, setCurrentLevel] = useState(-1); // -1 = авто (ABR)
-  /**
-   * Уровень, который хочет настройка профиля (Настройки → Плеер).
-   *
-   * Одного присваивания hls.currentLevel в MANIFEST_PARSED мало: hls.js к
-   * этому моменту уже мог начать загрузку СВОИМ стартовым уровнем, и наш
-   * выбор терялся. Ловилось вживую на проде — при выбранных 480p плеер
-   * примерно через раз стартовал в 1080p, причём на том же тайтле и
-   * источнике. Поэтому цель помним и возвращаем на первых переключениях
-   * уровня, пока человек сам не выбрал качество в меню плеера.
-   */
-  const desiredLevelRef = useRef<number | null>(null);
-  /** Сколько раз уже возвращали — чтобы не бодаться с плеером бесконечно. */
-  const desiredLevelTriesRef = useRef(0);
   // Субтитры — отдельная ручка (не часть m3u8/mp4), см. /api/proxy/subtitles.
   // Сейчас реально отдаёт только Videoseed — для остальных источников список
   // всегда пуст, и селектор просто не рендерится.
@@ -1233,9 +1220,6 @@ export default function OwnPlayer({
           hls.on(Hls.Events.MANIFEST_PARSED, (_evt, data) => {
             if (cancelled) return;
             hlsErrorRecoveryRef.current = 0;
-            // Новый поток — прежняя цель по качеству больше не про него.
-            desiredLevelRef.current = null;
-            desiredLevelTriesRef.current = 0;
             const levels = data.levels
               .map((lvl, index) => ({ index, height: lvl.height }))
               .filter((l) => l.height > 0)
@@ -1294,9 +1278,19 @@ export default function OwnPlayer({
               // 480p — прежнее поведение). Ручной селектор качества работает
               // как обычно и перебивает это на текущий сеанс, см.
               // changeQuality.
-              const preferred = pickQualityLevel(levels, readPreferredQuality());
+              const wanted = readPreferredQuality();
+              const preferred = pickQualityLevel(levels, wanted);
               if (preferred) {
-                desiredLevelRef.current = preferred.index;
+                // ПОТОЛОК, а не только уровень. Одного hls.currentLevel мало:
+                // hls.js к этому моменту мог уже начать грузить своим
+                // стартовым уровнем, а при внутренних пересчётах — вернуться
+                // в авто-режим, и выбор терялся. Ловилось вживую на проде:
+                // при выбранных 480p плеер стартовал в 1080p примерно через
+                // раз, а с попыткой «вернуть» уровень переключением начинал
+                // дёргаться 1080 → 480 → 1080. Потолок hls.js уважает и в
+                // авто-режиме, поэтому выше выбранного он уже не поднимется.
+                // Для «максимума» потолок снимаем (-1).
+                hls.autoLevelCapping = wanted === MAX_QUALITY ? -1 : preferred.index;
                 hls.currentLevel = preferred.index;
               }
               setQualityLevels(levels);
@@ -1306,9 +1300,19 @@ export default function OwnPlayer({
               // мне включать по умолчанию», иначе настройка ничего бы не
               // значила у половины источников. «Авто» остаётся в меню плеера
               // и возвращает адаптивный режим на текущий сеанс.
-              const preferred = pickQualityLevel(levels, readPreferredQuality());
+              const wanted = readPreferredQuality();
+              const preferred = pickQualityLevel(levels, wanted);
               if (preferred) {
-                desiredLevelRef.current = preferred.index;
+                // ПОТОЛОК, а не только уровень. Одного hls.currentLevel мало:
+                // hls.js к этому моменту мог уже начать грузить своим
+                // стартовым уровнем, а при внутренних пересчётах — вернуться
+                // в авто-режим, и выбор терялся. Ловилось вживую на проде:
+                // при выбранных 480p плеер стартовал в 1080p примерно через
+                // раз, а с попыткой «вернуть» уровень переключением начинал
+                // дёргаться 1080 → 480 → 1080. Потолок hls.js уважает и в
+                // авто-режиме, поэтому выше выбранного он уже не поднимется.
+                // Для «максимума» потолок снимаем (-1).
+                hls.autoLevelCapping = wanted === MAX_QUALITY ? -1 : preferred.index;
                 hls.currentLevel = preferred.index;
               }
               setQualityLevels(levels);
@@ -1316,17 +1320,7 @@ export default function OwnPlayer({
             setCurrentLevel(hls.currentLevel);
           });
           hls.on(Hls.Events.LEVEL_SWITCHED, (_evt, data) => {
-            if (cancelled) return;
-            // Плеер уехал не на тот уровень, что просит настройка, — вернём.
-            // Не больше трёх раз: если источник упорно отдаёт своё, лучше
-            // смотреть не в том качестве, чем в цикле переключений.
-            const want = desiredLevelRef.current;
-            if (want != null && data.level !== want && desiredLevelTriesRef.current < 3) {
-              desiredLevelTriesRef.current += 1;
-              hls.currentLevel = want;
-              return;
-            }
-            setCurrentLevel(data.level);
+            if (!cancelled) setCurrentLevel(data.level);
           });
           // Без этого обработчика фатальная ошибка hls.js (протухшая
           // подписанная ссылка на сегмент, сетевой сбой) молча вешала плеер
@@ -2294,10 +2288,11 @@ export default function OwnPlayer({
   // src и без потери позиции (в отличие от смены серии/озвучки).
   const changeQuality = useCallback(
     (index: number) => {
-      // Человек выбрал качество сам — перестаём удерживать то, что просила
-      // настройка профиля (иначе выбор «Авто» или другого уровня тут же
-      // отыгрывался бы назад, см. desiredLevelRef).
-      desiredLevelRef.current = null;
+      // Человек выбрал качество сам — снимаем потолок, поставленный
+      // настройкой профиля. Иначе выбрать качество ВЫШЕ выбранного в
+      // настройках было бы нельзя: hls.js не поднимется над autoLevelCapping,
+      // и пункт меню молча не срабатывал бы.
+      if (hlsRef.current) hlsRef.current.autoLevelCapping = -1;
       logEvent('player.change_quality', {
         source: effectiveSource,
         shikimoriId,
