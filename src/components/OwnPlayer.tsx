@@ -698,6 +698,19 @@ export default function OwnPlayer({
   // вариантами в master.m3u8 — иначе список пуст, и селектор скрыт).
   const [qualityLevels, setQualityLevels] = useState<QualityLevel[]>([]);
   const [currentLevel, setCurrentLevel] = useState(-1); // -1 = авто (ABR)
+  /**
+   * Уровень, который хочет настройка профиля (Настройки → Плеер).
+   *
+   * Одного присваивания hls.currentLevel в MANIFEST_PARSED мало: hls.js к
+   * этому моменту уже мог начать загрузку СВОИМ стартовым уровнем, и наш
+   * выбор терялся. Ловилось вживую на проде — при выбранных 480p плеер
+   * примерно через раз стартовал в 1080p, причём на том же тайтле и
+   * источнике. Поэтому цель помним и возвращаем на первых переключениях
+   * уровня, пока человек сам не выбрал качество в меню плеера.
+   */
+  const desiredLevelRef = useRef<number | null>(null);
+  /** Сколько раз уже возвращали — чтобы не бодаться с плеером бесконечно. */
+  const desiredLevelTriesRef = useRef(0);
   // Субтитры — отдельная ручка (не часть m3u8/mp4), см. /api/proxy/subtitles.
   // Сейчас реально отдаёт только Videoseed — для остальных источников список
   // всегда пуст, и селектор просто не рендерится.
@@ -1220,6 +1233,9 @@ export default function OwnPlayer({
           hls.on(Hls.Events.MANIFEST_PARSED, (_evt, data) => {
             if (cancelled) return;
             hlsErrorRecoveryRef.current = 0;
+            // Новый поток — прежняя цель по качеству больше не про него.
+            desiredLevelRef.current = null;
+            desiredLevelTriesRef.current = 0;
             const levels = data.levels
               .map((lvl, index) => ({ index, height: lvl.height }))
               .filter((l) => l.height > 0)
@@ -1279,7 +1295,10 @@ export default function OwnPlayer({
               // как обычно и перебивает это на текущий сеанс, см.
               // changeQuality.
               const preferred = pickQualityLevel(levels, readPreferredQuality());
-              if (preferred) hls.currentLevel = preferred.index;
+              if (preferred) {
+                desiredLevelRef.current = preferred.index;
+                hls.currentLevel = preferred.index;
+              }
               setQualityLevels(levels);
             } else {
               // Источники с настоящим ABR. Тут авто-переключение работает
@@ -1288,13 +1307,26 @@ export default function OwnPlayer({
               // значила у половины источников. «Авто» остаётся в меню плеера
               // и возвращает адаптивный режим на текущий сеанс.
               const preferred = pickQualityLevel(levels, readPreferredQuality());
-              if (preferred) hls.currentLevel = preferred.index;
+              if (preferred) {
+                desiredLevelRef.current = preferred.index;
+                hls.currentLevel = preferred.index;
+              }
               setQualityLevels(levels);
             }
             setCurrentLevel(hls.currentLevel);
           });
           hls.on(Hls.Events.LEVEL_SWITCHED, (_evt, data) => {
-            if (!cancelled) setCurrentLevel(data.level);
+            if (cancelled) return;
+            // Плеер уехал не на тот уровень, что просит настройка, — вернём.
+            // Не больше трёх раз: если источник упорно отдаёт своё, лучше
+            // смотреть не в том качестве, чем в цикле переключений.
+            const want = desiredLevelRef.current;
+            if (want != null && data.level !== want && desiredLevelTriesRef.current < 3) {
+              desiredLevelTriesRef.current += 1;
+              hls.currentLevel = want;
+              return;
+            }
+            setCurrentLevel(data.level);
           });
           // Без этого обработчика фатальная ошибка hls.js (протухшая
           // подписанная ссылка на сегмент, сетевой сбой) молча вешала плеер
@@ -2262,6 +2294,10 @@ export default function OwnPlayer({
   // src и без потери позиции (в отличие от смены серии/озвучки).
   const changeQuality = useCallback(
     (index: number) => {
+      // Человек выбрал качество сам — перестаём удерживать то, что просила
+      // настройка профиля (иначе выбор «Авто» или другого уровня тут же
+      // отыгрывался бы назад, см. desiredLevelRef).
+      desiredLevelRef.current = null;
       logEvent('player.change_quality', {
         source: effectiveSource,
         shikimoriId,
