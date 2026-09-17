@@ -1261,20 +1261,28 @@ export default function OwnPlayer({
            * «максимум и зафиксировать».
            */
           const applyPreferredQuality = (
-            levels: { index: number; height: number }[],
+            levels: { index: number; height: number; maxBitrate: number }[],
             pinWhenAuto: boolean,
           ) => {
             const wanted = readPreferredQuality();
             if (wanted === AUTO_QUALITY && !pinWhenAuto) {
+              // Честный адаптивный режим: никаких границ.
               hls.autoLevelCapping = -1;
+              hls.config.minAutoBitrate = 0;
               return;
             }
             const preferred =
               wanted === AUTO_QUALITY ? (levels[0] ?? null) : pickQualityLevel(levels, wanted);
             if (!preferred) return;
-            // Потолок снимаем там, где верхней границы нет по смыслу.
-            hls.autoLevelCapping =
-              wanted === MAX_QUALITY || wanted === AUTO_QUALITY ? -1 : preferred.index;
+            // Зажимаем ABR с ДВУХ сторон, а не только сверху. Потолка мало:
+            // внутри него плеер спокойно уходит вниз на слабой сети — при
+            // выбранных 720p реально видели 360p. Раз «Авто» теперь
+            // отдельный пункт, фиксированный выбор должен быть
+            // фиксированным. Нижняя граница — через minAutoBitrate: hls.js
+            // читает её на лету и берёт первый уровень, чей битрейт не ниже
+            // (см. getter minAutoLevel в hls.js).
+            hls.autoLevelCapping = preferred.index;
+            hls.config.minAutoBitrate = preferred.maxBitrate;
             hls.currentLevel = preferred.index;
           };
 
@@ -1284,7 +1292,9 @@ export default function OwnPlayer({
             if (cancelled) return;
             hlsErrorRecoveryRef.current = 0;
             const levels = data.levels
-              .map((lvl, index) => ({ index, height: lvl.height }))
+              // maxBitrate нужен, чтобы зажать ABR снизу — см.
+              // applyPreferredQuality.
+              .map((lvl, index) => ({ index, height: lvl.height, maxBitrate: lvl.maxBitrate ?? lvl.bitrate ?? 0 }))
               .filter((l) => l.height > 0)
               .sort((a, b) => b.height - a.height);
             if (effectiveSource === 'alloha') {
@@ -2329,7 +2339,12 @@ export default function OwnPlayer({
       // настройкой профиля. Иначе выбрать качество ВЫШЕ выбранного в
       // настройках было бы нельзя: hls.js не поднимется над autoLevelCapping,
       // и пункт меню молча не срабатывал бы.
-      if (hlsRef.current) hlsRef.current.autoLevelCapping = -1;
+      if (hlsRef.current) {
+        hlsRef.current.autoLevelCapping = -1;
+        // И нижнюю границу тоже: иначе выбранное вручную качество НИЖЕ
+        // того, что стоит в настройках, плеер бы не отдал.
+        hlsRef.current.config.minAutoBitrate = 0;
+      }
       logEvent('player.change_quality', {
         source: effectiveSource,
         shikimoriId,
