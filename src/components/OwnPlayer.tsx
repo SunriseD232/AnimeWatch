@@ -1263,17 +1263,17 @@ export default function OwnPlayer({
           const applyPreferredQuality = (
             levels: { index: number; height: number; maxBitrate: number }[],
             pinWhenAuto: boolean,
-          ) => {
+          ): number | null => {
             const wanted = readPreferredQuality();
             if (wanted === AUTO_QUALITY && !pinWhenAuto) {
               // Честный адаптивный режим: никаких границ.
               hls.autoLevelCapping = -1;
               hls.config.minAutoBitrate = 0;
-              return;
+              return null;
             }
             const preferred =
               wanted === AUTO_QUALITY ? (levels[0] ?? null) : pickQualityLevel(levels, wanted);
-            if (!preferred) return;
+            if (!preferred) return null;
             // Зажимаем ABR с ДВУХ сторон, а не только сверху. Потолка мало:
             // внутри него плеер спокойно уходит вниз на слабой сети — при
             // выбранных 720p реально видели 360p. Раз «Авто» теперь
@@ -1284,6 +1284,7 @@ export default function OwnPlayer({
             hls.autoLevelCapping = preferred.index;
             hls.config.minAutoBitrate = preferred.maxBitrate;
             hls.currentLevel = preferred.index;
+            return preferred.index;
           };
 
           // master.m3u8 может содержать несколько ABR-вариантов (см. §12
@@ -1291,6 +1292,7 @@ export default function OwnPlayer({
           hls.on(Hls.Events.MANIFEST_PARSED, (_evt, data) => {
             if (cancelled) return;
             hlsErrorRecoveryRef.current = 0;
+            let chosenLevel: number | null = null;
             const levels = data.levels
               // maxBitrate нужен, чтобы зажать ABR снизу — см.
               // applyPreferredQuality.
@@ -1354,16 +1356,21 @@ export default function OwnPlayer({
               // changeQuality. «Авто» для videoseed означает «максимум и
               // зафиксировать»: настоящий ABR тут ломает воспроизведение
               // (см. выше), так что адаптивным это качество быть не может.
-              applyPreferredQuality(levels, true);
+              chosenLevel = applyPreferredQuality(levels, true);
               setQualityLevels(levels);
             } else {
               // Источники с настоящим ABR. Выбор в профиле — это «какое
               // качество включать по умолчанию»; «Авто» здесь и правда
               // означает адаптивный режим.
-              applyPreferredQuality(levels, false);
+              chosenLevel = applyPreferredQuality(levels, false);
               setQualityLevels(levels);
             }
-            setCurrentLevel(hls.currentLevel);
+            // Берём уровень, который САМИ выбрали, а не hls.currentLevel:
+            // его геттер отдаёт -1, пока не загружен ни один фрагмент, а
+            // грузить мы начинаем строкой ниже. Из-за этого подпись в меню
+            // на миг показывала «Авто» и только потом менялась на нужное
+            // качество — заметно при переключении серии.
+            setCurrentLevel(chosenLevel ?? hls.currentLevel);
             startPlayback();
           });
           hls.on(Hls.Events.LEVEL_SWITCHED, (_evt, data) => {
