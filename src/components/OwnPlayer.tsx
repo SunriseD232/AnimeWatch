@@ -15,6 +15,7 @@ import {
   type SubtitleStyle,
 } from '@/lib/subtitleStyle';
 import { formatTime } from '@/lib/format';
+import { pickQualityHeight, pickQualityLevel, readPreferredQuality } from '@/lib/playerQuality';
 import type { ContentType } from '@/lib/types';
 import type { ExtractSource, Subtitle } from '@/lib/extract/types';
 import type { YummyTranslation } from '@/lib/video/yummy';
@@ -1245,9 +1246,18 @@ export default function OwnPlayer({
               if (heights.length > 1) {
                 const reloadLevels = heights.map((height, index) => ({ index, height }));
                 setQualityLevels(reloadLevels);
-                const activeHeight = dashQualityHeight ?? heights[0];
+                // Пока качество в этом сеансе не выбрано руками
+                // (dashQualityHeight), берём выбранное в профиле, а не просто
+                // самое высокое.
+                const activeHeight =
+                  dashQualityHeight ?? pickQualityHeight(heights, readPreferredQuality()) ?? heights[0];
                 const activeIndex = reloadLevels.findIndex((l) => l.height === activeHeight);
                 setCurrentLevel(activeIndex >= 0 ? activeIndex : 0);
+                if (dashQualityHeight == null && activeHeight !== heights[0]) {
+                  // Нужное качество живёт по своей ссылке — перезапрашиваем
+                  // src, как это делает ручной выбор (см. changeQuality).
+                  setDashQualityHeight(activeHeight);
+                }
                 return;
               }
             } else if (effectiveSource === 'videoseed') {
@@ -1263,19 +1273,22 @@ export default function OwnPlayer({
               //
               // В отличие от прежней версии (до 2026-09-03) фиксируем НЕ на
               // самом низком уровне (240p — грузилось стабильно, но заставляло
-              // вручную поднимать качество на каждой серии), а на ближайшем к
-              // 480p среди реально доступных — разумный баланс по умолчанию,
-              // который пользователь при желании сам поправит вручную (ручной
-              // селектор качества работает как обычно, см. changeQuality).
-              if (levels.length > 0) {
-                const target = 480;
-                const closest = levels.reduce((best, l) =>
-                  Math.abs(l.height - target) < Math.abs(best.height - target) ? l : best,
-                );
-                hls.currentLevel = closest.index;
-              }
+              // вручную поднимать качество на каждой серии), а на том, что
+              // человек выбрал в профиле (Настройки → Плеер; по умолчанию
+              // 480p — прежнее поведение). Ручной селектор качества работает
+              // как обычно и перебивает это на текущий сеанс, см.
+              // changeQuality.
+              const preferred = pickQualityLevel(levels, readPreferredQuality());
+              if (preferred) hls.currentLevel = preferred.index;
               setQualityLevels(levels);
             } else {
+              // Источники с настоящим ABR. Тут авто-переключение работает
+              // нормально, но выбор в профиле — это и есть «какое качество
+              // мне включать по умолчанию», иначе настройка ничего бы не
+              // значила у половины источников. «Авто» остаётся в меню плеера
+              // и возвращает адаптивный режим на текущий сеанс.
+              const preferred = pickQualityLevel(levels, readPreferredQuality());
+              if (preferred) hls.currentLevel = preferred.index;
               setQualityLevels(levels);
             }
             setCurrentLevel(hls.currentLevel);
@@ -1395,9 +1408,13 @@ export default function OwnPlayer({
         if (heights.length > 1) {
           const levels = heights.map((height, index) => ({ index, height }));
           setQualityLevels(levels);
-          const activeHeight = dashQualityHeight ?? heights[0];
+          // Как и у Alloha: пока руками в этом сеансе не выбрали, берём
+          // качество из профиля (Настройки → Плеер).
+          const activeHeight =
+            dashQualityHeight ?? pickQualityHeight(heights, readPreferredQuality()) ?? heights[0];
           const activeIndex = levels.findIndex((l) => l.height === activeHeight);
           setCurrentLevel(activeIndex >= 0 ? activeIndex : 0);
+          if (dashQualityHeight == null && activeHeight !== heights[0]) setDashQualityHeight(activeHeight);
         }
         player.initialize(video, requestUrl(), true);
       } else {

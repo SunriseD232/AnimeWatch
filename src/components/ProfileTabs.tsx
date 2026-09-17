@@ -7,6 +7,7 @@ import UserListView from '@/components/UserListView';
 import HistoryView from '@/components/HistoryView';
 import ThemeSettings from '@/components/ThemeSettings';
 import ChangePasswordForm from '@/components/ChangePasswordForm';
+import PlayerSettings from '@/components/PlayerSettings';
 import VibixTrialStatus from '@/components/VibixTrialStatus';
 import RelayToggle from '@/components/RelayToggle';
 import KodikPlayerToggle from '@/components/KodikPlayerToggle';
@@ -44,13 +45,15 @@ type Tab = 'list' | 'history' | 'ratings' | 'comments' | 'friends' | 'settings' 
 
 const TAB_VALUES: Tab[] = ['list', 'history', 'ratings', 'comments', 'friends', 'settings', 'admin', 'code'];
 
-type SettingsSection = 'ui' | 'privacy' | 'password';
+type SettingsSection = 'ui' | 'player' | 'privacy' | 'password';
 
 /** Оформление — первым: это самый частый повод зайти в «Настройки», и
  *  единственный раздел без сохранения по кнопке (применяется сразу по
- *  клику на цвет). Приватность и пароль — по одному действию за визит. */
+ *  клику на цвет). Дальше плеер — он тоже применяется сразу. Приватность и
+ *  пароль — по одному действию за визит. */
 const SETTINGS_TABS: { value: SettingsSection; label: string }[] = [
   { value: 'ui', label: 'Оформление' },
+  { value: 'player', label: 'Плеер' },
   { value: 'privacy', label: 'Приватность' },
   { value: 'password', label: 'Пароль' },
 ];
@@ -60,7 +63,7 @@ const SETTINGS_TABS: { value: SettingsSection; label: string }[] = [
  *  вело простой scrollIntoView; переключатель ниже сделал это подвкладками
  *  (тот же приём, что «Аниме»/«Фильмы и сериалы» в «Списке»), и открывать
  *  нужно уже саму подвкладку, а не скроллить к якорю внутри неё. */
-const SETTINGS_SECTION_VALUES: SettingsSection[] = ['ui', 'privacy', 'password'];
+const SETTINGS_SECTION_VALUES: SettingsSection[] = ['ui', 'player', 'privacy', 'password'];
 
 /**
  * Вкладки профиля. Раньше «Оформление», рубильники и смена пароля были
@@ -248,6 +251,7 @@ function SettingsTabs({
       </div>
 
       {section === 'ui' && <ThemeSettings initialTheme={initialTheme} />}
+      {section === 'player' && <PlayerSettings />}
       {section === 'privacy' && <PrivacySettings initial={privacy} />}
       {section === 'password' && <ChangePasswordForm />}
     </div>
