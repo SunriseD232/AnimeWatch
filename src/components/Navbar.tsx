@@ -6,6 +6,8 @@ import { getOnlineUserCount, isAdminEmail } from '@/lib/admin';
 import CalendarLink from './CalendarLink';
 import NotificationBell from './NotificationBell';
 import MobileDock from './MobileDock';
+import PlayerPrefsSync from './PlayerPrefsSync';
+import { normalizeQuality, type PlayerPrefs } from '@/lib/playerQuality';
 import SearchBox from './SearchBox';
 import SiteLogoLink from './SiteLogoLink';
 import TipsLink from './TipsLink';
@@ -34,6 +36,7 @@ export default async function Navbar() {
   let notifications: AppNotification[] = [];
   let me: PublicUser | null = null;
   let incomingRequests = 0;
+  let playerPrefs: PlayerPrefs = { quality: null, sync: false };
   if (user) {
     // Системные уведомления (например, Vibix trial) видят только админы —
     // но это уже гарантирует RLS на стороне system_notifications, здесь
@@ -53,7 +56,7 @@ export default async function Navbar() {
       // индексу и на одного пользователя, шапку они не замедляют.
       supabase
         .from('profiles')
-        .select('user_id, display_name, avatar_path')
+        .select('user_id, display_name, avatar_path, preferred_quality, sync_player_quality')
         .eq('user_id', user.id)
         .maybeSingle(),
       countIncomingRequests(supabase, user.id),
@@ -66,6 +69,10 @@ export default async function Navbar() {
     ]);
     me = toPublicUser(user.id, profileRow);
     incomingRequests = incoming;
+    playerPrefs = {
+      quality: normalizeQuality(profileRow?.preferred_quality),
+      sync: !!profileRow?.sync_player_quality,
+    };
 
     const episodeNotifications: AppNotification[] = (episodeRows ?? []).map(
       (row) => ({ ...row, kind: 'episode' as const }),
@@ -115,6 +122,9 @@ export default async function Navbar() {
 
         {user ? (
           <div className="flex shrink-0 items-center gap-1">
+            {/* Ничего не рисует — переносит качество из аккаунта в
+                localStorage этого устройства, если включена синхронизация. */}
+            <PlayerPrefsSync quality={playerPrefs.quality} sync={playerPrefs.sync} />
             {onlineCount !== null && <UserPresenceBadge onlineCount={onlineCount} />}
             {/* Календарь и подсказки — со всех экранов кроме самых узких:
                 на телефоне их место занял поиск, а сами они доступны из

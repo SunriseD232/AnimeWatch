@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { normalizeDisplayName, validateDisplayName } from '@/lib/social/names';
 import { normalizeVisibility } from '@/lib/social/types';
+import { QUALITY_OPTIONS } from '@/lib/playerQuality';
 import { toPublicUser } from '@/lib/social/server';
 
 /**
@@ -23,7 +24,10 @@ export async function PATCH(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Войдите, чтобы изменить профиль.' }, { status: 401 });
 
   const body = await request.json().catch(() => null);
-  const patch: Record<string, string | null> = { user_id: user.id, updated_at: new Date().toISOString() };
+  const patch: Record<string, string | number | boolean | null> = {
+    user_id: user.id,
+    updated_at: new Date().toISOString(),
+  };
 
   if (typeof body?.displayName === 'string') {
     const displayName = normalizeDisplayName(body.displayName);
@@ -40,12 +44,24 @@ export async function PATCH(request: NextRequest) {
   if (body?.ratingsVisibility !== undefined) {
     patch.ratings_visibility = normalizeVisibility(body.ratingsVisibility);
   }
+  if (body?.preferredQuality !== undefined) {
+    // Мусор молча не пишем: в колонке стоит CHECK (см. миграцию 0038), и
+    // запрос всё равно упал бы 500-й, хотя это обычная ошибка ввода.
+    const quality = Number(body.preferredQuality);
+    if (!(QUALITY_OPTIONS as readonly number[]).includes(quality)) {
+      return NextResponse.json({ error: 'Такого качества нет.' }, { status: 400 });
+    }
+    patch.preferred_quality = quality;
+  }
+  if (body?.syncPlayerQuality !== undefined) {
+    patch.sync_player_quality = !!body.syncPlayerQuality;
+  }
 
   const service = createServiceClient();
   const { data, error } = await service
     .from('profiles')
     .upsert(patch, { onConflict: 'user_id' })
-    .select('user_id, display_name, avatar_path, lists_visibility, ratings_visibility')
+    .select('user_id, display_name, avatar_path, lists_visibility, ratings_visibility, preferred_quality, sync_player_quality')
     .single();
 
   if (error) {
@@ -62,6 +78,10 @@ export async function PATCH(request: NextRequest) {
     privacy: {
       lists: normalizeVisibility(data.lists_visibility),
       ratings: normalizeVisibility(data.ratings_visibility),
+    },
+    player: {
+      quality: data.preferred_quality ?? null,
+      sync: !!data.sync_player_quality,
     },
   });
 }

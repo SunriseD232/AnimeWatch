@@ -19,6 +19,7 @@ import { SlidingPill, useSlidingPill } from '@/components/useSlidingPill';
 import type { FriendEntry, PrivacySettings as Privacy, TitleRating } from '@/lib/social/types';
 import type { UserListItem, WatchedEpisode } from '@/lib/types';
 import type { Theme } from '@/lib/theme';
+import type { PlayerPrefs } from '@/lib/playerQuality';
 
 interface Props {
   items: UserListItem[];
@@ -28,6 +29,8 @@ interface Props {
   /** Друзья и заявки в обе стороны. */
   friendships: FriendEntry[];
   privacy: Privacy;
+  /** Качество плеера и флаг синхронизации из аккаунта (миграция 0038). */
+  playerPrefs: PlayerPrefs;
   /** Вкладка из адреса (?tab=friends) — сюда ведут уведомления. */
   initialTab?: string | null;
   /** Готовые ссылки на наши копии обложек — см. getLocalPosterMap. */
@@ -81,6 +84,7 @@ export default function ProfileTabs({
   ratings,
   friendships,
   privacy,
+  playerPrefs,
   initialTab,
   localPosters,
   initialTheme,
@@ -171,7 +175,12 @@ export default function ProfileTabs({
       {tab === 'comments' && <MyComments />}
       {tab === 'friends' && <FriendsPanel initial={friendships} />}
       {tab === 'settings' && (
-        <SettingsTabs initialSection={requestedSection ?? 'ui'} privacy={privacy} initialTheme={initialTheme} />
+        <SettingsTabs
+          initialSection={requestedSection ?? 'ui'}
+          privacy={privacy}
+          playerPrefs={playerPrefs}
+          initialTheme={initialTheme}
+        />
       )}
       {tab === 'admin' && isAdmin && (
         <div className="flex flex-col gap-4">
@@ -220,10 +229,12 @@ export default function ProfileTabs({
 function SettingsTabs({
   initialSection,
   privacy,
+  playerPrefs,
   initialTheme,
 }: {
   initialSection: SettingsSection;
   privacy: Privacy;
+  playerPrefs: PlayerPrefs;
   initialTheme: Theme;
 }) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
@@ -251,7 +262,7 @@ function SettingsTabs({
       </div>
 
       {section === 'ui' && <ThemeSettings initialTheme={initialTheme} />}
-      {section === 'player' && <PlayerSettings />}
+      {section === 'player' && <PlayerSettings initial={playerPrefs} />}
       {section === 'privacy' && <PrivacySettings initial={privacy} />}
       {section === 'password' && <ChangePasswordForm />}
     </div>

@@ -26,6 +26,19 @@ export const MAX_QUALITY: PreferredQuality = 1080;
  */
 export const DEFAULT_QUALITY: PreferredQuality = 480;
 
+/** Настройка плеера на стороне аккаунта (см. миграцию 0038). */
+export interface PlayerPrefs {
+  /** null — человек ничего не выбирал: зеркало на устройстве не трогаем. */
+  quality: PreferredQuality | null;
+  /** Синхронизировать ли выбор между устройствами. */
+  sync: boolean;
+}
+
+export function normalizeQuality(value: unknown): PreferredQuality | null {
+  const num = Number(value);
+  return (QUALITY_OPTIONS as readonly number[]).includes(num) ? (num as PreferredQuality) : null;
+}
+
 const KEY = 'mediawatch:player-quality';
 
 export function readPreferredQuality(): PreferredQuality {
