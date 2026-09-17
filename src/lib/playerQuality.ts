@@ -2,27 +2,31 @@
  * Качество видео по умолчанию — личная настройка (профиль → Настройки →
  * Плеер).
  *
- * Живёт в localStorage, рядом с громкостью и скоростью (см. OwnPlayer): это
- * настройка про КОНКРЕТНОЕ устройство, а не про аккаунт. На телефоне по
- * мобильному интернету разумный выбор один, на большом экране дома — другой,
- * и синхронизировать их между собой было бы скорее вредно.
+ * Хранится на устройстве (localStorage, рядом с громкостью и скоростью), а
+ * при включённой синхронизации дублируется в аккаунт (profiles, миграция
+ * 0038/0039) и переносится на другие устройства — см. PlayerPrefsSync.
+ * Устройство остаётся источником для самого плеера: он читает значение
+ * синхронно, прямо в обработчике манифеста hls.js, где ждать сеть негде.
  *
- * Значение — не «жёсткое требование», а цель: реальные высоты у источников
- * разные (240/360/480/720/1080, у кого-то только две), поэтому выбираем
- * ближайшее доступное, см. pickQualityLevel.
+ * Значение — не «жёсткое требование», а цель: наборы высот у источников
+ * разные, поэтому выбираем ближайшее доступное, см. pickQualityHeight.
  */
 
-export const QUALITY_OPTIONS = [480, 720, 1080] as const;
+/** «Авто» первым: это самый мягкий вариант, а не крайность шкалы. */
+export const QUALITY_OPTIONS = ['auto', 480, 720, 1080] as const;
 
 export type PreferredQuality = (typeof QUALITY_OPTIONS)[number];
 
-/** 1080 означает «максимум, который отдаёт источник», а не ровно 1080p. */
-export const MAX_QUALITY: PreferredQuality = 1080;
+/** Плеер сам подбирает качество под скорость (обычный ABR). */
+export const AUTO_QUALITY = 'auto';
+
+/** Верх шкалы: «самое высокое, что отдаёт источник». */
+export const MAX_QUALITY = 1080;
 
 /**
  * По умолчанию 480p — ровно то поведение, что было у плеера до появления
  * этой настройки (см. ветку videoseed в OwnPlayer): менять его молча всем
- * уже смотрящим людям незачем, кто хочет выше — теперь может выбрать.
+ * уже смотрящим людям незачем, кто хочет иначе — теперь может выбрать.
  */
 export const DEFAULT_QUALITY: PreferredQuality = 480;
 
@@ -34,17 +38,20 @@ export interface PlayerPrefs {
   sync: boolean;
 }
 
+/** Приводит что угодно (строку из БД/localStorage, число) к варианту. */
 export function normalizeQuality(value: unknown): PreferredQuality | null {
-  const num = Number(value);
-  return (QUALITY_OPTIONS as readonly number[]).includes(num) ? (num as PreferredQuality) : null;
+  if (value == null) return null;
+  const raw = String(value);
+  if (raw === AUTO_QUALITY) return AUTO_QUALITY;
+  const num = Number(raw);
+  return (QUALITY_OPTIONS as readonly (string | number)[]).includes(num) ? (num as PreferredQuality) : null;
 }
 
 const KEY = 'mediawatch:player-quality';
 
 export function readPreferredQuality(): PreferredQuality {
   try {
-    const raw = Number(localStorage.getItem(KEY));
-    return (QUALITY_OPTIONS as readonly number[]).includes(raw) ? (raw as PreferredQuality) : DEFAULT_QUALITY;
+    return normalizeQuality(localStorage.getItem(KEY)) ?? DEFAULT_QUALITY;
   } catch {
     // Приватный режим — просто работаем со значением по умолчанию.
     return DEFAULT_QUALITY;
@@ -62,12 +69,14 @@ export function storePreferredQuality(quality: PreferredQuality): void {
 /**
  * Ближайшая к предпочтению высота из доступных.
  *
- * Правила: 1080 — это «самое высокое, что есть». Для 480/720 берём самое
- * высокое, что НЕ ВЫШЕ выбранного (выбрал 480 — не подсовываем 720, иначе
- * настройка не имеет смысла на мобильном интернете), а если всё доступное
- * выше — самое низкое из имеющихся.
+ * Правила: «авто» — не ограничиваем вовсе (null, решает сам плеер). 1080 —
+ * самое высокое, что есть. Для 480/720 берём самое высокое, что НЕ ВЫШЕ
+ * выбранного (выбрал 480 — не подсовываем 720, иначе настройка не имеет
+ * смысла на мобильном интернете), а если всё доступное выше — самое низкое
+ * из имеющихся.
  */
 export function pickQualityHeight(heights: number[], preferred: PreferredQuality): number | null {
+  if (preferred === AUTO_QUALITY) return null;
   const sorted = [...heights].filter((h) => Number.isFinite(h) && h > 0).sort((a, b) => b - a);
   if (sorted.length === 0) return null;
   if (preferred === MAX_QUALITY) return sorted[0];

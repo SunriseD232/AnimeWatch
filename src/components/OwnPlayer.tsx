@@ -15,7 +15,13 @@ import {
   type SubtitleStyle,
 } from '@/lib/subtitleStyle';
 import { formatTime } from '@/lib/format';
-import { MAX_QUALITY, pickQualityHeight, pickQualityLevel, readPreferredQuality } from '@/lib/playerQuality';
+import {
+  AUTO_QUALITY,
+  MAX_QUALITY,
+  pickQualityHeight,
+  pickQualityLevel,
+  readPreferredQuality,
+} from '@/lib/playerQuality';
 import type { ContentType } from '@/lib/types';
 import type { ExtractSource, Subtitle } from '@/lib/extract/types';
 import type { YummyTranslation } from '@/lib/video/yummy';
@@ -1211,10 +1217,67 @@ export default function OwnPlayer({
           const hls = new Hls({
             enableWorker: true,
             startPosition: usesStartPosition ? target : -1,
+            // Загрузку фрагментов запускаем САМИ — после того, как выберем
+            // уровень по настройке профиля (см. MANIFEST_PARSED ниже).
+            //
+            // С автостартом hls.js успевал начать грузить свой стартовый
+            // уровень раньше нас: при выбранных 720p у тайтла с 1080p
+            // сначала пару секунд шло «авто»-качество, а потом картинка
+            // подменялась на нужное — видно глазами. Теперь до нашего
+            // startLoad() не загружается ни одного фрагмента, и первый же
+            // кусок приходит в том качестве, которое выбрано.
+            autoStartLoad: false,
           });
           hlsRef.current = hls;
           hlsErrorRecoveryRef.current = 0;
           mediaErrorRecoveryRef.current = 0;
+          /**
+           * Запускает загрузку фрагментов. Отдельным шагом, потому что
+           * autoStartLoad выключен (см. конфиг выше): сначала выбираем
+           * уровень по настройке профиля, и только потом качаем — иначе
+           * первые секунды шли в качестве, которое выбрал сам hls.js, а
+           * потом картинка подменялась.
+           *
+           * Позицию передаём ту же, что ушла бы в автостарт: при
+           * usesStartPosition hls.js сам доедет до сохранённого места (см.
+           * комментарий про startPosition выше), иначе -1 — «с начала».
+           */
+          const startPlayback = () => {
+            if (cancelled) return;
+            hls.startLoad(usesStartPosition && target != null ? target : -1);
+          };
+
+          /**
+           * Применяет качество из настроек профиля к уровням hls.js.
+           *
+           * Ставим ПОТОЛОК, а не только уровень: одного hls.currentLevel
+           * мало — при внутренних пересчётах hls.js возвращается в
+           * авто-режим, и выбор терялся (ловилось на проде: с попыткой
+           * «вернуть» уровень переключением картинка дёргалась
+           * 1080 → 480 → 1080). Потолок он уважает и в авто-режиме.
+           *
+           * pinWhenAuto — для источников, где настоящий ABR ломает
+           * воспроизведение (videoseed): там «авто» превращается в
+           * «максимум и зафиксировать».
+           */
+          const applyPreferredQuality = (
+            levels: { index: number; height: number }[],
+            pinWhenAuto: boolean,
+          ) => {
+            const wanted = readPreferredQuality();
+            if (wanted === AUTO_QUALITY && !pinWhenAuto) {
+              hls.autoLevelCapping = -1;
+              return;
+            }
+            const preferred =
+              wanted === AUTO_QUALITY ? (levels[0] ?? null) : pickQualityLevel(levels, wanted);
+            if (!preferred) return;
+            // Потолок снимаем там, где верхней границы нет по смыслу.
+            hls.autoLevelCapping =
+              wanted === MAX_QUALITY || wanted === AUTO_QUALITY ? -1 : preferred.index;
+            hls.currentLevel = preferred.index;
+          };
+
           // master.m3u8 может содержать несколько ABR-вариантов (см. §12
           // ARCHITECTURE.md) — показываем выбор только когда их больше одного.
           hls.on(Hls.Events.MANIFEST_PARSED, (_evt, data) => {
@@ -1258,6 +1321,7 @@ export default function OwnPlayer({
                   // src, как это делает ручной выбор (см. changeQuality).
                   setDashQualityHeight(activeHeight);
                 }
+                startPlayback();
                 return;
               }
             } else if (effectiveSource === 'videoseed') {
@@ -1277,47 +1341,20 @@ export default function OwnPlayer({
               // человек выбрал в профиле (Настройки → Плеер; по умолчанию
               // 480p — прежнее поведение). Ручной селектор качества работает
               // как обычно и перебивает это на текущий сеанс, см.
-              // changeQuality.
-              const wanted = readPreferredQuality();
-              const preferred = pickQualityLevel(levels, wanted);
-              if (preferred) {
-                // ПОТОЛОК, а не только уровень. Одного hls.currentLevel мало:
-                // hls.js к этому моменту мог уже начать грузить своим
-                // стартовым уровнем, а при внутренних пересчётах — вернуться
-                // в авто-режим, и выбор терялся. Ловилось вживую на проде:
-                // при выбранных 480p плеер стартовал в 1080p примерно через
-                // раз, а с попыткой «вернуть» уровень переключением начинал
-                // дёргаться 1080 → 480 → 1080. Потолок hls.js уважает и в
-                // авто-режиме, поэтому выше выбранного он уже не поднимется.
-                // Для «максимума» потолок снимаем (-1).
-                hls.autoLevelCapping = wanted === MAX_QUALITY ? -1 : preferred.index;
-                hls.currentLevel = preferred.index;
-              }
+              // changeQuality. «Авто» для videoseed означает «максимум и
+              // зафиксировать»: настоящий ABR тут ломает воспроизведение
+              // (см. выше), так что адаптивным это качество быть не может.
+              applyPreferredQuality(levels, true);
               setQualityLevels(levels);
             } else {
-              // Источники с настоящим ABR. Тут авто-переключение работает
-              // нормально, но выбор в профиле — это и есть «какое качество
-              // мне включать по умолчанию», иначе настройка ничего бы не
-              // значила у половины источников. «Авто» остаётся в меню плеера
-              // и возвращает адаптивный режим на текущий сеанс.
-              const wanted = readPreferredQuality();
-              const preferred = pickQualityLevel(levels, wanted);
-              if (preferred) {
-                // ПОТОЛОК, а не только уровень. Одного hls.currentLevel мало:
-                // hls.js к этому моменту мог уже начать грузить своим
-                // стартовым уровнем, а при внутренних пересчётах — вернуться
-                // в авто-режим, и выбор терялся. Ловилось вживую на проде:
-                // при выбранных 480p плеер стартовал в 1080p примерно через
-                // раз, а с попыткой «вернуть» уровень переключением начинал
-                // дёргаться 1080 → 480 → 1080. Потолок hls.js уважает и в
-                // авто-режиме, поэтому выше выбранного он уже не поднимется.
-                // Для «максимума» потолок снимаем (-1).
-                hls.autoLevelCapping = wanted === MAX_QUALITY ? -1 : preferred.index;
-                hls.currentLevel = preferred.index;
-              }
+              // Источники с настоящим ABR. Выбор в профиле — это «какое
+              // качество включать по умолчанию»; «Авто» здесь и правда
+              // означает адаптивный режим.
+              applyPreferredQuality(levels, false);
               setQualityLevels(levels);
             }
             setCurrentLevel(hls.currentLevel);
+            startPlayback();
           });
           hls.on(Hls.Events.LEVEL_SWITCHED, (_evt, data) => {
             if (!cancelled) setCurrentLevel(data.level);

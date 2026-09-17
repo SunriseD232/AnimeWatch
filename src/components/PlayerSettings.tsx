@@ -11,7 +11,15 @@ import {
   type PreferredQuality,
 } from '@/lib/playerQuality';
 
+const LABELS: Record<PreferredQuality, string> = {
+  auto: 'Авто',
+  480: '480p',
+  720: '720p',
+  1080: '1080p',
+};
+
 const HINTS: Record<PreferredQuality, string> = {
+  auto: 'Плеер подберёт под скорость',
   480: 'Экономит трафик, быстрее стартует',
   720: 'Баланс качества и трафика',
   1080: 'Самое высокое у источника',
@@ -105,7 +113,7 @@ export default function PlayerSettings({ initial }: { initial: PlayerPrefs }) {
           role="radiogroup"
           aria-labelledby={headingId}
           aria-describedby={descId}
-          className="grid gap-2 sm:grid-cols-3"
+          className="grid grid-cols-2 gap-2 sm:grid-cols-4"
           onKeyDown={(e) => {
             // Та же модель, что у радиогруппы приватности: Tab попадает на
             // выбранный вариант, стрелки переключают между вариантами.
@@ -139,7 +147,7 @@ export default function PlayerSettings({ initial }: { initial: PlayerPrefs }) {
                   selected ? 'bg-accent/10 ring-accent/60' : 'bg-bg-soft ring-white/5 hover:ring-white/20',
                 ].join(' ')}
               >
-                <span className="text-sm font-semibold text-gray-100">{option}p</span>
+                <span className="text-sm font-semibold text-gray-100">{LABELS[option]}</span>
                 <span className="text-xs text-gray-400">{HINTS[option]}</span>
               </button>
             );
