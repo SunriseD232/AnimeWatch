@@ -32,7 +32,8 @@ export async function GET(request: NextRequest) {
       `[reindex-cinema] готово: ${result.titles} тайтлов ` +
         `(${result.movies} фильмов, ${result.serials} сериалов), ` +
         `${result.genres} жанров, ${result.countries} стран, ` +
-        `${result.rated} с рейтингом, ${result.pages} страниц ` +
+        `${result.rated} с рейтингом, ${result.enrichedByImdb} с жанрами из IMDb, ` +
+        `${result.pages} страниц ` +
         `за ${Math.round(result.durationMs / 1000)} сек, квоты осталось ${result.quotaLeft}`,
     );
     return NextResponse.json({ ok: true, ...result });

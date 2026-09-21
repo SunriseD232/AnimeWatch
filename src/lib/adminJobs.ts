@@ -54,6 +54,16 @@ export const JOBS = {
     },
     maxRunMs: 3 * 60 * 60 * 1000,
   },
+  'refresh-cinema-genres': {
+    label: 'Обновить жанры IMDb',
+    duration: 'меньше минуты',
+    state: {
+      table: 'cinema_index_state',
+      startedColumn: 'genres_run_started_at',
+      finishedColumn: 'genres_run_finished_at',
+    },
+    maxRunMs: 30 * 60 * 1000,
+  },
   'cache-posters': {
     label: 'Докачать обложки',
     duration: 'секунды, если индекс свежий',

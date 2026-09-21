@@ -320,6 +320,7 @@ function toRow(
   item: VsRawItem,
   batchId: string,
   ratings: Map<string, { rating: number | null; weighted: number | null; popularity: number | null }>,
+  imdbGenres: Map<string, number[]>,
   storedPosters: Set<number>,
 ): IndexRow | null {
   const kpId = Number(item.id_kp);
@@ -330,10 +331,21 @@ function toRow(
   const title = (item.name ?? '').trim() || (item.original_name ?? '').trim();
   if (!title) return null;
 
-  const genreIds = parseIds(item.genre_ids ?? item.genres_id);
-  const kind = deriveKind(item, genreIds);
+  const vsGenreIds = parseIds(item.genre_ids ?? item.genres_id);
+  // Тип вычисляем ДО подмешивания жанров IMDb и только по маркерам Videoseed:
+  // «Мультфильм» и «Короткометражка» — это наш переключатель «Тип», и
+  // определять его должен один источник, иначе разметка типа поедет.
+  const kind = deriveKind(item, vsGenreIds);
   const imdbId = (item.id_imdb ?? '').trim() || null;
   const tmdbId = Number(item.id_tmdb);
+
+  // Жанры из выгрузки IMDb (миграция 0040) ДОБАВЛЯЕМ к тому, что дал
+  // Videoseed, а не заменяем ими. У фильмов жанры Videoseed хорошие и
+  // русские по происхождению, а у сериалов и мультфильмов их нет вовсе —
+  // объединение чинит вторых, не трогая первых.
+  const genreIds = imdbId
+    ? [...new Set([...vsGenreIds, ...(imdbGenres.get(imdbId) ?? [])])].sort((a, b) => a - b)
+    : vsGenreIds;
 
   return {
     batch_id: batchId,
@@ -418,10 +430,47 @@ async function loadRatings(
   return out;
 }
 
+/**
+ * Жанры из выгрузки IMDb — долгоживущая таблица, перестройку переживает (см.
+ * lib/cinemaGenres.ts). Читаем постранично по тем же правилам, что и
+ * рейтинги: обязательный order() и выход только на пустой странице.
+ */
+async function loadImdbGenres(
+  supabase: ReturnType<typeof createServiceClient>,
+): Promise<Map<string, number[]>> {
+  const out = new Map<string, number[]>();
+  const PAGE = 1000;
+
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('cinema_imdb_genres')
+      .select('imdb_id, genre_ids')
+      .order('imdb_id', { ascending: true })
+      .range(from, from + PAGE - 1);
+
+    // Как и рейтинги, не повод ронять перестройку: без них каталог соберётся
+    // с прежними жанрами Videoseed, то есть как до миграции 0040.
+    if (error) {
+      console.error('[cinemaIndex] жанры IMDb прочитать не удалось:', error.message);
+      break;
+    }
+    if (!data || data.length === 0) break;
+
+    for (const r of data) {
+      const row = r as { imdb_id: string; genre_ids: number[] | null };
+      if (row.genre_ids && row.genre_ids.length > 0) out.set(row.imdb_id, row.genre_ids);
+    }
+  }
+
+  return out;
+}
+
 export interface CinemaReindexResult {
   titles: number;
   movies: number;
   serials: number;
+  /** Скольким тайтлам жанры добавила выгрузка IMDb (миграция 0040). */
+  enrichedByImdb: number;
   genres: number;
   countries: number;
   rated: number;
@@ -479,6 +528,7 @@ export async function rebuildCinemaIndex(): Promise<CinemaReindexResult> {
   }
 
   const ratings = await loadRatings(supabase);
+  const imdbGenres = await loadImdbGenres(supabase);
   const storedPosters = await loadStoredPosterIds(supabase, 'cinema');
 
   // ── Обход ──
@@ -494,6 +544,7 @@ export async function rebuildCinemaIndex(): Promise<CinemaReindexResult> {
   let movies = 0;
   let serials = 0;
   let rated = 0;
+  let enrichedByImdb = 0;
   let lastQuota: number | null = Number.isFinite(quotaLeft) ? quotaLeft : null;
 
   for (const type of ['movie', 'serial'] as const) {
@@ -523,7 +574,7 @@ export async function rebuildCinemaIndex(): Promise<CinemaReindexResult> {
 
       const rows: IndexRow[] = [];
       for (const item of batch) {
-        const row = toRow(item, batchId, ratings, storedPosters);
+        const row = toRow(item, batchId, ratings, imdbGenres, storedPosters);
         // Дубли: один и тот же kinopoisk_id встречается и у нескольких
         // записей апстрима, и между страницами, если он что-то переставил
         // прямо во время обхода. Первичный ключ бы на них упал.
@@ -531,6 +582,7 @@ export async function rebuildCinemaIndex(): Promise<CinemaReindexResult> {
         seen.add(row.kp_id);
         rows.push(row);
         if (row.rating !== null) rated++;
+        if (row.imdb_id && imdbGenres.has(row.imdb_id)) enrichedByImdb++;
         if (row.is_serial) serials++;
         else movies++;
       }
@@ -624,6 +676,7 @@ export async function rebuildCinemaIndex(): Promise<CinemaReindexResult> {
     titles,
     movies,
     serials,
+    enrichedByImdb,
     genres: genreDict.size,
     countries: countryDict.size,
     rated,

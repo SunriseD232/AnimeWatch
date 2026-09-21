@@ -33,12 +33,16 @@ export default async function AdminStatusPage() {
 
   const supabase = createServiceClient();
 
-  const [animeState, cinemaState, animePosters, cinemaPosters, ratings, extractor] = await Promise.all([
+  const [animeState, cinemaState, animePosters, cinemaPosters, ratings, imdbGenres, extractor] = await Promise.all([
     supabase.from('anime_index_state').select('*').eq('id', true).maybeSingle(),
     supabase.from('cinema_index_state').select('*').eq('id', true).maybeSingle(),
     supabase.from('poster_cache').select('*', { count: 'exact', head: true }).eq('kind', 'anime').gt('bytes', 0),
     supabase.from('poster_cache').select('*', { count: 'exact', head: true }).eq('kind', 'cinema').gt('bytes', 0),
     supabase.from('cinema_ratings').select('*', { count: 'exact', head: true }).not('rating', 'is', null),
+    // Жанры из выгрузки IMDb (миграция 0040) — считаем только те строки, где
+    // жанр реально есть: пустой массив означает «в выгрузке нашли, но ни один
+    // жанр в наш справочник не переводится».
+    supabase.from('cinema_imdb_genres').select('*', { count: 'exact', head: true }).not('genre_ids', 'eq', '{}'),
     // Отдельный процесс на этой же машине — см. lib/extractorHealth.ts, оно
     // никогда не бросает: если экстрактор лежит, страница должна об этом
     // сказать, а не упасть вместе с ним.
@@ -85,6 +89,19 @@ export default async function AdminStatusPage() {
           ok={fresh(c?.ratings_run_finished_at, 24 * 14)}
         />
         <Row label="Ошибка" value={String(c?.ratings_error ?? '') || 'нет'} ok={!c?.ratings_error} />
+      </Section>
+
+      <Section title="Жанры IMDb" jobs={['refresh-cinema-genres']}>
+        <Row label="Тайтлов с жанрами" value={num(imdbGenres.count)} />
+        <Row label="Найдено в последний прогон" value={num(c?.genres_matched)} />
+        <Row label="Прогон начат" value={stamp(c?.genres_run_started_at)} />
+        <Row
+          label="Прогон завершён"
+          value={stamp(c?.genres_run_finished_at)}
+          // Тот же недельный график, что у рейтингов.
+          ok={fresh(c?.genres_run_finished_at, 24 * 14)}
+        />
+        <Row label="Ошибка" value={String(c?.genres_error ?? '') || 'нет'} ok={!c?.genres_error} />
       </Section>
 
       <Section title="Кэш обложек" jobs={['cache-posters']}>
