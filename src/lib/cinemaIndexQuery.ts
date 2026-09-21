@@ -259,6 +259,50 @@ export async function getCinemaGenresFromIndex(): Promise<IndexedRef[] | null> {
   }
 }
 
+/**
+ * Жанры ОДНОГО тайтла для его страницы — названиями, без маркеров типа.
+ *
+ * Страница тайтла берёт жанры из ответа Videoseed, а он отдаёт их только
+ * фильмам: у сериала в поле genre лежит одно слово «Сериалы», у мультфильма
+ * — «Мультфильмы». Поэтому у «Во все тяжкие» под названием не было ни
+ * «Драмы», ни «Криминала» — их там просто неоткуда было взять.
+ *
+ * В индексе с миграции 0040 жанры полные (Videoseed плюс выгрузка IMDb),
+ * так что для показа берём их. Вернули null — страница остаётся на прежнем
+ * списке от Videoseed, как и до индекса.
+ */
+export async function getCinemaGenreNamesFromIndex(kpId: number): Promise<string[] | null> {
+  try {
+    const batchId = await getActiveBatchId();
+    if (!batchId) return null;
+
+    const supabase = createClient();
+    const { data: row } = await supabase
+      .from('cinema_index')
+      .select('genre_ids')
+      .eq('batch_id', batchId)
+      .eq('kp_id', kpId)
+      .maybeSingle();
+
+    const ids = (row as { genre_ids: number[] | null } | null)?.genre_ids;
+    if (!ids || ids.length === 0) return null;
+
+    const { data, error } = await supabase
+      .from('cinema_genres')
+      .select('name')
+      // kind='genre' отсекает маркеры типа (Сериалы=20, Мультфильмы=21…):
+      // они дублируют подпись типа, которая на карточке уже есть.
+      .eq('kind', 'genre')
+      .in('id', ids)
+      .order('name', { ascending: true });
+
+    if (error || !data || data.length === 0) return null;
+    return (data as { name: string }[]).map((g) => g.name);
+  } catch {
+    return null;
+  }
+}
+
 /** Страны для панели фильтров. */
 export async function getCinemaCountriesFromIndex(): Promise<IndexedRef[] | null> {
   try {

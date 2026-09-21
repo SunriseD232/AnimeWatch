@@ -7,7 +7,7 @@ import DownloadButton from '@/components/DownloadButton';
 import ListButton from '@/components/ListButton';
 import TrailerButton from '@/components/TrailerButton';
 import { getCinemaById, getCinemaCatalog, type CinemaShort } from '@/lib/videoseed-catalog';
-import { getSimilarFromIndex } from '@/lib/cinemaIndexQuery';
+import { getCinemaGenreNamesFromIndex, getSimilarFromIndex } from '@/lib/cinemaIndexQuery';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
@@ -113,11 +113,21 @@ export default async function CinemaPage({
 
   const [item, {
     data: { user },
-  }] = await Promise.all([getCinemaById(id), getCachedUser()]);
+  }, indexGenres] = await Promise.all([
+    getCinemaById(id),
+    getCachedUser(),
+    getCinemaGenreNamesFromIndex(id),
+  ]);
   if (!item) notFound();
 
   const title = item.title;
   const total = item.episodesTotal;
+
+  // Жанры показываем из индекса: у сериалов и мультфильмов Videoseed отдаёт
+  // вместо жанра одно слово «Сериалы»/«Мультфильмы», а в индексе с миграции
+  // 0040 лежит полный набор (Videoseed плюс выгрузка IMDb). Индекса нет или
+  // тайтла в нём нет — остаёмся на списке от Videoseed.
+  const genres = indexGenres ?? item.genres;
 
   // Прогресс и статус списка для этого тайтла (если пользователь вошёл).
   const progressPromise = user
@@ -240,9 +250,9 @@ export default async function CinemaPage({
             )}
           </div>
 
-          {item.genres.length > 0 && (
+          {genres.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
-              {item.genres.slice(0, 5).map((g) => (
+              {genres.slice(0, 5).map((g) => (
                 <Link
                   key={g}
                   href={`/cinema/catalog?genres=${encodeURIComponent(g)}`}
@@ -339,7 +349,7 @@ export default async function CinemaPage({
 
       {/* Похожее — отдельный стрим, см. SimilarCinemaTitles/комментарий вверху файла. */}
       <Suspense fallback={<SimilarCinemaTitlesSkeleton />}>
-        <SimilarCinemaTitles id={id} genre={item.genres[0] ?? null} />
+        <SimilarCinemaTitles id={id} genre={genres[0] ?? null} />
       </Suspense>
     </div>
   );
