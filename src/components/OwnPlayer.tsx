@@ -619,6 +619,14 @@ export default function OwnPlayer({
   // тем же: полным переподключением с ?fresh=1.
   const loadErrorBurstRef = useRef(0);
   const LOAD_ERROR_BURST_LIMIT = 5;
+  // Порог вотчдога "играем, а currentTime не двигается" — см. его же у
+  // объявления stallWatchdogInterval в эффекте событий <video>. Две проверки
+  // без прогресса подряд ≈ 10с полного простоя при активной загрузке —
+  // достаточно, чтобы не путать с обычной короткой буферизацией (та
+  // укладывается в разы меньше), но не настолько долго, чтобы пользователь
+  // успел решить, что сайт сломан, прежде чем сработает автовосстановление.
+  const PLAYBACK_STALL_CHECK_MS = 5_000;
+  const PLAYBACK_STALL_TICKS_LIMIT = 2;
   // Content-Type из проверочного HEAD (см. эффект резолва ниже) — переносится
   // во второй эффект (подключение к <video>), чтобы не запрашивать HEAD дважды.
   const upstreamContentTypeRef = useRef<string | null>(null);
@@ -1990,6 +1998,60 @@ export default function OwnPlayer({
         }
       }, 2_500);
     };
+    // Вотчдог "якобы играем, а currentTime не двигается" — отдельно от
+    // сик-вотчдога выше (тот — только про ОДИН конкретный сик к сохранённой
+    // позиции) и от loadErrorBurstRef (тот — только про ОШИБКИ загрузки).
+    // Здесь прямо противоположный, более коварный случай: сегменты успешно
+    // ГРУЗЯТСЯ (200, полный размер — проверено вживую по логам nginx), hls.js
+    // ни разу не стрельнул ERROR (ни фатальным, ни нет), FRAG_BUFFERED тоже
+    // не подаёт признаков зависания — он просто гоняет по кругу несколько
+    // соседних сегментов, не продвигая currentTime. Воспроизведено вживую
+    // (kp=10938363, s1e2, уже ПОСЛЕ сдвига цели ресюм-сика — то есть это не
+    // тот же баг, а новый: здесь застревание не на самом ресюм-сике, а
+    // где-то в середине уже идущего воспроизведения): один и тот же цикл из
+    // 3 сегментов повторялся в логе nginx раз в секунду несколько минут
+    // подряд, пока вкладка не была закрыта — ни один из существующих
+    // обработчиков это не ловит, потому что все они реагируют на СОБЫТИЯ
+    // hls.js/<video>, а тут таких событий просто нет. Следим за currentTime
+    // напрямую по таймеру, независимо от того, что (не) шлёт сам hls.js.
+    let lastStallCheckTime = -1;
+    let stallTicks = 0;
+    const stallWatchdogInterval = setInterval(() => {
+      if (!playingRef.current || userPausedRef.current || seekPending) {
+        stallTicks = 0;
+        lastStallCheckTime = video.currentTime;
+        return;
+      }
+      if (Math.abs(video.currentTime - lastStallCheckTime) < 0.5) {
+        stallTicks += 1;
+      } else {
+        stallTicks = 0;
+      }
+      lastStallCheckTime = video.currentTime;
+      if (stallTicks < PLAYBACK_STALL_TICKS_LIMIT) return;
+      stallTicks = 0;
+      logEvent('player.playback_stall', {
+        source: effectiveSource,
+        shikimoriId,
+        season,
+        episode,
+        at: video.currentTime,
+      });
+      // Тот же приём сдвига цели, что и у сик-вотчдога (см.
+      // seekNudgeSecondsRef выше) — раз воспроизведение застряло ровно на
+      // этой секунде, повтор в ту же точку рискует застрять там же снова.
+      if (reconnectFailureStreakRef.current < RECONNECT_FAILURE_LIMIT) {
+        reconnectFailureStreakRef.current += 1;
+        seekNudgeSecondsRef.current = Math.min(
+          SEEK_NUDGE_MAX_S,
+          seekNudgeSecondsRef.current + SEEK_NUDGE_STEP_S,
+        );
+        retryRef.current();
+      } else {
+        logEvent('player.give_up', { source: effectiveSource, shikimoriId, season, episode });
+        setLoadState('failed');
+      }
+    }, PLAYBACK_STALL_CHECK_MS);
     const onCanPlay = () => {
       setBuffering(false);
       clearGapWatchdog();
@@ -2049,6 +2111,7 @@ export default function OwnPlayer({
       video.removeEventListener('error', onError);
       clearGapWatchdog();
       clearSeekWatchdog();
+      clearInterval(stallWatchdogInterval);
     };
     // effectiveSource/episode/season/shikimoriId читаются только внутри
     // logEvent(...) (диагностика, не влияет на поведение) — не добавляем в
