@@ -588,6 +588,23 @@ export default function OwnPlayer({
   // долбёжки сервера и клиента.
   const reconnectFailureStreakRef = useRef(0);
   const RECONNECT_FAILURE_LIMIT = 3;
+  // Сдвиг назад для цели ресюм-сика при повторных зависаниях на ТОЙ ЖЕ
+  // секунде — конкретная позиция иногда стабильно зависает (граница
+  // сегмента/ключевого кадра на CDN Videoseed), а повтор ровно в ТУ ЖЕ точку
+  // просто зависает снова: воспроизведено вживую (kp=10938363, s1e2,
+  // resume=177с) — 3 подряд переподключения, включая полные reconnect через
+  // retryRef(), все целились ровно в 177 и одинаково зависали; помогло
+  // только то, что пользователь вручную переключил серию — тогда прогресс
+  // случайно перезаписался на ~5с, и сик пошёл мимо проблемной точки.
+  // Каждая новая попытка сдвигает цель на SEEK_NUDGE_STEP_S назад (до
+  // SEEK_NUDGE_MAX_S суммарно) — шанс попасть на соседний, рабочий сегмент,
+  // без ручного вмешательства. НЕ сбрасывается на reconnect — переживает все
+  // попытки подряд, как и reconnectFailureStreakRef; сбрасывается на смену
+  // src, на реальный прогресс воспроизведения (onTime) и на ручной клик
+  // «Повторить» (свежая попытка — сначала точная позиция, без сдвига).
+  const seekNudgeSecondsRef = useRef(0);
+  const SEEK_NUDGE_STEP_S = 5;
+  const SEEK_NUDGE_MAX_S = 20;
   // Подряд идущие НЕфатальные неудачи загрузки уровня/сегмента, без единого
   // успешно буферизованного куска между ними.
   //
@@ -1000,6 +1017,7 @@ export default function OwnPlayer({
   // и лимит никогда бы не достигался.
   useEffect(() => {
     reconnectFailureStreakRef.current = 0;
+    seekNudgeSecondsRef.current = 0;
     // Новая серия/озвучка/качество — прошлые неудачи к ней отношения не
     // имеют, начинаем с обычного (кэшируемого) запроса.
     wantFreshRef.current = false;
@@ -1756,14 +1774,26 @@ export default function OwnPlayer({
           // сдаться и продолжить с текущей позиции.
           if (!seekRetried) {
             seekRetried = true;
+            // Сдвигаем цель назад (см. seekNudgeSecondsRef выше) — не
+            // повторяем сик ровно в ту же точку, которая и зависла: если
+            // дело в границе сегмента/ключевого кадра на этой конкретной
+            // секунде, повтор туда же с высокой вероятностью зависнет
+            // снова (воспроизведено вживую, см. коммент у объявления рефа).
+            seekNudgeSecondsRef.current = Math.min(
+              SEEK_NUDGE_MAX_S,
+              seekNudgeSecondsRef.current + SEEK_NUDGE_STEP_S,
+            );
+            const nudgedTarget = Math.max(0, clamped - seekNudgeSecondsRef.current);
             logEvent('player.seek_watchdog_retry', {
               source: effectiveSource,
               shikimoriId,
               season,
               episode,
-              target: clamped,
+              target: nudgedTarget,
+              originalTarget: clamped,
+              nudge: seekNudgeSecondsRef.current,
             });
-            seekTargetRef.current = clamped;
+            seekTargetRef.current = nudgedTarget;
             applyResumeSeek(true);
             return;
           }
@@ -1773,6 +1803,7 @@ export default function OwnPlayer({
             season,
             episode,
             target: clamped,
+            nudge: seekNudgeSecondsRef.current,
           });
           seekPending = false;
           setSeeking(false);
@@ -1796,6 +1827,14 @@ export default function OwnPlayer({
           // сик (а не разовый сбой сети) иначе тоже ретраился бы бесконечно.
           if (reconnectFailureStreakRef.current < RECONNECT_FAILURE_LIMIT) {
             reconnectFailureStreakRef.current += 1;
+            // Ещё один шаг сдвига — retry() ниже сам подставит currentTime/
+            // resumeFrom с поправкой на seekNudgeSecondsRef (см. её объявление
+            // и retry()), полное переподключение получит ЕЩЁ более сдвинутую
+            // цель, а не ту же, что уже дважды не сработала.
+            seekNudgeSecondsRef.current = Math.min(
+              SEEK_NUDGE_MAX_S,
+              seekNudgeSecondsRef.current + SEEK_NUDGE_STEP_S,
+            );
             retryRef.current();
           } else {
             logEvent('player.give_up', { source: effectiveSource, shikimoriId, season, episode });
@@ -1884,6 +1923,7 @@ export default function OwnPlayer({
       // (см. reconnectFailureStreakRef выше): переподключение реально
       // помогло, у следующего сбоя снова полный бюджет попыток.
       reconnectFailureStreakRef.current = 0;
+      seekNudgeSecondsRef.current = 0;
     };
     const onProgress = () => {
       try {
@@ -2264,7 +2304,13 @@ export default function OwnPlayer({
       episode,
       fromTime: currentTime,
     });
-    seekTargetRef.current = currentTime > 1 ? currentTime : resumeFrom;
+    // seekNudgeSecondsRef — обычно 0 (см. её объявление выше), кроме случая,
+    // когда до этого retry зовёт именно сик-вотчдог: тогда цель уже сдвинута
+    // назад от исходной позиции, чтобы новое подключение не билось в ту же
+    // зависающую секунду ещё раз.
+    const base = currentTime > 1 ? currentTime : resumeFrom;
+    seekTargetRef.current =
+      base != null && base > 0 ? Math.max(0, base - seekNudgeSecondsRef.current) : base;
     // Полное переподключение — уже не первая попытка: до него hls.js дважды
     // пробует поднять поток сам (startLoad/recoverMediaError, см. обработчик
     // ERROR). Раз и это не помогло, дешёвый повтор по тому же кэшу почти
@@ -2528,6 +2574,10 @@ export default function OwnPlayer({
             // пользователь сам решил попробовать ещё раз, это не тот же
             // автоматический цикл, который уже исчерпал себя молча.
             reconnectFailureStreakRef.current = 0;
+            // И свежая цель сика — сначала пробуем точную сохранённую
+            // позицию заново, а не уже сдвинутую предыдущими неудачными
+            // попытками (см. seekNudgeSecondsRef выше).
+            seekNudgeSecondsRef.current = 0;
             // Человек жмёт «Повторить», уже увидев тупик — автоматические
             // попытки к этому моменту исчерпаны. Ещё один заход по тому же
             // кэшу почти наверняка даст ту же ошибку, поэтому сразу просим
