@@ -75,9 +75,6 @@ export default function RootLayout({
           за строкой статуса. Теперь шапка закрывает эту зону собственным
           фоном, как принято в iOS. */}
       <body className="min-h-screen font-sans pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
-        {/* Декоративная штриховка вверху экрана — см. .brand-wash в
-            globals.css: привязывает оформление сайта к иконке приложения. */}
-        <div aria-hidden="true" className="brand-wash" />
         <PwaRegister />
         <ThemeSync />
         <PresenceHeartbeat />
