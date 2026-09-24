@@ -38,8 +38,12 @@ export default function SiteLogoLink({ cookieMode }: { cookieMode: ContentType }
       prefetch={false}
       className="flex shrink-0 items-center gap-2 text-lg font-bold"
     >
-      <span className="grid h-8 w-8 place-items-center rounded-xl bg-accent text-accent-fg">
-        ▶
+      {/* Тот же значок, что на иконке приложения на телефоне (см.
+          ios/App/App/Assets.xcassets/AppIcon.appiconset) — раньше тут был
+          акцентный квадрат с ▶, теперь везде один и тот же знак. */}
+      <span className="block h-8 w-8 shrink-0 overflow-hidden rounded-xl">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/icon-192.png" alt="" className="h-full w-full object-cover" />
       </span>
       <span className="hidden sm:inline">MediaWatch</span>
     </Link>

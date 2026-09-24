@@ -11,6 +11,7 @@ import OfflineSyncTrigger from '@/components/OfflineSyncTrigger';
 import { PipPlayerHost } from '@/components/pip/PipPlayerHost';
 import ThemeScript from '@/components/ThemeScript';
 import ThemeSync from '@/components/ThemeSync';
+import WebviewInstallHint from '@/components/WebviewInstallHint';
 
 // Inter — ближайшее веб-приближение SF Pro (см. tailwind.config.ts).
 // next/font сам самохостит файлы шрифта — никаких внешних запросов в рантайме.
@@ -74,11 +75,15 @@ export default function RootLayout({
           за строкой статуса. Теперь шапка закрывает эту зону собственным
           фоном, как принято в iOS. */}
       <body className="min-h-screen font-sans pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
+        {/* Декоративная штриховка вверху экрана — см. .brand-wash в
+            globals.css: привязывает оформление сайта к иконке приложения. */}
+        <div aria-hidden="true" className="brand-wash" />
         <PwaRegister />
         <ThemeSync />
         <PresenceHeartbeat />
         <NativeAuthBridge />
         <OfflineSyncTrigger />
+        <WebviewInstallHint />
         <ToastProvider>
           <PipPlayerHost>
             {/* Заглушка повторяет геометрию шапки вместе с безопасной зоной —
