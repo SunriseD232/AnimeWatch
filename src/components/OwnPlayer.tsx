@@ -1063,6 +1063,20 @@ export default function OwnPlayer({
     setBuffering(true);
     setSeeking(false);
     setIsEnded(false);
+    // currentTime/duration — иначе на смене серии несколько кадров подряд
+    // показываем СТАРЫЕ значения (позиция и длительность прошлой серии) —
+    // именно так «Следующая серия» появлялась сразу после перехода: старая
+    // duration минус позиция у самого конца прошлой серии стабильно
+    // укладывалась в NEXT_BUTTON_WINDOW_S, хотя новая серия только-только
+    // начала грузиться. Тот же самый стейл-момент ещё и рисовал прогресс-бар
+    // почти под завязку на новой, ещё не начатой серии. Безопасно: реальная
+    // playback-логика (applyResumeSeek/getState для сохранения прогресса и
+    // т.п.) везде читает video.currentTime/video.duration НАПРЯМУЮ из DOM,
+    // не это состояние — оно только для отображения (прогресс-бар, лейбл
+    // времени, «Следующая серия»). Во время 'probing' экран и так целиком
+    // подменяется скелетоном, так что сам сброс не мелькает пользователю.
+    setCurrentTime(0);
+    setDuration(null);
     userPausedRef.current = false;
     autoplayMutedRef.current = false;
     // playingRef/playing тоже сбрасываем здесь — иначе при переключении
@@ -2678,6 +2692,18 @@ export default function OwnPlayer({
         ? { type: 'ending', segment: skipEnding }
         : null;
 
+  // Отступ снизу у «Пропустить»/«Следующая серия» — на весь экран у телефона
+  // с вырезом (альбомная ориентация, home-индикатор сбоку) панель
+  // управления растёт на env(safe-area-inset-bottom) (см. её же класс у
+  // блока с прогресс-баром ниже), а эти кнопки стояли на фиксированных 5rem
+  // и заезжали под уже подросшую панель — нажатие «Следующая серия» попадало
+  // на элементы управления под ней. Плюсуем ту же безопасную зону поверх
+  // обычного отступа, только в fullscreen — в обычном режиме браузер сам
+  // рисует свой chrome снизу, вырез там ни при чём.
+  const overlayButtonBottomClass = fullscreen
+    ? 'bottom-[calc(5rem+env(safe-area-inset-bottom))]'
+    : 'bottom-20';
+
   const skipNow = () => {
     const v = videoRef.current;
     if (!v || !activeSkip) return;
@@ -2830,7 +2856,10 @@ export default function OwnPlayer({
           <button
             type="button"
             onClick={skipNow}
-            className="absolute bottom-20 right-3 z-10 rounded-lg bg-black/80 px-4 py-2 text-sm font-medium text-white ring-1 ring-white/20 backdrop-blur transition hover:bg-black/95"
+            className={[
+              'absolute right-3 z-10 rounded-lg bg-black/80 px-4 py-2 text-sm font-medium text-white ring-1 ring-white/20 backdrop-blur transition hover:bg-black/95',
+              overlayButtonBottomClass,
+            ].join(' ')}
           >
             {activeSkip.type === 'opening' ? 'Пропустить опенинг' : 'Пропустить титры'} →
           </button>
@@ -2841,14 +2870,20 @@ export default function OwnPlayer({
             <button
               type="button"
               onClick={onNext}
-              className="absolute bottom-20 right-3 z-10 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-fg ring-1 ring-white/20 backdrop-blur transition hover:bg-accent-hover"
+              className={[
+                'absolute right-3 z-10 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-fg ring-1 ring-white/20 backdrop-blur transition hover:bg-accent-hover',
+                overlayButtonBottomClass,
+              ].join(' ')}
             >
               {nextLabel ?? 'Следующая серия'} →
             </button>
           ) : (
             <Link
               href={nextHref}
-              className="absolute bottom-20 right-3 z-10 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-fg ring-1 ring-white/20 backdrop-blur transition hover:bg-accent-hover"
+              className={[
+                'absolute right-3 z-10 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-fg ring-1 ring-white/20 backdrop-blur transition hover:bg-accent-hover',
+                overlayButtonBottomClass,
+              ].join(' ')}
             >
               {nextLabel ?? 'Следующая серия'} →
             </Link>
