@@ -38,14 +38,23 @@ export default function SiteLogoLink({ cookieMode }: { cookieMode: ContentType }
       prefetch={false}
       className="flex shrink-0 items-center gap-2 text-lg font-bold"
     >
-      {/* Тот же значок, что на иконке приложения на телефоне (см.
-          ios/App/App/Assets.xcassets/AppIcon.appiconset) — раньше тут был
-          акцентный квадрат с ▶, теперь везде один и тот же знак. */}
-      <span className="block h-8 w-8 shrink-0 overflow-hidden rounded-xl">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/icon-192.png" alt="" className="h-full w-full object-cover" />
+      {/* Тот же знак, что на иконке приложения на телефоне (см.
+          ios/App/App/Assets.xcassets/AppIcon.appiconset), но не картинкой с
+          белым фоном (см. .logo-mark в globals.css — раньше выглядела
+          чужеродным пятном на тёмной/чёрно-белой теме), а CSS-маской в
+          акцент ТЕКУЩЕЙ темы пользователя — фона нет вовсе, цвет меняется
+          вместе с остальным сайтом. */}
+      <span className="logo-mark h-8 w-8 shrink-0" />
+      {/* sr-only — раньше на мобильном (где текстовая подпись скрыта через
+          hidden) у ссылки не было доступного имени вообще: alt="" у <img>
+          был пустым намеренно (декоративная иконка), а текст пропадал
+          вместе с display:none. Теперь название всегда доступно
+          скринридеру, а видимый дубль ниже просто скрыт от него, чтобы не
+          звучало дважды. */}
+      <span className="sr-only">MediaWatch</span>
+      <span className="hidden sm:inline" aria-hidden="true">
+        MediaWatch
       </span>
-      <span className="hidden sm:inline">MediaWatch</span>
     </Link>
   );
 }
