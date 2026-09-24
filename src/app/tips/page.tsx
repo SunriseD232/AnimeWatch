@@ -141,6 +141,43 @@ export default function TipsPage() {
         </p>
       </section>
 
+      {/* id — на него ссылается разовая подсказка в мобильном Safari (см.
+          components/WebviewInstallHint.tsx). */}
+      <section id="iphone-app" className="flex flex-col gap-3 scroll-mt-4">
+        <div>
+          <h2 className="text-lg font-semibold">
+            Удобный «вебвью» на iPhone — без App Store
+          </h2>
+          <p className="mt-1 text-sm leading-relaxed text-gray-400">
+            Safari умеет добавлять сайт на экран «Домой» отдельной иконкой —
+            открывается на весь экран, без адресной строки, как обычное
+            приложение (то же самое «вебвью», что и в нашем нативном
+            приложении, только без App Store и установки через Codemagic/eSign).
+          </p>
+        </div>
+        <ol className="flex flex-col gap-2 text-sm leading-relaxed text-gray-300">
+          <li className="flex gap-2">
+            <span className="shrink-0 font-semibold text-accent-text">1.</span>
+            Откройте media-watch.ru в Safari (не в Chrome/Яндекс.Браузере —
+            на iOS только у Safari есть кнопка «Поделиться» с этим пунктом).
+          </li>
+          <li className="flex gap-2">
+            <span className="shrink-0 font-semibold text-accent-text">2.</span>
+            Нажмите значок «Поделиться» (квадрат со стрелкой вверх) внизу
+            экрана.
+          </li>
+          <li className="flex gap-2">
+            <span className="shrink-0 font-semibold text-accent-text">3.</span>
+            В списке действий выберите «На экран «Домой»».
+          </li>
+          <li className="flex gap-2">
+            <span className="shrink-0 font-semibold text-accent-text">4.</span>
+            Подтвердите «Добавить» — на рабочем столе появится значок
+            MediaWatch, который открывает сайт на весь экран.
+          </li>
+        </ol>
+      </section>
+
       <Link
         href="/"
         className="press w-fit rounded-full bg-bg-card px-4 py-2 text-sm font-medium text-gray-300 ring-1 ring-white/10 transition hover:bg-bg-soft hover:text-white"
