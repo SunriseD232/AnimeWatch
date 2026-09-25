@@ -40,9 +40,15 @@ export default function HeroBanner({ hero, children }: { hero: HeroData; childre
           светлый или пёстрый участок кадра). */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
 
-      {children && <div className="absolute left-3 top-3 z-10 sm:left-4 sm:top-4">{children}</div>}
+      {children && <div className="absolute left-3 top-3 z-20 sm:left-4 sm:top-4">{children}</div>}
 
-      <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col gap-3 p-4 sm:p-6">
+      {/* top-14/sm:top-16 — забронированная полоса под ModeSwitch сверху:
+          без неё длинное название + описание + жанры на невысоком hero
+          (min-h-[320px]) разрастались вверх и перекрывали переключатель
+          раздела. justify-end внутри держит контент прижатым к низу, а
+          overflow-hidden — последняя защита, если текста всё равно много:
+          обрежется сверху, а не наедет на кнопки переключателя. */}
+      <div className="absolute inset-x-0 bottom-0 top-14 z-10 flex flex-col justify-end gap-3 overflow-hidden p-4 sm:top-16 sm:p-6">
         {hero.genres.length > 0 && (
           <div className="flex gap-2 overflow-x-auto whitespace-nowrap pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {hero.genres.map((g) => (
@@ -56,7 +62,10 @@ export default function HeroBanner({ hero, children }: { hero: HeroData; childre
           </div>
         )}
 
-        <h1 className="line-clamp-2 text-2xl font-bold text-white sm:text-4xl">{hero.title}</h1>
+        {/* Не <h1>: заголовок страницы — отдельный sr-only h1 в page.tsx
+            («Аниме — MediaWatch»), а это promo-название конкретного тайтла,
+            не заголовок страницы — два h1 на странице сбивали бы иерархию. */}
+        <p className="line-clamp-2 text-2xl font-bold text-white sm:text-4xl">{hero.title}</p>
 
         {meta.length > 0 && (
           <p className="text-sm text-gray-300 sm:text-base">{meta.join(' · ')}</p>

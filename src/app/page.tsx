@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 import CatalogTeaser from '@/components/CatalogTeaser';
 import ContinueWatchingPanel from '@/components/ContinueWatchingPanel';
-import ContinueWatchingGrid from '@/components/ContinueWatchingGrid';
+import ContinueWatchingFull from '@/components/ContinueWatchingFull';
 import type { ContinueEntry } from '@/components/ContinueCarousel';
 import HeroBanner from '@/components/HeroBanner';
 import ModeSwitch from '@/components/ModeSwitch';
@@ -77,10 +77,10 @@ async function getContinueEntries(): Promise<{ loggedIn: boolean; entries: Conti
 /**
  * Hero и «Продолжить просмотр» решаются вместе, одним запросом за hero:
  * без него панели на 360px рядом с пустой левой колонкой не место — вместо
- * неё «Продолжить просмотр» растягивается на всю ширину и показывает 9
- * плиток вместо 3 строк (см. ContinueWatchingGrid). Пока hero не посчитан
- * ни разу (крон рекомендаций ещё не прогонялся) это состояние — не ошибка,
- * а обычный переходный момент.
+ * неё «Продолжить просмотр» растягивается на всю ширину прежней
+ * горизонтальной каруселью (см. ContinueWatchingFull). Пока hero не
+ * посчитан ни разу (крон рекомендаций ещё не прогонялся) это состояние —
+ * не ошибка, а обычный переходный момент.
  */
 async function HeroAndContinueRow() {
   const {
@@ -105,7 +105,7 @@ async function HeroAndContinueRow() {
   return (
     <div className="flex flex-col gap-4">
       <ModeSwitch active="anime" />
-      <ContinueWatchingGrid entries={entries} loggedIn={loggedIn} />
+      <ContinueWatchingFull entries={entries} loggedIn={loggedIn} />
     </div>
   );
 }

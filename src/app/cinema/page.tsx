@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import CatalogTeaser from '@/components/CatalogTeaser';
 import type { ContinueEntry } from '@/components/ContinueCarousel';
 import ContinueWatchingPanel from '@/components/ContinueWatchingPanel';
-import ContinueWatchingGrid from '@/components/ContinueWatchingGrid';
+import ContinueWatchingFull from '@/components/ContinueWatchingFull';
 import HeroBanner from '@/components/HeroBanner';
 import ModeSwitch from '@/components/ModeSwitch';
 import PlannedCard from '@/components/PlannedCard';
@@ -104,7 +104,7 @@ async function HeroAndContinueRow() {
   return (
     <div className="flex flex-col gap-4">
       <ModeSwitch active="cinema" />
-      <ContinueWatchingGrid entries={entries} loggedIn={loggedIn} />
+      <ContinueWatchingFull entries={entries} loggedIn={loggedIn} />
     </div>
   );
 }

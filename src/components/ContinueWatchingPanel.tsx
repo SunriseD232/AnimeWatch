@@ -6,7 +6,7 @@ import PosterImage from '@/components/PosterImage';
 import LoginBanner from '@/components/LoginBanner';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
-import { fixPosterUrl, watchPercent } from '@/lib/format';
+import { fixPosterUrl, formatTime, watchPercent } from '@/lib/format';
 import { ChevronRightIcon, XIcon } from '@/components/social/icons';
 import type { ContinueEntry } from '@/components/ContinueCarousel';
 
@@ -131,7 +131,8 @@ function ContinueRow({ entry, onRemove }: { entry: ContinueEntry; onRemove: () =
           <p className="truncate text-sm font-medium text-gray-100">{progress.anime_title}</p>
           <p className="truncate text-xs text-gray-400">
             {isMultiSeason ? `С${progress.season ?? 1} · Серия ${progress.episode}` : `Серия ${progress.episode}`}
-            {percent !== null ? ` · ${percent}%` : ''}
+            {' · '}
+            {formatTime(progress.position_seconds)}
           </p>
         </div>
       </Link>
