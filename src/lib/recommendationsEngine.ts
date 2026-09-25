@@ -238,19 +238,41 @@ async function requestRecommendations(
       }),
       signal: AbortSignal.timeout(OPENROUTER_TIMEOUT_MS),
     });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      console.error(`[recommendationsEngine] OpenRouter HTTP ${res.status}: ${body.slice(0, 500)}`);
+      return [];
+    }
 
     const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
     const content = data.choices?.[0]?.message?.content;
-    if (typeof content !== 'string') return [];
+    if (typeof content !== 'string') {
+      console.error('[recommendationsEngine] OpenRouter ответ без content:', JSON.stringify(data).slice(0, 500));
+      return [];
+    }
 
-    const parsed = JSON.parse(content) as { items?: { id?: number; reason?: string }[] };
+    let parsed: { items?: { id?: number; reason?: string }[] };
+    try {
+      parsed = JSON.parse(content) as { items?: { id?: number; reason?: string }[] };
+    } catch {
+      console.error('[recommendationsEngine] content не JSON:', content.slice(0, 500));
+      return [];
+    }
+
     const validIds = new Set(candidates.map((c) => c.id));
-
-    return (parsed.items ?? [])
+    const result = (parsed.items ?? [])
       .filter((it) => typeof it.id === 'number' && validIds.has(it.id))
       .slice(0, RECOMMENDATION_LIMIT)
       .map((it) => ({ id: it.id as number, reason: it.reason?.slice(0, 200) ?? null }));
+
+    if (result.length === 0) {
+      console.error(
+        '[recommendationsEngine] модель не выбрала ни одного валидного id, сырой content:',
+        content.slice(0, 500),
+      );
+    }
+
+    return result;
   } catch (err) {
     console.error(
       '[recommendationsEngine] OpenRouter не ответил:',
