@@ -511,6 +511,27 @@ export async function refreshRecommendations(): Promise<RefreshRecommendationsRe
     cinema: cinemaBackdropMap,
   };
 
+  // Кэшируем backdrop ВСЕГО списка рекомендаций (у кого он вообще нашёлся),
+  // не только того единственного тайтла, который в итоге станет чьим-то
+  // hero — так hero не зависит от того, попал ли конкретный id в узкий
+  // срез «победителей», а сами обложки сразу готовы, если когда-нибудь
+  // понадобятся и самой карусели «Рекомендуем посмотреть».
+  const backdropCandidates: BackdropCandidate[] = [
+    ...[...animeIdsNeeded]
+      .filter((id) => animeCoverMap.has(id))
+      .map((id) => ({ kind: 'anime' as BackdropKind, id, url: animeCoverMap.get(id) as string })),
+    ...[...cinemaIdsNeeded]
+      .filter((id) => cinemaBackdropMap.has(id))
+      .map((id) => ({ kind: 'cinema' as BackdropKind, id, url: cinemaBackdropMap.get(id) as string })),
+  ];
+
+  const cacheResult = await cacheBackdrops(backdropCandidates);
+
+  // Hero — первый по рангу тайтл в списке пользователя, чей backdrop
+  // реально лежит на диске после кэширования выше (а не просто «URL
+  // где-то нашёлся» — известная ссылка может быть скачана раньше, чем
+  // reset случится удачно, но и наоборот: если скачать не вышло, apstream
+  // ссылка тоже подходит, cacheBackdrops это учитывает через resolved).
   for (const [userId, ranked] of rankedByUser) {
     for (const contentType of ['anime', 'cinema'] as ContentType[]) {
       const map = urlMap[contentType];
@@ -521,14 +542,6 @@ export async function refreshRecommendations(): Promise<RefreshRecommendationsRe
   }
 
   const allHeroPicks = [...heroCandidatesByType.anime.map((h) => ({ ...h, contentType: 'anime' as const })), ...heroCandidatesByType.cinema.map((h) => ({ ...h, contentType: 'cinema' as const }))];
-
-  const backdropCandidates: BackdropCandidate[] = allHeroPicks.map((h) => ({
-    kind: h.contentType as BackdropKind,
-    id: h.itemId,
-    url: h.rawUrl,
-  }));
-
-  const cacheResult = await cacheBackdrops(backdropCandidates);
 
   const heroRows = allHeroPicks.map((h) => {
     const localOk = cacheResult.resolved.get(`${h.contentType}:${h.itemId}`) ?? false;
