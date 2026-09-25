@@ -30,11 +30,18 @@ export default function HeroBanner({ hero, children }: { hero: HeroData; childre
 
   return (
     <div className="relative h-[52vh] min-h-[320px] max-h-[420px] w-full overflow-hidden rounded-3xl bg-bg-card lg:h-[440px] lg:max-h-none">
+      {/* object-top — backdrop почти всегда широкий (16:9 и шире), а hero на
+          мобильном высокий и узкий (min-h-[320px] при ширине экрана);
+          object-cover с дефолтным center на такой пропорции вырезает
+          случайную вертикальную полосу по центру кадра — живьём это была
+          шляпа крупным планом вместо всей сцены. Смысловой центр кадра у
+          постеров/backdrop чаще в верхней половине, top — рабочий
+          компромисс без анализа конкретной картинки. */}
       <PosterImage
         sources={[hero.backdropUrl]}
         alt=""
         priority
-        className="absolute inset-0 h-full w-full object-cover"
+        className="absolute inset-0 h-full w-full object-cover object-top"
         placeholderClassName="absolute inset-0 bg-bg-soft"
       />
       {/* Снизу сплошной — текст читается независимо от того, что на картинке
