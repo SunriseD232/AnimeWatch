@@ -108,13 +108,13 @@ function ContinueRow({ entry, onRemove }: { entry: ContinueEntry; onRemove: () =
       : `/watch/${progress.shikimori_id}/${progress.episode}`;
 
   return (
-    <div className="group relative flex items-center gap-3 overflow-hidden rounded-2xl bg-bg-soft pr-2 transition hover:bg-white/[0.06]">
-      <Link href={watchHref} className="flex min-w-0 flex-1 items-center gap-3 py-1.5">
-        {/* aspect-[2/3] — реальная пропорция постера (та же, что у
-            AnimeCard/CinemaCard). Раньше рамка была шире, чем высокой
-            (h-14 w-20 ≈ 4:3), и object-cover обрезал портретный постер
-            почти до вертикальной полоски по центру. */}
-        <div className="relative aspect-[2/3] h-14 shrink-0 overflow-hidden rounded-lg bg-bg-card">
+    <div className="group relative flex items-stretch gap-3 overflow-hidden rounded-2xl bg-bg-soft pr-2 transition hover:bg-white/[0.06]">
+      <Link href={watchHref} className="flex min-w-0 flex-1 items-stretch gap-3">
+        {/* h-full + aspect-[2/3] — постер во всю высоту строки, впритык к
+            левому краю блока (items-stretch на родителях, без своих
+            вертикальных отступов), пропорция та же, что у AnimeCard/
+            CinemaCard. rounded только слева — единой формой со строкой. */}
+        <div className="relative aspect-[2/3] h-full shrink-0 overflow-hidden rounded-l-2xl bg-bg-card">
           {progress.poster_url ? (
             <PosterImage
               sources={[localPoster, fixPosterUrl(progress.poster_url)]}
@@ -126,12 +126,12 @@ function ContinueRow({ entry, onRemove }: { entry: ContinueEntry; onRemove: () =
             <div className="grid h-full w-full place-items-center text-[9px] text-gray-500">нет фото</div>
           )}
           {percent !== null && (
-            <div className="absolute inset-x-0 bottom-0 h-0.5 bg-white/10">
+            <div className="absolute inset-x-0 bottom-0 h-1 bg-white/10">
               <div className="h-full bg-accent" style={{ width: `${percent}%` }} />
             </div>
           )}
         </div>
-        <div className="flex min-w-0 flex-col gap-0.5">
+        <div className="flex min-w-0 flex-col justify-center gap-0.5 py-1.5">
           <p className="truncate text-sm font-medium text-gray-100">{progress.anime_title}</p>
           <p className="truncate text-xs text-gray-400">
             {isMultiSeason ? `С${progress.season ?? 1} · Серия ${progress.episode}` : `Серия ${progress.episode}`}
@@ -145,7 +145,7 @@ function ContinueRow({ entry, onRemove }: { entry: ContinueEntry; onRemove: () =
         onClick={onRemove}
         aria-label="Убрать из просмотра"
         title="Убрать из просмотра"
-        className="press hover-reveal grid h-7 w-7 shrink-0 place-items-center rounded-full text-gray-500 transition hover:bg-red-600 hover:text-white"
+        className="press hover-reveal grid h-7 w-7 shrink-0 self-center place-items-center rounded-full text-gray-500 transition hover:bg-red-600 hover:text-white"
       >
         <XIcon className="h-3.5 w-3.5" />
       </button>
