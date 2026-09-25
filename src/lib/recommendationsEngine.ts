@@ -3,6 +3,7 @@ import { mapWithConcurrency } from '@/lib/concurrency';
 import { cacheBackdrops, type BackdropCandidate } from '@/lib/backdropCache';
 import { localBackdropUrl, type BackdropKind } from '@/lib/backdropPath';
 import { GUEST_HERO_USER_ID } from '@/lib/recommendations';
+import { vlessDispatcher } from '@/lib/net/vlessProxy';
 import type { ContentType } from '@/lib/types';
 
 /**
@@ -237,6 +238,12 @@ async function requestRecommendations(
         response_format: { type: 'json_object' },
       }),
       signal: AbortSignal.timeout(OPENROUTER_TIMEOUT_MS),
+      // openrouter.ai с этой VPS блокируется на уровне WAF («Access denied
+      // by security policy», проверено вживую) — тот же класс сетевого
+      // ограничения, что у api.themoviedb.org (см. lib/tmdb.ts), лечится
+      // тем же туннелем.
+      // @ts-expect-error -- dispatcher — опция undici, не входит в типы lib.dom fetch.
+      dispatcher: vlessDispatcher(),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
