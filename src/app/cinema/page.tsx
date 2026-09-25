@@ -92,7 +92,7 @@ async function HeroAndContinueRow() {
 
   if (hero) {
     return (
-      <div className="grid gap-4 lg:grid-cols-[1fr_360px] lg:items-stretch">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px] lg:items-stretch">
         <HeroBanner hero={hero}>
           <ModeSwitch active="cinema" />
         </HeroBanner>
@@ -187,7 +187,7 @@ export default function CinemaHomePage({
 
       <Suspense
         fallback={
-          <div className="grid gap-4 lg:grid-cols-[1fr_360px] lg:items-stretch">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px] lg:items-stretch">
             <div className="skeleton h-[52vh] min-h-[320px] max-h-[420px] rounded-3xl lg:h-[440px] lg:max-h-none" />
             <div className="skeleton h-[220px] rounded-3xl lg:h-[440px]" />
           </div>
