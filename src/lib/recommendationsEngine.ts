@@ -440,7 +440,7 @@ export interface RefreshRecommendationsResult {
   usersProcessed: number;
   recommendationsWritten: number;
   heroPicksWritten: number;
-  backdrops: { attempted: number; stored: number; missed: number; failed: number };
+  backdrops: { attempted: number; stored: number; missed: number; failed: number; errors: string[] };
 }
 
 /**
@@ -557,6 +557,7 @@ export async function refreshRecommendations(): Promise<RefreshRecommendationsRe
       stored: cacheResult.stored,
       missed: cacheResult.missed,
       failed: cacheResult.failed,
+      errors: cacheResult.errors,
     },
   };
 }

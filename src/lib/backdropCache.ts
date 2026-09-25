@@ -47,11 +47,23 @@ interface CacheRow {
 
 /** Скачивает и пережимает одну обложку. null — сетевая неудача (не отмечаем
  *  проверенной, см. fetchAndStore в posterCache.ts — тот же приём). */
+/**
+ * error !== undefined — настоящая неудача (для диагностики, см. errors в
+ * BackdropCacheResult). Полагаться на console.error здесь оказалось нельзя:
+ * этот код выполняется в фоне ПОСЛЕ того, как роут уже отправил ответ
+ * (см. api/cron/refresh-recommendations), и логи из такой оторванной цепочки
+ * ни разу не долетели до pm2 — судя по всему, известная особенность
+ * Next.js с логами вне контекста активного запроса. Поэтому причину сбоя
+ * возвращаем В РЕЗУЛЬТАТЕ и логируем уже в recommendationsEngine.ts, откуда
+ * лог гарантированно доходит («готово: ...» долетал всегда).
+ */
 async function fetchAndStore(
   kind: BackdropKind,
   id: number,
   url: string,
-): Promise<{ bytes: number; width: number | null; height: number | null } | null> {
+): Promise<
+  { bytes: number; width: number | null; height: number | null; error?: undefined } | { error: string }
+> {
   try {
     const res = await fetch(url, {
       cache: 'no-store',
@@ -67,8 +79,7 @@ async function fetchAndStore(
       return { bytes: 0, width: null, height: null };
     }
     if (!res.ok) {
-      console.error(`[backdropCache] ${kind}:${id} (${url}) -> HTTP ${res.status}`);
-      return null;
+      return { error: `HTTP ${res.status}` };
     }
 
     const input = Buffer.from(await res.arrayBuffer());
@@ -91,11 +102,7 @@ async function fetchAndStore(
       height: output.info.height ?? null,
     };
   } catch (err) {
-    console.error(
-      `[backdropCache] не скачался ${kind}:${id} (${url}):`,
-      err instanceof Error ? err.message : err,
-    );
-    return null;
+    return { error: err instanceof Error ? `${err.name}: ${err.message}` : String(err) };
   }
 }
 
@@ -110,6 +117,9 @@ export interface BackdropCacheResult {
    *  код (recommendationsEngine.ts), отдавать localBackdropUrl или ссылку
    *  на апстрим напрямую. */
   resolved: Map<string, boolean>;
+  /** Первые несколько причин failed — см. комментарий у fetchAndStore про
+   *  то, почему это не console.error. */
+  errors: string[];
 }
 
 /**
@@ -121,7 +131,7 @@ export async function cacheBackdrops(
   candidates: BackdropCandidate[],
 ): Promise<BackdropCacheResult> {
   if (candidates.length === 0) {
-    return { attempted: 0, stored: 0, missed: 0, failed: 0, bytes: 0, resolved: new Map() };
+    return { attempted: 0, stored: 0, missed: 0, failed: 0, bytes: 0, resolved: new Map(), errors: [] };
   }
 
   const supabase = createServiceClient();
@@ -160,6 +170,7 @@ export async function cacheBackdrops(
   let missed = 0;
   let failed = 0;
   let bytes = 0;
+  const errors: string[] = [];
 
   // Уже лежащие на диске по актуальной ссылке — сразу resolved: true, их
   // cacheBackdrops в этом прогоне не трогает вовсе.
@@ -177,8 +188,9 @@ export async function cacheBackdrops(
   const rows: CacheRow[] = [];
   for (const { c, res } of results) {
     const key = `${c.kind}:${c.id}`;
-    if (res === null) {
+    if ('error' in res) {
       failed++;
+      if (errors.length < 10) errors.push(`${key}: ${res.error}`);
       // Сетевая неудача — не трогаем прежнее состояние файла (его вообще
       // не пытались перезаписать), просто не отмечаем проверенным.
       resolved.set(key, known.get(key)?.ok ?? false);
@@ -211,5 +223,5 @@ export async function cacheBackdrops(
     if (error) console.error('[backdropCache] не записался backdrop_cache:', error.message);
   }
 
-  return { attempted: todo.length, stored, missed, failed, bytes, resolved };
+  return { attempted: todo.length, stored, missed, failed, bytes, resolved, errors };
 }
