@@ -16,9 +16,13 @@ import type { HeroData } from '@/lib/recommendations';
  * меняются, меняется только то, куда его кладёт родитель.
  *
  * Высота фиксирована (не аспект-рейшо): на десктопе она же — высота соседней
- * колонки «Продолжить просмотр» (grid items-stretch), а на мобильном явный
- * клэмп важнее, чем пропорция картинки — иначе широкий (~4:1) backdrop
- * ужимается в полоску толщиной в пару строк текста.
+ * колонки «Продолжить просмотр» (grid items-stretch). На мобильном подобрана
+ * компромиссом: backdrop почти всегда 16:9 (1280×720), а слишком высокий
+ * узкий контейнер обрезает половину ширины кадра по бокам (object-cover
+ * масштабирует по высоте — раз она меньше, обрезка идёт по ширине), живьём
+ * это превращало сцену в случайный крупный план. Совсем убрать обрезку
+ * означало бы контейнер по 16:9 — тогда почти не остаётся места под
+ * заголовок/описание/кнопки поверх картинки.
  */
 export default function HeroBanner({ hero, children }: { hero: HeroData; children?: ReactNode }) {
   // Одна и та же карточка тайтла — и для кнопки «Смотреть», и для клика по
@@ -29,7 +33,7 @@ export default function HeroBanner({ hero, children }: { hero: HeroData; childre
   );
 
   return (
-    <div className="relative h-[52vh] min-h-[320px] max-h-[420px] w-full overflow-hidden rounded-3xl bg-bg-card lg:h-[440px] lg:max-h-none">
+    <div className="relative h-[46vh] min-h-[260px] max-h-[360px] w-full overflow-hidden rounded-3xl bg-bg-card lg:h-[440px] lg:max-h-none">
       {/* object-top — backdrop почти всегда широкий (16:9 и шире), а hero на
           мобильном высокий и узкий (min-h-[320px] при ширине экрана);
           object-cover с дефолтным center на такой пропорции вырезает
