@@ -244,9 +244,14 @@ async function requestRecommendations(
       // openrouter.ai с этой VPS блокируется на уровне WAF («Access denied
       // by security policy», проверено вживую) — тот же класс сетевого
       // ограничения, что у api.themoviedb.org (см. lib/tmdb.ts), лечится
-      // тем же туннелем.
+      // тем же туннелем. Сам туннель и OpenRouter проверены вживую curl'ом
+      // (POST через тот же прокси отвечает за ~1с) — зависание было в
+      // Node/undici: fetch с телом через кастомный dispatcher требует
+      // duplex:'half', без него запрос повисает до собственного таймаута,
+      // не долетев до сети.
       // @ts-expect-error -- dispatcher — опция undici, не входит в типы lib.dom fetch.
       dispatcher: vlessDispatcher(),
+      duplex: 'half',
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
