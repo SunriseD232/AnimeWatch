@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 import CatalogTeaser from '@/components/CatalogTeaser';
 import ContinueWatchingPanel from '@/components/ContinueWatchingPanel';
+import ContinueWatchingGrid from '@/components/ContinueWatchingGrid';
 import type { ContinueEntry } from '@/components/ContinueCarousel';
 import HeroBanner from '@/components/HeroBanner';
 import ModeSwitch from '@/components/ModeSwitch';
@@ -73,22 +74,40 @@ async function getContinueEntries(): Promise<{ loggedIn: boolean; entries: Conti
   };
 }
 
-async function HeroSection() {
+/**
+ * Hero и «Продолжить просмотр» решаются вместе, одним запросом за hero:
+ * без него панели на 360px рядом с пустой левой колонкой не место — вместо
+ * неё «Продолжить просмотр» растягивается на всю ширину и показывает 9
+ * плиток вместо 3 строк (см. ContinueWatchingGrid). Пока hero не посчитан
+ * ни разу (крон рекомендаций ещё не прогонялся) это состояние — не ошибка,
+ * а обычный переходный момент.
+ */
+async function HeroAndContinueRow() {
   const {
     data: { user },
   } = await getCachedUser();
-  const hero = await getHeroPick(user?.id ?? null, 'anime');
-  if (!hero) return null;
-  return (
-    <HeroBanner hero={hero}>
-      <ModeSwitch active="anime" />
-    </HeroBanner>
-  );
-}
+  const [hero, { loggedIn, entries }] = await Promise.all([
+    getHeroPick(user?.id ?? null, 'anime'),
+    getContinueEntries(),
+  ]);
 
-async function ContinueWatchingSection() {
-  const { loggedIn, entries } = await getContinueEntries();
-  return <ContinueWatchingPanel entries={entries} loggedIn={loggedIn} />;
+  if (hero) {
+    return (
+      <div className="grid gap-4 lg:grid-cols-[1fr_360px] lg:items-stretch">
+        <HeroBanner hero={hero}>
+          <ModeSwitch active="anime" />
+        </HeroBanner>
+        <ContinueWatchingPanel entries={entries} loggedIn={loggedIn} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <ModeSwitch active="anime" />
+      <ContinueWatchingGrid entries={entries} loggedIn={loggedIn} />
+    </div>
+  );
 }
 
 async function RecommendedSection() {
@@ -177,14 +196,16 @@ export default function HomePage({
           это промо-карточка, не заголовок страницы. */}
       <h1 className="sr-only">Аниме — MediaWatch</h1>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_360px] lg:items-stretch">
-        <Suspense fallback={<div className="skeleton h-[52vh] min-h-[320px] max-h-[420px] rounded-3xl lg:h-[440px] lg:max-h-none" />}>
-          <HeroSection />
-        </Suspense>
-        <Suspense fallback={<div className="skeleton h-[220px] rounded-3xl lg:h-[440px]" />}>
-          <ContinueWatchingSection />
-        </Suspense>
-      </div>
+      <Suspense
+        fallback={
+          <div className="grid gap-4 lg:grid-cols-[1fr_360px] lg:items-stretch">
+            <div className="skeleton h-[52vh] min-h-[320px] max-h-[420px] rounded-3xl lg:h-[440px] lg:max-h-none" />
+            <div className="skeleton h-[220px] rounded-3xl lg:h-[440px]" />
+          </div>
+        }
+      >
+        <HeroAndContinueRow />
+      </Suspense>
 
       <Suspense fallback={<CarouselSkeleton count={6} wide={false} />}>
         <RecommendedSection />

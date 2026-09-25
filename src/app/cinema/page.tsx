@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import CatalogTeaser from '@/components/CatalogTeaser';
 import type { ContinueEntry } from '@/components/ContinueCarousel';
 import ContinueWatchingPanel from '@/components/ContinueWatchingPanel';
+import ContinueWatchingGrid from '@/components/ContinueWatchingGrid';
 import HeroBanner from '@/components/HeroBanner';
 import ModeSwitch from '@/components/ModeSwitch';
 import PlannedCard from '@/components/PlannedCard';
@@ -79,22 +80,33 @@ async function getContinueEntries(): Promise<{ loggedIn: boolean; entries: Conti
   };
 }
 
-async function HeroSection() {
+/** См. HomePage ('/') — HeroAndContinueRow. */
+async function HeroAndContinueRow() {
   const {
     data: { user },
   } = await getCachedUser();
-  const hero = await getHeroPick(user?.id ?? null, 'cinema');
-  if (!hero) return null;
-  return (
-    <HeroBanner hero={hero}>
-      <ModeSwitch active="cinema" />
-    </HeroBanner>
-  );
-}
+  const [hero, { loggedIn, entries }] = await Promise.all([
+    getHeroPick(user?.id ?? null, 'cinema'),
+    getContinueEntries(),
+  ]);
 
-async function ContinueWatchingSection() {
-  const { loggedIn, entries } = await getContinueEntries();
-  return <ContinueWatchingPanel entries={entries} loggedIn={loggedIn} />;
+  if (hero) {
+    return (
+      <div className="grid gap-4 lg:grid-cols-[1fr_360px] lg:items-stretch">
+        <HeroBanner hero={hero}>
+          <ModeSwitch active="cinema" />
+        </HeroBanner>
+        <ContinueWatchingPanel entries={entries} loggedIn={loggedIn} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <ModeSwitch active="cinema" />
+      <ContinueWatchingGrid entries={entries} loggedIn={loggedIn} />
+    </div>
+  );
 }
 
 async function RecommendedSection() {
@@ -173,14 +185,16 @@ export default function CinemaHomePage({
     <div className="flex flex-col gap-10">
       <h1 className="sr-only">Фильмы и сериалы — MediaWatch</h1>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_360px] lg:items-stretch">
-        <Suspense fallback={<div className="skeleton h-[52vh] min-h-[320px] max-h-[420px] rounded-3xl lg:h-[440px] lg:max-h-none" />}>
-          <HeroSection />
-        </Suspense>
-        <Suspense fallback={<div className="skeleton h-[220px] rounded-3xl lg:h-[440px]" />}>
-          <ContinueWatchingSection />
-        </Suspense>
-      </div>
+      <Suspense
+        fallback={
+          <div className="grid gap-4 lg:grid-cols-[1fr_360px] lg:items-stretch">
+            <div className="skeleton h-[52vh] min-h-[320px] max-h-[420px] rounded-3xl lg:h-[440px] lg:max-h-none" />
+            <div className="skeleton h-[220px] rounded-3xl lg:h-[440px]" />
+          </div>
+        }
+      >
+        <HeroAndContinueRow />
+      </Suspense>
 
       <Suspense fallback={<CarouselSkeleton count={6} wide={false} />}>
         <RecommendedSection />
