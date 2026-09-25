@@ -10,7 +10,7 @@ import { fixPosterUrl, formatTime, watchPercent } from '@/lib/format';
 import { ChevronRightIcon, XIcon } from '@/components/social/icons';
 import type { ContinueEntry } from '@/components/ContinueCarousel';
 
-const PAGE_SIZE = 3;
+const PAGE_SIZE = 4;
 
 /**
  * Панель «Продолжить просмотр» новой главной — справа от hero на десктопе,
@@ -114,11 +114,13 @@ function ContinueRow({ entry, onRemove }: { entry: ContinueEntry; onRemove: () =
       : `/watch/${progress.shikimori_id}/${progress.episode}`;
 
   return (
-    // h-24 — фиксированная, надёжная высота строки (не зависит от
+    // h-20 — фиксированная, надёжная высота строки (не зависит от
     // неопределённой высоты родителя, см. комментарий в
-    // ContinueWatchingPanel). Постер — aspect-[2/3] от этой ЖЕ высоты,
-    // родитель теперь всегда определён, никакого «поплыло».
-    <div className="group relative flex h-24 items-stretch gap-3 overflow-hidden rounded-2xl bg-bg-soft pr-2 transition hover:bg-white/[0.06]">
+    // ContinueWatchingPanel). Подобрано под 4 строки + 3 зазора внутри
+    // высоты hero (440px) с запасом: 4×80 + 3×8(gap-2) = 344 из ~368
+    // доступных после шапки и паддингов панели. Постер — aspect-[2/3] от
+    // этой ЖЕ высоты, родитель теперь всегда определён, никакого «поплыло».
+    <div className="group relative flex h-20 items-stretch gap-3 overflow-hidden rounded-2xl bg-bg-soft pr-2 transition hover:bg-white/[0.06]">
       <Link href={watchHref} className="flex min-w-0 flex-1 items-stretch gap-3">
         <div className="relative aspect-[2/3] h-full shrink-0 overflow-hidden rounded-l-2xl bg-bg-card">
           {progress.poster_url ? (
