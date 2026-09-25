@@ -246,13 +246,18 @@ async function loadBatchImdbIds(
 /** Уже известные отметки — чтобы понять, что протухло, а что нет. */
 async function loadKnownRatings(
   supabase: ReturnType<typeof createServiceClient>,
-): Promise<Map<string, { checkedAt: number; missCount: number; hasPopularity: boolean }>> {
-  const out = new Map<string, { checkedAt: number; missCount: number; hasPopularity: boolean }>();
+): Promise<
+  Map<string, { checkedAt: number; missCount: number; hasPopularity: boolean; hasBackdrop: boolean }>
+> {
+  const out = new Map<
+    string,
+    { checkedAt: number; missCount: number; hasPopularity: boolean; hasBackdrop: boolean }
+  >();
 
   for (let from = 0; ; from += READ_PAGE) {
     const { data, error } = await supabase
       .from('cinema_ratings')
-      .select('imdb_id, checked_at, miss_count, popularity, rating')
+      .select('imdb_id, checked_at, miss_count, popularity, rating, backdrop_path')
       .order('imdb_id', { ascending: true })
       .range(from, from + READ_PAGE - 1);
 
@@ -266,6 +271,7 @@ async function loadKnownRatings(
         miss_count: number | null;
         popularity: number | null;
         rating: number | null;
+        backdrop_path: string | null;
       };
       out.set(row.imdb_id, {
         checkedAt: new Date(row.checked_at).getTime(),
@@ -275,6 +281,10 @@ async function loadKnownRatings(
         // независимо от свежести отметки — иначе сортировка по популярности
         // месяц ждала бы истечения TTL.
         hasPopularity: row.popularity !== null || row.rating === null,
+        // Та же логика для backdrop_path (миграция 0043, добавлено позже
+        // popularity) — без неё старые «свежие» строки ждали бы месяц TTL,
+        // хотя backdrop им ни разу не проверяли.
+        hasBackdrop: row.backdrop_path !== null || row.rating === null,
       });
     }
   }
@@ -341,7 +351,7 @@ export async function refreshCinemaRatings(budget = DEFAULT_BUDGET): Promise<Rat
       candidates.push({ imdbId, checkedAt: 0 });
       continue;
     }
-    if (!prev.hasPopularity) {
+    if (!prev.hasPopularity || !prev.hasBackdrop) {
       candidates.push({ imdbId, checkedAt: prev.checkedAt });
       continue;
     }
