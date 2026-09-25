@@ -1,15 +1,28 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { refreshRecommendations } from '@/lib/recommendationsEngine';
 
-// Обход пользователей + OpenRouter (до нескольких секунд на запрос) +
-// докачка backdrop'ов — на десятки пользователей укладывается в минуты, но
-// потолок берём как у остальных крон-роутов с сетевыми походами.
+// maxDuration — потолок для serverless-платформ (Vercel), на self-hosted
+// Node/PM2 ни на что не влияет. Реальный предел здесь — nginx
+// proxy_read_timeout, и именно поэтому крон НЕ ждёт результата (см. ниже):
+// openrouter.ai ходит через VLESS-туннель (см. lib/net/vlessProxy.ts,
+// «Access denied by security policy» напрямую с этой VPS), а с ним один
+// запрос к модели ощутимо медленнее прямого — на два раздела и десятки
+// пользователей суммарно это уже больше минуты, дольше, чем готов ждать
+// nginx перед тем, как оборвать HTTP-соединение 504-й.
 export const maxDuration = 60;
 
 /**
  * Суточный крон рекомендаций (см. план редизайна главной): считает
  * персональные подборки «Рекомендуем посмотреть» через OpenRouter и
- * hero-пик для главной, по образцу api/cron/check-episodes.
+ * hero-пик для главной.
+ *
+ * В отличие от остальных крон-роутов (check-episodes и т.п.) — не ждёт
+ * refreshRecommendations() и отвечает сразу: сама функция продолжает
+ * работать в фоне (обычный процесс под PM2, а не serverless-функция,
+ * которую платформа заморозит после ответа — код после return
+ * действительно продолжает выполняться). Прогресс/ошибки — только в логах
+ * PM2 (`[recommendationsEngine] ...`), у самого HTTP-ответа результата не
+ * дождаться никогда, даже если бы nginx и не резал соединение по таймауту.
  *
  * Расписание — на VPS, после реиндексации и докачки постеров (см.
  * README.md «Расписание фоновых задач» — crontab -l и
@@ -21,12 +34,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  try {
-    const result = await refreshRecommendations();
-    return NextResponse.json({ ok: true, ...result });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error('[cron/refresh-recommendations] упал:', message);
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
-  }
+  refreshRecommendations()
+    .then((result) => {
+      console.log('[cron/refresh-recommendations] готово:', JSON.stringify(result));
+    })
+    .catch((err) => {
+      console.error(
+        '[cron/refresh-recommendations] упал:',
+        err instanceof Error ? err.message : err,
+      );
+    });
+
+  return NextResponse.json({ ok: true, started: true });
 }

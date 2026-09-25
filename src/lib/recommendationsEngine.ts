@@ -19,7 +19,10 @@ import type { ContentType } from '@/lib/types';
 
 const OPENROUTER_MODEL = 'z-ai/glm-5.3-flash';
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_TIMEOUT_MS = 30_000;
+// Через VLESS-туннель (см. импорт vlessDispatcher ниже) один запрос к модели
+// заметно медленнее прямого — 30с оказалось мало, часть запросов обрывалась
+// по таймауту раньше, чем модель успевала ответить.
+const OPENROUTER_TIMEOUT_MS = 60_000;
 const OPENROUTER_CONCURRENCY = 3;
 
 const CANDIDATE_LIMIT = 50;
