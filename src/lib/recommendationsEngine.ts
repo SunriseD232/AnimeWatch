@@ -1,10 +1,15 @@
 import { createServiceClient } from '@/lib/supabase/service';
 import { mapWithConcurrency } from '@/lib/concurrency';
 import { cacheBackdrops, type BackdropCandidate } from '@/lib/backdropCache';
-import { localBackdropUrl, type BackdropKind } from '@/lib/backdropPath';
-import { GUEST_HERO_USER_ID } from '@/lib/recommendations';
+import type { BackdropKind } from '@/lib/backdropPath';
 import { vlessDispatcher } from '@/lib/net/vlessProxy';
 import type { ContentType } from '@/lib/types';
+
+/** Внутренний ключ для гостевого «пользователя» в rankedByUser (см. ниже) —
+ *  не пишется никуда в базу (hero теперь выбирается на чтении, см.
+ *  getHeroPick в lib/recommendations.ts), нужен только чтобы гостевой
+ *  популярный пул тоже попал в общий список на докачку обложек. */
+const GUEST_TRACKING_KEY = 'guest';
 
 /**
  * Крон-логика блока «Рекомендуем посмотреть» + hero главной (см. план
@@ -430,36 +435,30 @@ async function fetchCinemaBackdropUrls(
   return found;
 }
 
-interface HeroPick {
-  userId: string;
-  itemId: number;
-  rawUrl: string;
-}
-
 export interface RefreshRecommendationsResult {
   usersProcessed: number;
   recommendationsWritten: number;
-  heroPicksWritten: number;
   backdrops: { attempted: number; stored: number; missed: number; failed: number; errors: string[] };
 }
 
 /**
  * Точка входа крона. По каждому разделу (аниме/кино) отдельно: считает
- * рекомендации всем активным пользователям + guest-фоллбэк, выбирает hero
- * (первый по рангу рекомендации, у которого нашлась обложка — см. план:
- * упрощение относительно «бонуса за популярность» намеренное, т.к. сам пул
- * кандидатов уже отсортирован по популярности ДО того, как его увидела
- * модель), докачивает нужные backdrop'ы одним пакетом в конце.
+ * рекомендации всем активным пользователям + guest-фоллбэк, докачивает
+ * backdrop ВСЕГО списка рекомендаций (не только чьего-то одного «победителя»)
+ * одним пакетом в конце. Какой конкретно тайтл станет hero — решает не
+ * крон, а сам рендер главной (см. getHeroPick в lib/recommendations.ts):
+ * он случайно выбирает один из уже закэшированных здесь при каждом заходе,
+ * поэтому hero меняется на перезагрузке, а не залипает на весь день.
  */
 export async function refreshRecommendations(): Promise<RefreshRecommendationsResult> {
   const supabase = createServiceClient();
   const userIds = await getActiveUserIds(supabase);
 
   let recommendationsWritten = 0;
-  const heroCandidatesByType: Record<ContentType, HeroPick[]> = { anime: [], cinema: [] };
-  // Кандидат на hero каждого пользователя — весь его ранжированный список
-  // (или популярный фоллбэк), а не только первый ранг: если у топ-1 нет
-  // обложки, идём дальше по списку.
+  // Полный ранжированный список каждого пользователя (или популярный
+  // фоллбэк) — нужен только чтобы собрать множество id, которым может
+  // понадобиться backdrop (см. ниже), выбор конкретного hero здесь больше
+  // не происходит.
   const rankedByUser = new Map<string, Record<ContentType, number[]>>();
 
   for (const contentType of ['anime', 'cinema'] as ContentType[]) {
@@ -485,15 +484,15 @@ export async function refreshRecommendations(): Promise<RefreshRecommendationsRe
       rankedByUser.set(userId, prev);
     });
 
-    // Гость — общий пик, всегда из популярного (персонализировать некого).
-    const prevGuest = rankedByUser.get(GUEST_HERO_USER_ID) ?? { anime: [], cinema: [] };
+    // Гость — общий популярный пул, персонализировать некого; попадает в
+    // общий список на докачку обложек той же дорогой, что и все остальные.
+    const prevGuest = rankedByUser.get(GUEST_TRACKING_KEY) ?? { anime: [], cinema: [] };
     prevGuest[contentType] = popularPool.map((c) => c.id);
-    rankedByUser.set(GUEST_HERO_USER_ID, prevGuest);
+    rankedByUser.set(GUEST_TRACKING_KEY, prevGuest);
   }
 
   // Union id'ов, которым вообще может понадобиться картинка — по каждому
-  // пользователю (+ гостю) берём ВЕСЬ его ранжированный список: реальный
-  // hero определится ниже, как только выяснится, у кого есть обложка.
+  // пользователю (+ гостю) берём ВЕСЬ его ранжированный список.
   const animeIdsNeeded = new Set<number>();
   const cinemaIdsNeeded = new Set<number>();
   for (const ranked of rankedByUser.values()) {
@@ -506,16 +505,10 @@ export async function refreshRecommendations(): Promise<RefreshRecommendationsRe
     fetchCinemaBackdropUrls(supabase, [...cinemaIdsNeeded]),
   ]);
 
-  const urlMap: Record<ContentType, Map<number, string>> = {
-    anime: animeCoverMap,
-    cinema: cinemaBackdropMap,
-  };
-
-  // Кэшируем backdrop ВСЕГО списка рекомендаций (у кого он вообще нашёлся),
-  // не только того единственного тайтла, который в итоге станет чьим-то
-  // hero — так hero не зависит от того, попал ли конкретный id в узкий
-  // срез «победителей», а сами обложки сразу готовы, если когда-нибудь
-  // понадобятся и самой карусели «Рекомендуем посмотреть».
+  // Кэшируем backdrop ВСЕГО списка рекомендаций, у кого он вообще нашёлся —
+  // именно из этого пула getHeroPick (lib/recommendations.ts) на каждом
+  // заходе на главную случайно выбирает hero, поэтому нужны все, а не
+  // только один «победитель».
   const backdropCandidates: BackdropCandidate[] = [
     ...[...animeIdsNeeded]
       .filter((id) => animeCoverMap.has(id))
@@ -527,44 +520,9 @@ export async function refreshRecommendations(): Promise<RefreshRecommendationsRe
 
   const cacheResult = await cacheBackdrops(backdropCandidates);
 
-  // Hero — первый по рангу тайтл в списке пользователя, чей backdrop
-  // реально лежит на диске после кэширования выше (а не просто «URL
-  // где-то нашёлся» — известная ссылка может быть скачана раньше, чем
-  // reset случится удачно, но и наоборот: если скачать не вышло, apstream
-  // ссылка тоже подходит, cacheBackdrops это учитывает через resolved).
-  for (const [userId, ranked] of rankedByUser) {
-    for (const contentType of ['anime', 'cinema'] as ContentType[]) {
-      const map = urlMap[contentType];
-      const hit = ranked[contentType].find((id) => map.has(id));
-      if (hit === undefined) continue;
-      heroCandidatesByType[contentType].push({ userId, itemId: hit, rawUrl: map.get(hit) as string });
-    }
-  }
-
-  const allHeroPicks = [...heroCandidatesByType.anime.map((h) => ({ ...h, contentType: 'anime' as const })), ...heroCandidatesByType.cinema.map((h) => ({ ...h, contentType: 'cinema' as const }))];
-
-  const heroRows = allHeroPicks.map((h) => {
-    const localOk = cacheResult.resolved.get(`${h.contentType}:${h.itemId}`) ?? false;
-    return {
-      user_id: h.userId,
-      content_type: h.contentType,
-      item_id: h.itemId,
-      backdrop_url: localOk ? localBackdropUrl(h.contentType as BackdropKind, h.itemId) : h.rawUrl,
-      generated_at: new Date().toISOString(),
-    };
-  });
-
-  if (heroRows.length > 0) {
-    const { error } = await supabase
-      .from('hero_pick')
-      .upsert(heroRows, { onConflict: 'user_id,content_type' });
-    if (error) console.error('[recommendationsEngine] не записался hero_pick:', error.message);
-  }
-
   return {
     usersProcessed: userIds.length,
     recommendationsWritten,
-    heroPicksWritten: heroRows.length,
     backdrops: {
       attempted: cacheResult.attempted,
       stored: cacheResult.stored,

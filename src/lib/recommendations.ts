@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getAnimeCatalogFromIndex, getAnimeIndexByIds } from '@/lib/animeIndexQuery';
 import { getCinemaCatalogFromIndex, getCinemaIndexByIds } from '@/lib/cinemaIndexQuery';
 import { EMPTY_TRI } from '@/lib/catalogFilters';
+import { getLocalBackdropIds, localBackdropUrl } from '@/lib/backdropCacheServer';
 import type { ShikimoriAnimeShort } from '@/lib/shikimoriShared';
 import type { CinemaShort } from '@/lib/videoseed-catalog';
 import type { ContentType } from '@/lib/types';
@@ -9,17 +10,15 @@ import type { ContentType } from '@/lib/types';
 /**
  * Чтение персональных рекомендаций и hero для главной (см. план редизайна).
  *
- * Всё здесь ТОЛЬКО читает — подбор считает крон раз в сутки
- * (api/cron/refresh-recommendations, lib/recommendationsEngine.ts). Ничего
- * не бросает: нет строк (новый пользователь, крон ещё не прогонялся, гость)
- * — тихий фоллбэк на популярное из локального индекса, страница не должна
- * из-за этого падать или показывать ошибку.
+ * Список рекомендаций считает крон раз в сутки (api/cron/refresh-
+ * recommendations, lib/recommendationsEngine.ts) — тот же крон докачивает
+ * backdrop ВСЕГО списка. А вот КАКОЙ конкретно тайтл станет hero решается
+ * прямо здесь, на каждом заходе на главную: getHeroPick случайно выбирает
+ * один из уже закэшированных backdrop'ов пользователя — так hero меняется
+ * при перезагрузке, а не залипает на весь день до следующего прогона крона.
+ * Ничего не бросает: нет данных (новый пользователь, крон ещё не
+ * прогонялся, гость) — тихий фоллбэк на популярное из локального индекса.
  */
-
-/** Гостевой sentinel в hero_pick — см. миграцию 0041. NULL user_id ломал бы
- *  идемпотентность upsert по PK (NULL никогда не равен NULL), поэтому у
- *  гостя обычная строка с фиксированным id, а не отсутствие user_id. */
-export const GUEST_HERO_USER_ID = '00000000-0000-0000-0000-000000000000';
 
 const RECOMMENDED_LIMIT = 12;
 
@@ -114,9 +113,9 @@ export interface HeroData {
   year: number | null;
   rating: number | null;
   genres: string[];
-  /** Уже полностью разрешённая ссылка — локальный кэш либо апстрим, считает
-   *  крон заранее (см. hero_pick в миграции 0041). Рендер сам в Kitsu/TMDB
-   *  никогда не ходит. */
+  /** Всегда локальная ссылка (/backdrops/...) — getHeroPick выбирает только
+   *  из уже скачанных кроном обложек (backdrop_cache), см. миграцию 0042.
+   *  Рендер сам в Kitsu/TMDB никогда не ходит. */
   backdropUrl: string;
 }
 
@@ -211,35 +210,63 @@ async function getCinemaHeroDetail(
   }
 }
 
+/** Топ по популярности как id-список — фоллбэк-пул для гостя (тот же
+ *  источник, что и у карточек, см. getRecommendedAnime/Cinema). */
+async function getPopularIds(contentType: ContentType): Promise<number[]> {
+  if (contentType === 'anime') {
+    const page = await getAnimeCatalogFromIndex({
+      genresInclude: [],
+      genresExclude: [],
+      sort: 'popularity',
+      page: 1,
+      pageSize: RECOMMENDED_LIMIT,
+      excludeAnons: true,
+    });
+    return (page?.items ?? []).map((a) => a.id);
+  }
+  const page = await getCinemaCatalogFromIndex({
+    genresInclude: [],
+    genresExclude: [],
+    countriesInclude: [],
+    countriesExclude: [],
+    kinds: EMPTY_TRI,
+    yearFrom: null,
+    yearTo: null,
+    sort: 'popularity',
+    page: 1,
+    pageSize: RECOMMENDED_LIMIT,
+  });
+  return (page?.items ?? []).map((c) => c.id);
+}
+
 /**
- * Hero-тайтл для баннера главной. userId=null — гость, читает общий
- * sentinel-pick (GUEST_HERO_USER_ID), тот же для всех гостей раздела.
- * null — ни разу не считалось (крон ещё не прогонялся) — вызывающий
- * (page.tsx) в этом случае просто не рендерит hero-баннер.
+ * Hero-тайтл для баннера главной. Выбирается случайно на каждом рендере из
+ * (рекомендации пользователя, либо топ популярного для гостя) ∩ (что уже
+ * реально скачано в backdrop_cache — крон кэширует backdrop всего списка,
+ * см. lib/recommendationsEngine.ts). Никакого похода в Kitsu/TMDB отсюда
+ * нет — только чтение уже готового реестра. Пустой пул (крон ещё не
+ * прогонялся, у раздела совсем нет закэшированных обложек) — null,
+ * вызывающий (page.tsx) просто не рендерит hero-баннер.
  */
 export async function getHeroPick(
   userId: string | null,
   contentType: ContentType,
 ): Promise<HeroData | null> {
-  const pickUserId = userId ?? GUEST_HERO_USER_ID;
   try {
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from('hero_pick')
-      .select('item_id, backdrop_url')
-      .eq('user_id', pickUserId)
-      .eq('content_type', contentType)
-      .maybeSingle();
-    if (error || !data || !data.backdrop_url) return null;
+    const recommendedIds = userId ? await getRecommendedIds(userId, contentType) : [];
+    const ids = recommendedIds.length > 0 ? recommendedIds : await getPopularIds(contentType);
+    if (ids.length === 0) return null;
 
-    const itemId = data.item_id as number;
+    const cachedIds = await getLocalBackdropIds(contentType, ids);
+    const pool = ids.filter((id) => cachedIds.has(id));
+    if (pool.length === 0) return null;
+
+    const pick = pool[Math.floor(Math.random() * pool.length)];
     const detail =
-      contentType === 'anime'
-        ? await getAnimeHeroDetail(itemId)
-        : await getCinemaHeroDetail(itemId);
+      contentType === 'anime' ? await getAnimeHeroDetail(pick) : await getCinemaHeroDetail(pick);
     if (!detail || !detail.title) return null;
 
-    return { ...detail, contentType, backdropUrl: data.backdrop_url as string };
+    return { ...detail, contentType, backdropUrl: localBackdropUrl(contentType, pick) };
   } catch {
     return null;
   }
