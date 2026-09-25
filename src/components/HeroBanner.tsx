@@ -21,7 +21,9 @@ import type { HeroData } from '@/lib/recommendations';
  * ужимается в полоску толщиной в пару строк текста.
  */
 export default function HeroBanner({ hero, children }: { hero: HeroData; children?: ReactNode }) {
-  const watchHref = hero.contentType === 'anime' ? `/anime/${hero.id}` : `/cinema/${hero.id}`;
+  // Одна и та же карточка тайтла — и для кнопки «Смотреть», и для клика по
+  // названию (см. ниже): так же ведут себя AnimeCard/CinemaCard.
+  const titleHref = hero.contentType === 'anime' ? `/anime/${hero.id}` : `/cinema/${hero.id}`;
   const meta = [hero.genres[0], hero.year, hero.rating ? hero.rating.toFixed(1) : null].filter(
     (v): v is string | number => v !== null && v !== undefined && v !== '',
   );
@@ -64,8 +66,14 @@ export default function HeroBanner({ hero, children }: { hero: HeroData; childre
 
         {/* Не <h1>: заголовок страницы — отдельный sr-only h1 в page.tsx
             («Аниме — MediaWatch»), а это promo-название конкретного тайтла,
-            не заголовок страницы — два h1 на странице сбивали бы иерархию. */}
-        <p className="line-clamp-2 text-2xl font-bold text-white sm:text-4xl">{hero.title}</p>
+            не заголовок страницы — два h1 на странице сбивали бы иерархию.
+            Кликабельно — ведёт на ту же карточку, что и «Смотреть». */}
+        <Link
+          href={titleHref}
+          className="line-clamp-2 w-fit text-2xl font-bold text-white transition hover:underline sm:text-4xl"
+        >
+          {hero.title}
+        </Link>
 
         {meta.length > 0 && (
           <p className="text-sm text-gray-300 sm:text-base">{meta.join(' · ')}</p>
@@ -79,7 +87,7 @@ export default function HeroBanner({ hero, children }: { hero: HeroData; childre
 
         <div className="mt-1 flex items-center gap-2">
           <Link
-            href={watchHref}
+            href={titleHref}
             className="press flex flex-1 items-center justify-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-accent-fg transition hover:bg-accent-hover sm:flex-none"
           >
             <PlayIcon className="h-4 w-4" filled />
