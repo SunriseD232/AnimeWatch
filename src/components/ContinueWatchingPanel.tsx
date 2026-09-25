@@ -89,7 +89,13 @@ export default function ContinueWatchingPanel({
           Здесь появятся тайтлы, которые вы смотрите. Начните с популярного ниже.
         </div>
       ) : (
-        <div className="grid flex-1 grid-rows-3 gap-2">
+        // flex-col + justify-between, а не grid-rows-3: у панели фикс.
+        // высота только от lg (= высоте hero), на мобильном высота
+        // складывается из контента — растягивать grid-строки по 1fr
+        // внутри неопределённой высоты родителя и было причиной «поплыло».
+        // Строки сами фиксированной высоты (см. ContinueRow), between
+        // просто равномерно распределяет их в доступном пространстве.
+        <div className="flex flex-1 flex-col justify-between gap-2">
           {visible.map((entry) => (
             <ContinueRow key={entry.progress.id} entry={entry} onRemove={() => void remove(entry)} />
           ))}
@@ -108,12 +114,12 @@ function ContinueRow({ entry, onRemove }: { entry: ContinueEntry; onRemove: () =
       : `/watch/${progress.shikimori_id}/${progress.episode}`;
 
   return (
-    <div className="group relative flex items-stretch gap-3 overflow-hidden rounded-2xl bg-bg-soft pr-2 transition hover:bg-white/[0.06]">
+    // h-24 — фиксированная, надёжная высота строки (не зависит от
+    // неопределённой высоты родителя, см. комментарий в
+    // ContinueWatchingPanel). Постер — aspect-[2/3] от этой ЖЕ высоты,
+    // родитель теперь всегда определён, никакого «поплыло».
+    <div className="group relative flex h-24 items-stretch gap-3 overflow-hidden rounded-2xl bg-bg-soft pr-2 transition hover:bg-white/[0.06]">
       <Link href={watchHref} className="flex min-w-0 flex-1 items-stretch gap-3">
-        {/* h-full + aspect-[2/3] — постер во всю высоту строки, впритык к
-            левому краю блока (items-stretch на родителях, без своих
-            вертикальных отступов), пропорция та же, что у AnimeCard/
-            CinemaCard. rounded только слева — единой формой со строкой. */}
         <div className="relative aspect-[2/3] h-full shrink-0 overflow-hidden rounded-l-2xl bg-bg-card">
           {progress.poster_url ? (
             <PosterImage
