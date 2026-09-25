@@ -199,7 +199,14 @@ async function requestRecommendations(
   candidates: Candidate[],
 ): Promise<RecommendedItem[]> {
   const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey || candidates.length === 0) return [];
+  // Молчаливый выход здесь раньше маскировал отсутствие ключа: крон отдавал
+  // ok:true recommendationsWritten:0 без единой строки в логе, и понять,
+  // ключа нет или модель просто ничего не выбрала, было нельзя.
+  if (!apiKey) {
+    console.error('[recommendationsEngine] OPENROUTER_API_KEY не задан — рекомендации пропускаются');
+    return [];
+  }
+  if (candidates.length === 0) return [];
 
   const historyLine =
     watchedTitles.length > 0
@@ -318,7 +325,9 @@ async function fetchCoverImagesViaKitsu(malIds: number[]): Promise<Map<number, s
         headers: { Accept: 'application/vnd.api+json', 'User-Agent': 'MediaWatch MVP' },
         signal: AbortSignal.timeout(30_000),
       });
-      if (res.ok) {
+      if (!res.ok) {
+        console.error(`[recommendationsEngine] Kitsu ответил HTTP ${res.status} на пачку id`);
+      } else {
         const json = (await res.json()) as KitsuCoverResponse;
         const items = new Map(
           (json.included ?? []).map((x) => [x.id ?? '', x.attributes?.coverImage ?? null]),
