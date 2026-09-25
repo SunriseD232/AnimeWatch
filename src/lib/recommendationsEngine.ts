@@ -53,11 +53,15 @@ async function getActiveBatchId(
   supabase: SupabaseService,
   contentType: ContentType,
 ): Promise<string | null> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from(STATE_TABLE[contentType])
     .select('active_batch')
     .eq('id', true)
     .maybeSingle();
+  if (error) {
+    console.error(`[recommendationsEngine] активная партия ${contentType} не прочиталась:`, error.message);
+    return null;
+  }
   return (data?.active_batch as string | undefined) ?? null;
 }
 
@@ -171,7 +175,11 @@ async function getCandidatePool(
       : query.order('popularity', { ascending: false, nullsFirst: false });
 
   const { data, error } = await query.limit(CANDIDATE_LIMIT);
-  if (error || !data) return [];
+  if (error) {
+    console.error(`[recommendationsEngine] пул кандидатов ${contentType} не прочитался:`, error.message);
+    return [];
+  }
+  if (!data) return [];
 
   return (data as unknown as Record<string, unknown>[])
     .map((r) => ({ id: Number(r[idCol]), title: (r[titleCol] as string | null) ?? '' }))
@@ -403,11 +411,16 @@ async function fetchCinemaBackdropUrls(
   const batchId = await getActiveBatchId(supabase, 'cinema');
   if (!batchId) return found;
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('cinema_index')
     .select('kp_id, backdrop_path')
     .eq('batch_id', batchId)
     .in('kp_id', kpIds);
+
+  if (error) {
+    console.error(`[recommendationsEngine] cinema_index backdrop_path запрос упал (${kpIds.length} id):`, error.message);
+    return found;
+  }
 
   for (const r of data ?? []) {
     const row = r as { kp_id: number; backdrop_path: string | null };
