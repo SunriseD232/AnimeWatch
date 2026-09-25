@@ -40,12 +40,36 @@ async function getRecommendedIds(userId: string, contentType: ContentType): Prom
   }
 }
 
+/**
+ * id тайтлов, которые пользователь уже как-то отметил (любой статус
+ * user_list — запланировал, смотрит, бросил, посмотрел). Подборка
+ * пересчитывается кроном раз в сутки и не знает про действия, случившиеся
+ * ПОСЛЕ прогона — без этого фильтра тайтл, отмеченный «Просмотрено» через
+ * «+» на карточке прямо в этом блоке, продолжал бы в нём висеть до
+ * следующей ночи.
+ */
+async function getUserListIds(userId: string, contentType: ContentType): Promise<Set<number>> {
+  try {
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('user_list')
+      .select('shikimori_id')
+      .eq('user_id', userId)
+      .eq('content_type', contentType);
+    if (error || !data) return new Set();
+    return new Set(data.map((r) => (r as { shikimori_id: number }).shikimori_id));
+  } catch {
+    return new Set();
+  }
+}
+
 /** Персональные рекомендации аниме, готовые к AnimeCard. Гость/пустой набор
  *  от крона/крон ни разу не отработал — топ по популярности из anime_index. */
 export async function getRecommendedAnime(userId: string | null): Promise<ShikimoriAnimeShort[]> {
+  const excludeIds = userId ? await getUserListIds(userId, 'anime') : new Set<number>();
   const ids = userId ? await getRecommendedIds(userId, 'anime') : [];
   if (ids.length > 0) {
-    const items = await getAnimeIndexByIds(ids);
+    const items = (await getAnimeIndexByIds(ids)).filter((a) => !excludeIds.has(a.id));
     if (items.length > 0) return items;
   }
   const fallback = await getAnimeCatalogFromIndex({
@@ -56,14 +80,15 @@ export async function getRecommendedAnime(userId: string | null): Promise<Shikim
     pageSize: RECOMMENDED_LIMIT,
     excludeAnons: true,
   });
-  return fallback?.items ?? [];
+  return (fallback?.items ?? []).filter((a) => !excludeIds.has(a.id));
 }
 
 /** То же для кино, см. getRecommendedAnime. */
 export async function getRecommendedCinema(userId: string | null): Promise<CinemaShort[]> {
+  const excludeIds = userId ? await getUserListIds(userId, 'cinema') : new Set<number>();
   const ids = userId ? await getRecommendedIds(userId, 'cinema') : [];
   if (ids.length > 0) {
-    const items = await getCinemaIndexByIds(ids);
+    const items = (await getCinemaIndexByIds(ids)).filter((c) => !excludeIds.has(c.id));
     if (items.length > 0) return items;
   }
   const fallback = await getCinemaCatalogFromIndex({
@@ -78,7 +103,7 @@ export async function getRecommendedCinema(userId: string | null): Promise<Cinem
     page: 1,
     pageSize: RECOMMENDED_LIMIT,
   });
-  return fallback?.items ?? [];
+  return (fallback?.items ?? []).filter((c) => !excludeIds.has(c.id));
 }
 
 export interface HeroData {
