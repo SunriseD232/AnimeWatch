@@ -1,42 +1,27 @@
 import { Suspense } from 'react';
-import AnimeCard from '@/components/AnimeCard';
-import ContinueCarousel from '@/components/ContinueCarousel';
-import DiscoverTabs from '@/components/DiscoverTabs';
-import LoginBanner from '@/components/LoginBanner';
+import { redirect } from 'next/navigation';
+import CatalogTeaser from '@/components/CatalogTeaser';
+import ContinueWatchingPanel from '@/components/ContinueWatchingPanel';
+import type { ContinueEntry } from '@/components/ContinueCarousel';
+import HeroBanner from '@/components/HeroBanner';
 import ModeSwitch from '@/components/ModeSwitch';
-import Pagination from '@/components/Pagination';
 import PlannedCard from '@/components/PlannedCard';
+import RecommendedCarousel from '@/components/RecommendedCarousel';
 import ScrollCarousel from '@/components/ScrollCarousel';
-import { CardGridSkeleton, CarouselSkeleton } from '@/components/Skeletons';
-import { getAnime, getNewAnime, getPopularRanked } from '@/lib/shikimori';
+import { CarouselSkeleton } from '@/components/Skeletons';
+import { getAnime } from '@/lib/shikimori';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
-import { getEpisodeProgressMap } from '@/lib/watch/progressMap';
+import { getHeroPick, getRecommendedAnime } from '@/lib/recommendations';
 import { getLocalPosterMap } from '@/lib/posterCacheServer';
 
-const DISCOVER_TABS = [
-  { key: 'new', label: 'Новинки', href: '/?tab=new' },
-  { key: 'popular', label: 'Популярное', href: '/?tab=popular' },
-];
-const DISCOVER_PAGE_SIZE = 24;
-
-function discoverPageHref(tab: string, showAnons: boolean, page: number): string {
-  const params = new URLSearchParams();
-  if (tab !== 'new') params.set('tab', tab);
-  if (showAnons) params.set('anons', '1');
-  params.set('page', String(page));
-  return `/?${params.toString()}`;
-}
-
-async function ContinueWatching() {
+async function getContinueEntries(): Promise<{ loggedIn: boolean; entries: ContinueEntry[] }> {
   const supabase = createClient();
   const {
     data: { user },
   } = await getCachedUser();
 
-  if (!user) {
-    return <LoginBanner />;
-  }
+  if (!user) return { loggedIn: false, entries: [] };
 
   const { data } = await supabase
     .from('watch_progress')
@@ -47,13 +32,9 @@ async function ContinueWatching() {
 
   const items = (data ?? []) as WatchProgress[];
 
-  // Убираем из карусели то, что уже отмечено «Просмотрено» в списке — но
-  // ТОЛЬКО если аниме реально закончилось. Онгоинг никогда не трогаем: если
-  // просто дошёл до последней вышедшей на сегодня серии, статус мог стать
-  // completed автоматически (см. onEnded в WatchPlayer.tsx), а карточка
-  // всё равно должна остаться — новая серия выйдет, и надо куда вернуться.
-  // Не смогли проверить статус (Shikimori недоступен и т.п.) — не скрываем,
-  // безопасный дефолт в пользу лишней карточки, а не потерянного онгоинга.
+  // Убираем из панели то, что уже отмечено «Просмотрено» в списке — но
+  // ТОЛЬКО если аниме реально закончилось (см. прежнюю логику ContinueWatching
+  // на этой странице — поведение не меняется, меняется только вёрстка).
   let progress = items;
   if (items.length > 0) {
     const ids = items.map((p) => p.shikimori_id);
@@ -76,38 +57,51 @@ async function ContinueWatching() {
     ).filter((p): p is WatchProgress => p !== null);
   }
 
-  if (progress.length === 0) {
-    return (
-      <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
-        Здесь появятся тайтлы, которые вы смотрите. Начните с популярного
-        ниже.
-      </div>
-    );
-  }
+  if (progress.length === 0) return { loggedIn: true, entries: [] };
 
-  // Локальные обложки — одним запросом на весь список. Проверяем ЗДЕСЬ, а не
-  // гадаем в карточке: ссылка на несуществующий файл — это 404 у каждого
-  // незакэшированного тайтла, их и было видно на главной.
   const localPosters = await getLocalPosterMap(
-    progress.map((p) => ({
-      kind: p.content_type === 'cinema' ? ('cinema' as const) : ('anime' as const),
-      id: p.shikimori_id,
-    })),
+    progress.map((p) => ({ kind: 'anime' as const, id: p.shikimori_id })),
   );
 
-  // Горизонтальная карусель: последние просмотренные листаются вбок.
-  // Помимо родной полосы прокрутки — колесо мыши и драг (см. ScrollCarousel).
-  // Список держит клиентский ContinueCarousel: убранная карточка исчезает
-  // вместе с ячейкой, без пустого столбца до перезагрузки.
+  return {
+    loggedIn: true,
+    entries: progress.map((p) => ({
+      progress: p,
+      isMultiSeason: false,
+      localPoster: localPosters.get(`anime:${p.shikimori_id}`) ?? null,
+    })),
+  };
+}
+
+async function HeroSection() {
+  const {
+    data: { user },
+  } = await getCachedUser();
+  const hero = await getHeroPick(user?.id ?? null, 'anime');
+  if (!hero) return null;
   return (
-    <ContinueCarousel
-      entries={progress.map((p) => ({
-        progress: p,
-        isMultiSeason: false,
-        localPoster:
-          localPosters.get(`${p.content_type === 'cinema' ? 'cinema' : 'anime'}:${p.shikimori_id}`) ?? null,
-      }))}
-    />
+    <HeroBanner hero={hero}>
+      <ModeSwitch active="anime" />
+    </HeroBanner>
+  );
+}
+
+async function ContinueWatchingSection() {
+  const { loggedIn, entries } = await getContinueEntries();
+  return <ContinueWatchingPanel entries={entries} loggedIn={loggedIn} />;
+}
+
+async function RecommendedSection() {
+  const {
+    data: { user },
+  } = await getCachedUser();
+  const items = await getRecommendedAnime(user?.id ?? null);
+  if (items.length === 0) return null;
+  return (
+    <section className="flex flex-col gap-4">
+      <h2 className="text-xl font-bold">Рекомендуем посмотреть</h2>
+      <RecommendedCarousel contentType="anime" items={items} />
+    </section>
   );
 }
 
@@ -129,8 +123,6 @@ async function PlannedCarousel() {
     .order('created_at', { ascending: false })
     .limit(12);
 
-  // Ошибку раньше игнорировали (`const { data }` без error), и секция просто
-  // молча исчезала — ровно так и потерялся весь блок «Вы хотели посмотреть».
   if (error) console.error('[PlannedCarousel] запрос упал:', error.message);
 
   const items = (data ?? []) as UserListItem[];
@@ -160,119 +152,51 @@ async function PlannedCarousel() {
   );
 }
 
-/** Новинки/Популярное — полноценная сетка с пагинацией на главной под
- *  «Продолжить просмотр», переключается вкладками DiscoverTabs (см.
- *  searchParams.tab в HomePage) — тот же грид, что у /new и /catalog. */
-async function DiscoverGrid({
-  tab,
-  showAnons,
-  page,
-}: {
-  tab: string;
-  showAnons: boolean;
-  page: number;
-}) {
-  let data;
-  try {
-    data =
-      tab === 'popular'
-        ? await getPopularRanked(page, DISCOVER_PAGE_SIZE, !showAnons)
-        : await getNewAnime(page, DISCOVER_PAGE_SIZE, !showAnons);
-  } catch {
-    return (
-      <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
-        Не удалось загрузить каталог Shikimori. Попробуйте обновить страницу
-        позже.
-      </div>
-    );
-  }
-
-  if (data.items.length === 0) {
-    return (
-      <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
-        {page > 1 ? 'Дальше ничего нет.' : 'Пока ничего нет.'}
-      </div>
-    );
-  }
-
-  const hasPrev = page > 1;
-  const progressMap = await getEpisodeProgressMap('anime', data.items.map((a) => a.id));
-
-  return (
-    <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-        {data.items.map((a) => (
-          <AnimeCard key={a.id} anime={a} currentEpisode={progressMap.get(a.id) ?? null} />
-        ))}
-      </div>
-
-      <Pagination
-        page={page}
-        prevHref={hasPrev ? discoverPageHref(tab, showAnons, page - 1) : null}
-        nextHref={data.hasMore ? discoverPageHref(tab, showAnons, page + 1) : null}
-        scrollToId="discover"
-      />
-    </div>
-  );
-}
-
 export default function HomePage({
   searchParams,
 }: {
   searchParams: { tab?: string; anons?: string; page?: string };
 }) {
+  // Старая главная держала полную пагинируемую сетку прямо здесь (?tab=/
+  // ?page=) — новый дизайн заменил её тизером на /catalog (см. план
+  // редизайна), поэтому старые ссылки уводим на эквивалентную сортировку
+  // полного каталога, без номера страницы (каталог сам стартует с первой).
+  if (searchParams.tab) {
+    const params = new URLSearchParams();
+    params.set('sort', searchParams.tab === 'popular' ? 'popularity' : 'aired_on');
+    if (searchParams.anons === '1') params.set('anons', '1');
+    redirect(`/catalog?${params.toString()}`);
+  }
+
   const tab = searchParams.tab === 'popular' ? 'popular' : 'new';
-  const showAnons = searchParams.anons === '1';
-  const pageParam = Number(searchParams.page);
-  const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
 
   return (
     <div className="flex flex-col gap-10">
-      {/* Заголовок страницы — только для скринридера: визуально роль
-          заголовка играет сам переключатель разделов. Без него первым
-          <h1> на странице оказывался «Продолжить просмотр», то есть
-          раздел выдавал себя за название страницы, а у гостя без истории
-          просмотра <h1> не было вовсе. */}
+      {/* Заголовок страницы — только для скринридера, см. прежнее обоснование:
+          первым видимым текстом теперь оказывается название hero-тайтла, а
+          это промо-карточка, не заголовок страницы. */}
       <h1 className="sr-only">Аниме — MediaWatch</h1>
 
-      <ModeSwitch active="anime" />
-
-      <section className="animate-rise flex flex-col gap-4">
-        <h2 className="text-xl font-bold">Продолжить просмотр</h2>
-        <Suspense fallback={<CarouselSkeleton count={4} />}>
-          <ContinueWatching />
+      <div className="grid gap-4 lg:grid-cols-[1fr_360px] lg:items-stretch">
+        <Suspense fallback={<div className="skeleton h-[52vh] min-h-[320px] max-h-[420px] rounded-3xl lg:h-[440px] lg:max-h-none" />}>
+          <HeroSection />
         </Suspense>
-      </section>
+        <Suspense fallback={<div className="skeleton h-[220px] rounded-3xl lg:h-[440px]" />}>
+          <ContinueWatchingSection />
+        </Suspense>
+      </div>
 
-      {/* Скелетон узкими карточками — по форме самой секции. Она может
-          вовсе не появиться (гость или нет planned-тайтлов, PlannedCarousel
-          вернёт null), но пустое место на её месте лучше, чем рывок
-          подъезжающего блока: у гостя скелетон мелькнёт один кадр. */}
+      <Suspense fallback={<CarouselSkeleton count={6} wide={false} />}>
+        <RecommendedSection />
+      </Suspense>
+
       <Suspense fallback={<CarouselSkeleton count={6} wide={false} />}>
         <PlannedCarousel />
       </Suspense>
 
-      {/* id — якорь для листания: кнопки стоят внизу длинной выдачи, и без
-          него Next уводил бы в самый верх страницы (см. Pagination). */}
-      <section
-        id="discover"
-        className="animate-rise flex flex-col gap-4"
-        style={{ animationDelay: '80ms' }}
-      >
-        <DiscoverTabs
-          tabs={DISCOVER_TABS}
-          activeKey={tab}
-          catalogHref="/catalog"
-          anonsToggle
-          showAnons={showAnons}
-        />
-        <Suspense
-          key={`${tab}|${showAnons}|${page}`}
-          fallback={<CardGridSkeleton count={DISCOVER_PAGE_SIZE} />}
-        >
-          <DiscoverGrid tab={tab} showAnons={showAnons} page={page} />
-        </Suspense>
-      </section>
+      <Suspense fallback={<CarouselSkeleton count={6} wide={false} />}>
+        <CatalogTeaser contentType="anime" tab={tab} />
+      </Suspense>
     </div>
   );
 }

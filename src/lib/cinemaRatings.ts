@@ -113,6 +113,9 @@ interface TmdbHit {
   /** «Сколько смотрят прямо сейчас» — своя метрика TMDB, не производная от
    *  рейтинга. Приходит в том же ответе, отдельных запросов не стоит. */
   popularity?: number;
+  /** Путь широкого баннера (для hero главной, см. миграцию 0043) — приходит
+   *  в том же ответе find/{imdbId}, отдельного похода в TMDB не требует. */
+  backdrop_path?: string | null;
 }
 
 interface TmdbFindResult {
@@ -129,6 +132,7 @@ interface RatingRow {
   popularity: number | null;
   tmdb_id: number | null;
   media_type: string | null;
+  backdrop_path: string | null;
   checked_at: string;
   miss_count: number;
 }
@@ -154,6 +158,7 @@ async function fetchRating(
   popularity: number | null;
   tmdbId: number | null;
   mediaType: string | null;
+  backdropPath: string | null;
 } | null> {
   try {
     const res = await fetch(
@@ -168,7 +173,14 @@ async function fetchRating(
     // 404 от TMDB — это ответ «не найдено», а не сбой: такой id больше
     // спрашивать смысла нет до истечения бэкоффа.
     if (res.status === 404) {
-      return { rating: null, votes: null, popularity: null, tmdbId: null, mediaType: null };
+      return {
+        rating: null,
+        votes: null,
+        popularity: null,
+        tmdbId: null,
+        mediaType: null,
+        backdropPath: null,
+      };
     }
     if (!res.ok) return null;
 
@@ -176,7 +188,16 @@ async function fetchRating(
     const movie = data.movie_results?.[0];
     const tv = data.tv_results?.[0];
     const hit = movie ?? tv;
-    if (!hit) return { rating: null, votes: null, popularity: null, tmdbId: null, mediaType: null };
+    if (!hit) {
+      return {
+        rating: null,
+        votes: null,
+        popularity: null,
+        tmdbId: null,
+        mediaType: null,
+        backdropPath: null,
+      };
+    }
 
     const votes = hit.vote_count ?? 0;
     return {
@@ -187,6 +208,7 @@ async function fetchRating(
       popularity: typeof hit.popularity === 'number' ? hit.popularity : null,
       tmdbId: hit.id,
       mediaType: movie ? 'movie' : 'tv',
+      backdropPath: hit.backdrop_path ?? null,
     };
   } catch {
     return null;
@@ -374,6 +396,7 @@ export async function refreshCinemaRatings(budget = DEFAULT_BUDGET): Promise<Rat
         popularity: res.popularity,
         tmdb_id: res.tmdbId,
         media_type: res.mediaType,
+        backdrop_path: res.backdropPath,
         checked_at: new Date().toISOString(),
         miss_count: res.rating === null ? prevMiss + 1 : 0,
       });

@@ -1,54 +1,30 @@
 import { Suspense } from 'react';
-import CinemaCard from '@/components/CinemaCard';
-import ContinueCarousel from '@/components/ContinueCarousel';
-import DiscoverTabs from '@/components/DiscoverTabs';
-import LoginBanner from '@/components/LoginBanner';
+import { redirect } from 'next/navigation';
+import CatalogTeaser from '@/components/CatalogTeaser';
+import type { ContinueEntry } from '@/components/ContinueCarousel';
+import ContinueWatchingPanel from '@/components/ContinueWatchingPanel';
+import HeroBanner from '@/components/HeroBanner';
 import ModeSwitch from '@/components/ModeSwitch';
-import Pagination from '@/components/Pagination';
 import PlannedCard from '@/components/PlannedCard';
+import RecommendedCarousel from '@/components/RecommendedCarousel';
 import ScrollCarousel from '@/components/ScrollCarousel';
-import { CardGridSkeleton, CarouselSkeleton } from '@/components/Skeletons';
-import {
-  getCinemaById,
-  getCinemaEpisodesTotalMap,
-  getCinemaSeasonCountMap,
-  getNewCinema,
-  getPopularCinemaRanked,
-} from '@/lib/videoseed-catalog';
+import { CarouselSkeleton } from '@/components/Skeletons';
+import { getCinemaById, getCinemaSeasonCountMap } from '@/lib/videoseed-catalog';
 import { getTmdbSeriesOngoing } from '@/lib/tmdb';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
-import { getEpisodeProgressMap } from '@/lib/watch/progressMap';
-import { getSiteRatings } from '@/lib/social/server';
-import { withLocalPosters } from '@/lib/posterCacheServer';
-import { getCinemaCatalogFromIndex } from '@/lib/cinemaIndexQuery';
-import { EMPTY_TRI } from '@/lib/catalogFilters';
+import { getHeroPick, getRecommendedCinema } from '@/lib/recommendations';
 import { getLocalPosterMap } from '@/lib/posterCacheServer';
 
 export const metadata = { title: 'Фильмы и сериалы — MediaWatch' };
 
-const DISCOVER_TABS = [
-  { key: 'new', label: 'Новинки', href: '/cinema?tab=new' },
-  { key: 'popular', label: 'Популярное', href: '/cinema?tab=popular' },
-];
-const DISCOVER_PAGE_SIZE = 24;
-
-function discoverPageHref(tab: string, page: number): string {
-  const params = new URLSearchParams();
-  if (tab !== 'new') params.set('tab', tab);
-  params.set('page', String(page));
-  return `/cinema?${params.toString()}`;
-}
-
-async function ContinueWatching() {
+async function getContinueEntries(): Promise<{ loggedIn: boolean; entries: ContinueEntry[] }> {
   const supabase = createClient();
   const {
     data: { user },
   } = await getCachedUser();
 
-  if (!user) {
-    return <LoginBanner />;
-  }
+  if (!user) return { loggedIn: false, entries: [] };
 
   const { data } = await supabase
     .from('watch_progress')
@@ -59,14 +35,9 @@ async function ContinueWatching() {
 
   const items = (data ?? []) as WatchProgress[];
 
-  // Убираем то, что отмечено «Просмотрено» — но не сериалы, которые ещё
-  // идут (см. getTmdbSeriesOngoing — у Videoseed своего статуса нет, а
-  // completed тут ставится ЛЮБОМУ тайтлу, у которого кончился список
-  // известных на момент просмотра серий, см. onEnded в Player.tsx: для
-  // сериала это могло значить «догнал последнюю вышедшую», а не «сериал
-  // закончился насовсем»). Фильмы (не сериалы) скрываем сразу — досмотренный
-  // фильм не может «продолжиться». Не смогли проверить статус сериала — не
-  // скрываем, безопасный дефолт в пользу лишней карточки.
+  // Та же логика, что была в прежней ContinueWatching (см. историю
+  // страницы): фильмы-«просмотрено» скрываем сразу, сериалы — только если
+  // TMDB подтвердил, что они реально завершены (см. getTmdbSeriesOngoing).
   let progress = items;
   if (items.length > 0) {
     const ids = items.map((p) => p.shikimori_id);
@@ -91,48 +62,56 @@ async function ContinueWatching() {
     ).filter((p): p is WatchProgress => p !== null);
   }
 
-  if (progress.length === 0) {
-    return (
-      <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
-        Здесь появятся фильмы и сериалы, которые вы смотрите. Начните с
-        популярного ниже.
-      </div>
-    );
-  }
+  if (progress.length === 0) return { loggedIn: true, entries: [] };
 
-  // Число сезонов на карточку — только тайтлы с БОЛЬШЕ чем одним сезоном
-  // получают «Сезон N ·» в подписи (см. ContinueCard.isMultiSeason).
   const seasonCountMap = await getCinemaSeasonCountMap(progress.map((p) => p.shikimori_id));
-
-  // Горизонтальная карусель: последние просмотренные листаются вбок.
-  // Локальные обложки — одним запросом на весь список. Проверяем здесь, а не
-  // гадаем в карточке: ссылка на несуществующий файл — это 404 у каждого
-  // незакэшированного тайтла.
   const localPosters = await getLocalPosterMap(
-    progress.map((p) => ({
-      kind: p.content_type === 'cinema' ? ('cinema' as const) : ('anime' as const),
-      id: p.shikimori_id,
-    })),
+    progress.map((p) => ({ kind: 'cinema' as const, id: p.shikimori_id })),
   );
 
-  // Помимо родной полосы прокрутки — колесо мыши и драг (см. ScrollCarousel).
-  // Список держит клиентский ContinueCarousel — убранная карточка исчезает
-  // вместе с ячейкой, без пустого столбца до перезагрузки.
+  return {
+    loggedIn: true,
+    entries: progress.map((p) => ({
+      progress: p,
+      isMultiSeason: (seasonCountMap.get(p.shikimori_id) ?? 0) > 1,
+      localPoster: localPosters.get(`cinema:${p.shikimori_id}`) ?? null,
+    })),
+  };
+}
+
+async function HeroSection() {
+  const {
+    data: { user },
+  } = await getCachedUser();
+  const hero = await getHeroPick(user?.id ?? null, 'cinema');
+  if (!hero) return null;
   return (
-    <ContinueCarousel
-      entries={progress.map((p) => ({
-        progress: p,
-        isMultiSeason: (seasonCountMap.get(p.shikimori_id) ?? 0) > 1,
-        localPoster:
-          localPosters.get(`${p.content_type === 'cinema' ? 'cinema' : 'anime'}:${p.shikimori_id}`) ?? null,
-      }))}
-    />
+    <HeroBanner hero={hero}>
+      <ModeSwitch active="cinema" />
+    </HeroBanner>
   );
 }
 
-/** «Вы хотели посмотреть» — тайтлы со статусом planned в списке
- *  пользователя. Возвращает null (секция целиком не рендерится), если
- *  список пуст или гость — не хотим показывать пустой заголовок. */
+async function ContinueWatchingSection() {
+  const { loggedIn, entries } = await getContinueEntries();
+  return <ContinueWatchingPanel entries={entries} loggedIn={loggedIn} />;
+}
+
+async function RecommendedSection() {
+  const {
+    data: { user },
+  } = await getCachedUser();
+  const items = await getRecommendedCinema(user?.id ?? null);
+  if (items.length === 0) return null;
+  return (
+    <section className="flex flex-col gap-4">
+      <h2 className="text-xl font-bold">Рекомендуем посмотреть</h2>
+      <RecommendedCarousel contentType="cinema" items={items} />
+    </section>
+  );
+}
+
+/** «Вы хотели посмотреть» — без изменений от прежней реализации. */
 async function PlannedCarousel() {
   const supabase = createClient();
   const {
@@ -175,146 +154,45 @@ async function PlannedCarousel() {
   );
 }
 
-/** Новинки/Популярное — полноценная сетка с пагинацией на главной под
- *  «Продолжить просмотр», переключается вкладками DiscoverTabs (см.
- *  searchParams.tab в CinemaHomePage) — тот же грид, что у /cinema/new и
- *  /cinema/catalog. */
-async function DiscoverGrid({ tab, page }: { tab: string; page: number }) {
-  // Сначала свой индекс — один SQL-запрос вместо похода в Videoseed. Тот же
-  // источник, что у каталога (см. /cinema/catalog), поэтому и порядок, и
-  // обложки совпадают: «Новинки» здесь считаются так же (год, затем дата
-  // добавления), а не по чужой выдаче, и обложки сразу приходят локальные,
-  // без отдельного запроса в poster_cache.
-  //
-  // Videoseed остаётся запасным путём — на первый запуск, пока индекс ещё не
-  // построен, и на случай, если он отвалится.
-  let data = await getCinemaCatalogFromIndex({
-    genresInclude: [],
-    genresExclude: [],
-    countriesInclude: [],
-    countriesExclude: [],
-    kinds: EMPTY_TRI,
-    yearFrom: null,
-    yearTo: null,
-    sort: tab === 'popular' ? 'popularity' : 'new',
-    page,
-    pageSize: DISCOVER_PAGE_SIZE,
-  });
-
-  let fromIndex = data !== null;
-  if (!data) {
-    try {
-      data =
-        tab === 'popular'
-          ? await getPopularCinemaRanked(page, DISCOVER_PAGE_SIZE)
-          : await getNewCinema(page, DISCOVER_PAGE_SIZE);
-    } catch {
-      return (
-        <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
-          Не удалось загрузить каталог Videoseed. Попробуйте обновить страницу
-          позже.
-        </div>
-      );
-    }
-  }
-
-  if (data.items.length === 0) {
-    return (
-      <div className="rounded-2xl border border-white/5 bg-bg-card p-6 text-sm text-gray-400">
-        {page > 1 ? (
-          'Дальше ничего нет.'
-        ) : (
-          'Каталог Videoseed сейчас недоступен — попробуйте обновить страницу через минуту.'
-        )}
-      </div>
-    );
-  }
-
-  const hasPrev = page > 1;
-  // Индекс уже отдаёт локальные обложки (poster_local), подменять нечего.
-  // Подмена нужна только запасному пути через Videoseed: он про наш кэш не
-  // знает и вернул бы ссылки на их хост — те же картинки, но за 330–340 мс
-  // вместо 24 (см. withLocalPosters).
-  const items = fromIndex ? data.items : await withLocalPosters(data.items);
-  const [progressMap, siteRatings] = await Promise.all([
-    getEpisodeProgressMap('cinema', items.map((item) => item.id)),
-    getSiteRatings('cinema', items.map((item) => item.id)),
-  ]);
-  const episodesTotalMap = await getCinemaEpisodesTotalMap([...progressMap.keys()]);
-
-  return (
-    <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-        {items.map((item, i) => (
-          <CinemaCard
-            key={item.id}
-            item={item}
-            currentEpisode={progressMap.get(item.id) ?? null}
-            episodesTotal={episodesTotalMap.get(item.id) ?? null}
-            siteRating={siteRatings.get(item.id) ?? null}
-            // Первый ряд — вне очереди: это и есть то, что видно сразу.
-            priority={i < 6}
-          />
-        ))}
-      </div>
-
-      <Pagination
-        page={page}
-        prevHref={hasPrev ? discoverPageHref(tab, page - 1) : null}
-        nextHref={data.hasMore ? discoverPageHref(tab, page + 1) : null}
-        scrollToId="discover"
-      />
-    </div>
-  );
-}
-
 export default function CinemaHomePage({
   searchParams,
 }: {
   searchParams: { tab?: string; page?: string };
 }) {
+  // См. HomePage ('/') — та же замена полной сетки тизером, тот же редирект
+  // старых ссылок на полный каталог.
+  if (searchParams.tab) {
+    const params = new URLSearchParams();
+    params.set('sort', searchParams.tab === 'popular' ? 'popularity' : 'new');
+    redirect(`/cinema/catalog?${params.toString()}`);
+  }
+
   const tab = searchParams.tab === 'popular' ? 'popular' : 'new';
-  const pageParam = Number(searchParams.page);
-  const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
 
   return (
     <div className="flex flex-col gap-10">
-      {/* Заголовок страницы — только для скринридера: визуально роль
-          заголовка играет сам переключатель разделов. Без него первым
-          <h1> на странице оказывался «Продолжить просмотр», то есть
-          раздел выдавал себя за название страницы, а у гостя без истории
-          просмотра <h1> не было вовсе. */}
       <h1 className="sr-only">Фильмы и сериалы — MediaWatch</h1>
 
-      <ModeSwitch active="cinema" />
-
-      <section className="animate-rise flex flex-col gap-4">
-        <h2 className="text-xl font-bold">Продолжить просмотр</h2>
-        <Suspense fallback={<CarouselSkeleton count={4} />}>
-          <ContinueWatching />
+      <div className="grid gap-4 lg:grid-cols-[1fr_360px] lg:items-stretch">
+        <Suspense fallback={<div className="skeleton h-[52vh] min-h-[320px] max-h-[420px] rounded-3xl lg:h-[440px] lg:max-h-none" />}>
+          <HeroSection />
         </Suspense>
-      </section>
+        <Suspense fallback={<div className="skeleton h-[220px] rounded-3xl lg:h-[440px]" />}>
+          <ContinueWatchingSection />
+        </Suspense>
+      </div>
 
-      {/* Скелетон узкими карточками — по форме самой секции. Она может
-          вовсе не появиться (гость или нет planned-тайтлов, PlannedCarousel
-          вернёт null), но пустое место на её месте лучше, чем рывок
-          подъезжающего блока: у гостя скелетон мелькнёт один кадр. */}
+      <Suspense fallback={<CarouselSkeleton count={6} wide={false} />}>
+        <RecommendedSection />
+      </Suspense>
+
       <Suspense fallback={<CarouselSkeleton count={6} wide={false} />}>
         <PlannedCarousel />
       </Suspense>
 
-      {/* id — якорь для листания: кнопки стоят внизу длинной выдачи, и без
-          него Next уводил бы в самый верх страницы (см. Pagination). */}
-      <section
-        id="discover"
-        className="animate-rise flex flex-col gap-4"
-        style={{ animationDelay: '80ms' }}
-      >
-        <DiscoverTabs tabs={DISCOVER_TABS} activeKey={tab} catalogHref="/cinema/catalog" />
-        <Suspense key={`${tab}|${page}`} fallback={<CardGridSkeleton count={DISCOVER_PAGE_SIZE} />}>
-          <DiscoverGrid tab={tab} page={page} />
-        </Suspense>
-      </section>
+      <Suspense fallback={<CarouselSkeleton count={6} wide={false} />}>
+        <CatalogTeaser contentType="cinema" tab={tab} />
+      </Suspense>
     </div>
   );
 }

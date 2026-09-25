@@ -234,6 +234,35 @@ async function queryIndex(params: AnimeCatalogParams): Promise<AnimeCatalogPage 
   };
 }
 
+/**
+ * Тайтлы по списку id, в ТОМ ЖЕ порядке, что и ids (не порядок ответа БД) —
+ * нужно блоку «Рекомендуем посмотреть» (см. lib/recommendations.ts), где
+ * порядок — это ранг рекомендации от модели, а не что вернул Postgres.
+ * Пустой массив — индекса нет или ни один id не нашёлся, без вникания в
+ * причину: вызывающий код в таком случае фоллбэкает на популярное.
+ */
+export async function getAnimeIndexByIds(ids: number[]): Promise<ShikimoriAnimeShort[]> {
+  if (ids.length === 0) return [];
+  try {
+    const batchId = await getActiveBatchId();
+    if (!batchId) return [];
+
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('anime_index')
+      .select(SELECT_COLUMNS)
+      .eq('batch_id', batchId)
+      .in('shikimori_id', ids);
+
+    if (error || !data) return [];
+    const rows = data as unknown as IndexRow[];
+    const byId = new Map(rows.map((r) => [r.shikimori_id, toShort(r)]));
+    return ids.map((id) => byId.get(id)).filter((x): x is ShikimoriAnimeShort => Boolean(x));
+  } catch {
+    return [];
+  }
+}
+
 export interface IndexedGenre {
   id: number;
   russian: string;

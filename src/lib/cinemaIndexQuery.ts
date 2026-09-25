@@ -233,6 +233,33 @@ async function queryIndex(params: CinemaIndexParams): Promise<CinemaIndexPage | 
   };
 }
 
+/**
+ * Тайтлы по списку id, в ТОМ ЖЕ порядке, что и ids — нужно блоку
+ * «Рекомендуем посмотреть» (см. lib/recommendations.ts), см. зеркальную
+ * getAnimeIndexByIds в lib/animeIndexQuery.ts.
+ */
+export async function getCinemaIndexByIds(ids: number[]): Promise<CinemaShort[]> {
+  if (ids.length === 0) return [];
+  try {
+    const batchId = await getActiveBatchId();
+    if (!batchId) return [];
+
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('cinema_index')
+      .select(SELECT_COLUMNS)
+      .eq('batch_id', batchId)
+      .in('kp_id', ids);
+
+    if (error || !data) return [];
+    const rows = data as unknown as IndexRow[];
+    const byId = new Map(rows.map((r) => [r.kp_id, toShort(r)]));
+    return ids.map((id) => byId.get(id)).filter((x): x is CinemaShort => Boolean(x));
+  } catch {
+    return [];
+  }
+}
+
 export interface IndexedRef {
   id: number;
   name: string;

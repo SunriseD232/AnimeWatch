@@ -36,6 +36,14 @@ export function StarIcon({ className, filled = false }: IconProps & { filled?: b
   );
 }
 
+export function PlayIcon({ className, filled = false }: IconProps & { filled?: boolean }) {
+  return (
+    <Svg className={className} filled={filled}>
+      <polygon points="6 3 20 12 6 21 6 3" />
+    </Svg>
+  );
+}
+
 export function UsersIcon({ className }: IconProps) {
   return (
     <Svg className={className}>
