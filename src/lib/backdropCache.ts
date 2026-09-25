@@ -3,6 +3,7 @@ import { dirname, join } from 'path';
 import sharp from 'sharp';
 import { createServiceClient } from '@/lib/supabase/service';
 import { mapWithConcurrency } from '@/lib/concurrency';
+import { vlessDispatcher } from '@/lib/net/vlessProxy';
 import type { BackdropKind } from '@/lib/backdropPath';
 
 /**
@@ -56,6 +57,11 @@ async function fetchAndStore(
       cache: 'no-store',
       headers: { 'User-Agent': 'MediaWatch MVP' },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      // image.tmdb.org с этой VPS недоступен напрямую (проверено вживую:
+      // HTTP 000, тот же класс блокировки, что у api.themoviedb.org и
+      // openrouter.ai) — только для кино, Kitsu (media.kitsu.app) идёт
+      // напрямую и так работает.
+      ...(kind === 'cinema' ? { dispatcher: vlessDispatcher() } : {}),
     });
     if (res.status === 404 || res.status === 403) {
       return { bytes: 0, width: null, height: null };
@@ -81,7 +87,11 @@ async function fetchAndStore(
       width: output.info.width ?? null,
       height: output.info.height ?? null,
     };
-  } catch {
+  } catch (err) {
+    console.error(
+      `[backdropCache] не скачался ${kind}:${id} (${url}):`,
+      err instanceof Error ? err.message : err,
+    );
     return null;
   }
 }
