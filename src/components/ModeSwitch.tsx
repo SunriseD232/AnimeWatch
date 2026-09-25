@@ -89,7 +89,12 @@ export default function ModeSwitch({ active }: { active: ContentType }) {
               setOptimistic(tab.value);
             }}
             className={[
-              'press relative z-10 rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200',
+              // whitespace-nowrap: без него «Фильмы и сериалы» переносится
+              // на 2 строки в узких контейнерах (например, поверх hero на
+              // мобильном) — пилюля вместо аккуратной формы превращается в
+              // кривой прямоугольник. Ширина у rounded-full и так по
+              // содержимому, переносить нечего.
+              'press relative z-10 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200',
               isActive ? 'text-accent-fg' : 'text-gray-300 hover:text-white',
             ].join(' ')}
           >
