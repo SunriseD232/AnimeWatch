@@ -110,16 +110,20 @@ function ContinueRow({ entry, onRemove }: { entry: ContinueEntry; onRemove: () =
   return (
     <div className="group relative flex items-center gap-3 overflow-hidden rounded-2xl bg-bg-soft pr-2 transition hover:bg-white/[0.06]">
       <Link href={watchHref} className="flex min-w-0 flex-1 items-center gap-3 py-1.5">
-        <div className="relative h-14 w-20 shrink-0 overflow-hidden rounded-lg bg-bg-card">
+        {/* aspect-[2/3] — реальная пропорция постера (та же, что у
+            AnimeCard/CinemaCard). Раньше рамка была шире, чем высокой
+            (h-14 w-20 ≈ 4:3), и object-cover обрезал портретный постер
+            почти до вертикальной полоски по центру. */}
+        <div className="relative aspect-[2/3] h-14 shrink-0 overflow-hidden rounded-lg bg-bg-card">
           {progress.poster_url ? (
             <PosterImage
               sources={[localPoster, fixPosterUrl(progress.poster_url)]}
               alt={progress.anime_title}
               className="h-full w-full object-cover"
-              placeholderClassName="grid h-full w-full place-items-center text-[10px] text-gray-500"
+              placeholderClassName="grid h-full w-full place-items-center text-[9px] text-gray-500"
             />
           ) : (
-            <div className="grid h-full w-full place-items-center text-[10px] text-gray-500">нет фото</div>
+            <div className="grid h-full w-full place-items-center text-[9px] text-gray-500">нет фото</div>
           )}
           {percent !== null && (
             <div className="absolute inset-x-0 bottom-0 h-0.5 bg-white/10">
