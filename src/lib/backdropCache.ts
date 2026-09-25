@@ -66,7 +66,10 @@ async function fetchAndStore(
     if (res.status === 404 || res.status === 403) {
       return { bytes: 0, width: null, height: null };
     }
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error(`[backdropCache] ${kind}:${id} (${url}) -> HTTP ${res.status}`);
+      return null;
+    }
 
     const input = Buffer.from(await res.arrayBuffer());
     if (input.length === 0) return { bytes: 0, width: null, height: null };
