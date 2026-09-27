@@ -13,8 +13,14 @@ import { logEvent } from '@/lib/clientLog';
  * Режим (аниме/кино) определяется по текущему разделу: под /cinema ищем кино.
  * Плюс подсказки при вводе (debounce 250 мс) — короткий дропдаун с прямыми
  * ссылками на тайтлы, не дожидаясь перехода на /search.
+ *
+ * unified — личная настройка «Общий поиск» (профиль → Настройки → Плеер и
+ * навигация, миграция 0045). С ней раздел не смотрим вовсе: ищем сразу по
+ * аниме и кино, и подсказки приходят вперемешку. Приходит пропом с сервера
+ * (Navbar читает профиль) — в самом инпуте похода за настройкой нет, иначе
+ * шапка на каждой странице делала бы лишний запрос.
  */
-export default function SearchBox() {
+export default function SearchBox({ unified = false }: { unified?: boolean }) {
   const router = useRouter();
   const params = useSearchParams();
   const pathname = usePathname();
@@ -28,12 +34,24 @@ export default function SearchBox() {
   const [box, setBox] = useState<{ top: number; left: number; width: number } | null>(null);
 
   // На страницах кино и в результатах поиска кино держим кино-режим.
-  const isCinema =
-    pathname.startsWith('/cinema') || params.get('type') === 'cinema';
+  const isCinema = pathname.startsWith('/cinema') || params.get('type') === 'cinema';
+  // С общим поиском раздел не важен — но только пока человек сам не выбрал
+  // тип на странице результатов: ?type= в адресе главнее настройки, иначе
+  // переключатель «Аниме / Фильмы» там перестал бы работать.
+  const searchType: 'all' | 'cinema' | 'anime' =
+    params.get('type') === 'cinema'
+      ? 'cinema'
+      : params.get('type') === 'anime'
+        ? 'anime'
+        : unified
+          ? 'all'
+          : isCinema
+            ? 'cinema'
+            : 'anime';
 
   const buildHref = (q: string) => {
     const query = new URLSearchParams({ q });
-    if (isCinema) query.set('type', 'cinema');
+    if (searchType !== 'anime') query.set('type', searchType);
     return `/search?${query.toString()}`;
   };
 
@@ -70,7 +88,7 @@ export default function SearchBox() {
     const handle = setTimeout(async () => {
       try {
         const res = await fetch(
-          `/api/search/suggest?q=${encodeURIComponent(trimmed)}&type=${isCinema ? 'cinema' : 'anime'}`,
+          `/api/search/suggest?q=${encodeURIComponent(trimmed)}&type=${searchType}`,
           { signal: controller.signal },
         );
         if (!res.ok) return;
@@ -85,7 +103,7 @@ export default function SearchBox() {
       clearTimeout(handle);
       controller.abort();
     };
-  }, [value, isCinema]);
+  }, [value, searchType]);
 
   // Закрытие по клику вовне — общий хук (см. useDismissOnOutside).
   // panelRef обязателен: список подсказок живёт в <body>, и без него клик по
@@ -127,7 +145,7 @@ export default function SearchBox() {
         const trimmed = value.trim();
         if (trimmed) {
           setOpen(false);
-          logEvent('search.submit', { q: trimmed, type: isCinema ? 'cinema' : 'anime' });
+          logEvent('search.submit', { q: trimmed, type: searchType });
           router.push(buildHref(trimmed));
         }
       }}
@@ -183,7 +201,13 @@ export default function SearchBox() {
         // обрезался многоточием посреди слова. Полная формулировка осталась
         // в aria-label — для экранного диктора контекст важнее краткости.
         placeholder="Поиск"
-        aria-label={isCinema ? 'Поиск фильмов и сериалов' : 'Поиск аниме'}
+        aria-label={
+          searchType === 'all'
+            ? 'Поиск по аниме, фильмам и сериалам'
+            : searchType === 'cinema'
+              ? 'Поиск фильмов и сериалов'
+              : 'Поиск аниме'
+        }
         ref={inputRef}
         role="combobox"
         aria-expanded={showDropdown}
@@ -266,7 +290,7 @@ export default function SearchBox() {
                 setOpen(false);
                 logEvent('search.submit', {
                   q: value.trim(),
-                  type: isCinema ? 'cinema' : 'anime',
+                  type: searchType,
                   via: 'dropdown',
                 });
               }}

@@ -45,7 +45,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: { ta
     supabase.from('user_theme').select('accent, palette').eq('user_id', user.id).maybeSingle(),
     supabase
       .from('profiles')
-      .select('user_id, display_name, avatar_path, preferred_quality, sync_player_quality')
+      .select('user_id, display_name, avatar_path, preferred_quality, sync_player_quality, unified_search')
       .eq('user_id', user.id)
       .maybeSingle(),
     getUserRatings(supabase, user.id),
@@ -103,6 +103,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: { ta
         playerPrefs={{
           quality: normalizeQuality(profileRow?.preferred_quality),
           sync: !!profileRow?.sync_player_quality,
+          unifiedSearch: !!profileRow?.unified_search,
         }}
         initialTab={searchParams.tab ?? null}
         localPosters={Object.fromEntries(localPosters)}

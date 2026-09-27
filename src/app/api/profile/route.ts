@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { normalizeDisplayName, validateDisplayName } from '@/lib/social/names';
 import { normalizeVisibility } from '@/lib/social/types';
-import { QUALITY_OPTIONS } from '@/lib/playerQuality';
+import { normalizeQuality } from '@/lib/playerQuality';
 import { toPublicUser } from '@/lib/social/server';
 
 /**
@@ -45,23 +45,31 @@ export async function PATCH(request: NextRequest) {
     patch.ratings_visibility = normalizeVisibility(body.ratingsVisibility);
   }
   if (body?.preferredQuality !== undefined) {
-    // Мусор молча не пишем: в колонке стоит CHECK (см. миграцию 0038), и
+    // Мусор молча не пишем: в колонке стоит CHECK (см. миграции 0038/0039), и
     // запрос всё равно упал бы 500-й, хотя это обычная ошибка ввода.
-    const quality = Number(body.preferredQuality);
-    if (!(QUALITY_OPTIONS as readonly number[]).includes(quality)) {
+    //
+    // Через normalizeQuality, а не Number(): с миграции 0039 вариантов не
+    // только три числа, есть ещё строковое 'auto'. Number('auto') — NaN, и
+    // прежняя проверка отбивала выбор «Авто» ошибкой «Такого качества нет»
+    // у всех, у кого включена синхронизация между устройствами.
+    const quality = normalizeQuality(body.preferredQuality);
+    if (quality === null) {
       return NextResponse.json({ error: 'Такого качества нет.' }, { status: 400 });
     }
-    patch.preferred_quality = quality;
+    patch.preferred_quality = String(quality);
   }
   if (body?.syncPlayerQuality !== undefined) {
     patch.sync_player_quality = !!body.syncPlayerQuality;
+  }
+  if (body?.unifiedSearch !== undefined) {
+    patch.unified_search = !!body.unifiedSearch;
   }
 
   const service = createServiceClient();
   const { data, error } = await service
     .from('profiles')
     .upsert(patch, { onConflict: 'user_id' })
-    .select('user_id, display_name, avatar_path, lists_visibility, ratings_visibility, preferred_quality, sync_player_quality')
+    .select('user_id, display_name, avatar_path, lists_visibility, ratings_visibility, preferred_quality, sync_player_quality, unified_search')
     .single();
 
   if (error) {
@@ -80,8 +88,11 @@ export async function PATCH(request: NextRequest) {
       ratings: normalizeVisibility(data.ratings_visibility),
     },
     player: {
-      quality: data.preferred_quality ?? null,
+      quality: normalizeQuality(data.preferred_quality),
       sync: !!data.sync_player_quality,
+    },
+    navigation: {
+      unifiedSearch: !!data.unified_search,
     },
   });
 }

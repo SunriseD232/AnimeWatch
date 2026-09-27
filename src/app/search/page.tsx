@@ -11,6 +11,14 @@ import { getSiteRatings } from '@/lib/social/server';
 
 export const metadata = { title: 'Поиск — MediaWatch' };
 
+type SearchType = 'anime' | 'cinema' | 'all';
+
+const SEARCH_TABS: { value: SearchType; label: string }[] = [
+  { value: 'anime', label: 'Аниме' },
+  { value: 'cinema', label: 'Фильмы и сериалы' },
+  { value: 'all', label: 'Везде' },
+];
+
 async function AnimeResults({ query }: { query: string }) {
   try {
     // Сперва локальный индекс: он и быстрее, и переживает опечатки
@@ -83,15 +91,22 @@ export default function SearchPage({
   searchParams: { q?: string; type?: string };
 }) {
   const query = (searchParams.q ?? '').trim();
-  const isCinema = searchParams.type === 'cinema';
-  const noun = isCinema ? 'фильмов и сериалов' : 'аниме';
+  // 'all' — общий поиск: сюда уводит строка поиска, когда включена настройка
+  // «Общий поиск» (профиль → Плеер и навигация, миграция 0045). Показываем
+  // оба раздела сразу, аниме первым.
+  const type: SearchType =
+    searchParams.type === 'cinema' ? 'cinema' : searchParams.type === 'all' ? 'all' : 'anime';
+  const isCinema = type === 'cinema';
+  const noun = type === 'all' ? 'по всему сайту' : isCinema ? 'фильмов и сериалов' : 'аниме';
   // Все остальные страницы сайта показывают переключатель Аниме/Кино
   // (ModeSwitch) — на поиске его не было вообще, переключить тип запроса
   // можно было только вручную правкой ?type= в адресной строке.
-  const typeHref = (type: 'anime' | 'cinema') => {
+  const typeHref = (next: SearchType) => {
     const params = new URLSearchParams();
     if (query) params.set('q', query);
-    if (type === 'cinema') params.set('type', 'cinema');
+    // Аниме — состояние по умолчанию, его в адресе не пишем: так ссылки
+    // остаются такими же, какими были до появления общего поиска.
+    if (next !== 'anime') params.set('type', next);
     const qs = params.toString();
     return qs ? `/search?${qs}` : '/search';
   };
@@ -99,26 +114,21 @@ export default function SearchPage({
   return (
     <div className="flex flex-col gap-5">
       <div className="inline-flex w-fit rounded-full border border-white/10 bg-bg-card p-1">
-        <Link
-          href={typeHref('anime')}
-          aria-current={!isCinema ? 'page' : undefined}
-          className={[
-            'press rounded-full px-4 py-2 text-sm font-medium transition',
-            !isCinema ? 'bg-accent text-accent-fg' : 'text-gray-300 hover:bg-bg-soft hover:text-accent-fg',
-          ].join(' ')}
-        >
-          Аниме
-        </Link>
-        <Link
-          href={typeHref('cinema')}
-          aria-current={isCinema ? 'page' : undefined}
-          className={[
-            'press rounded-full px-4 py-2 text-sm font-medium transition',
-            isCinema ? 'bg-accent text-accent-fg' : 'text-gray-300 hover:bg-bg-soft hover:text-accent-fg',
-          ].join(' ')}
-        >
-          Фильмы и сериалы
-        </Link>
+        {SEARCH_TABS.map((tab) => (
+          <Link
+            key={tab.value}
+            href={typeHref(tab.value)}
+            aria-current={type === tab.value ? 'page' : undefined}
+            className={[
+              'press whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition',
+              type === tab.value
+                ? 'bg-accent text-accent-fg'
+                : 'text-gray-300 hover:bg-bg-soft hover:text-accent-fg',
+            ].join(' ')}
+          >
+            {tab.label}
+          </Link>
+        ))}
       </div>
 
       <h1 className="text-xl font-bold">
@@ -133,11 +143,23 @@ export default function SearchPage({
       </h1>
 
       {query ? (
-        <Suspense
-          key={`${isCinema ? 'c' : 'a'}:${query}`}
-          fallback={<CardGridSkeleton count={12} />}
-        >
-          {isCinema ? (
+        <Suspense key={`${type}:${query}`} fallback={<CardGridSkeleton count={12} />}>
+          {type === 'all' ? (
+            // Две секции с подзаголовками, а не один перемешанный список:
+            // карточки аниме и кино выглядят одинаково, и без подписи было бы
+            // непонятно, почему один и тот же тайтл встречается дважды (у
+            // части аниме есть и киношная запись).
+            <div className="flex flex-col gap-8">
+              <section className="flex flex-col gap-3">
+                <h2 className="text-lg font-semibold">Аниме</h2>
+                <AnimeResults query={query} />
+              </section>
+              <section className="flex flex-col gap-3">
+                <h2 className="text-lg font-semibold">Фильмы и сериалы</h2>
+                <CinemaResults query={query} />
+              </section>
+            </div>
+          ) : isCinema ? (
             <CinemaResults query={query} />
           ) : (
             <AnimeResults query={query} />

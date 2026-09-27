@@ -36,7 +36,7 @@ export default async function Navbar() {
   let notifications: AppNotification[] = [];
   let me: PublicUser | null = null;
   let incomingRequests = 0;
-  let playerPrefs: PlayerPrefs = { quality: null, sync: false };
+  let playerPrefs: PlayerPrefs = { quality: null, sync: false, unifiedSearch: false };
   if (user) {
     // Системные уведомления (например, Vibix trial) видят только админы —
     // но это уже гарантирует RLS на стороне system_notifications, здесь
@@ -56,7 +56,7 @@ export default async function Navbar() {
       // индексу и на одного пользователя, шапку они не замедляют.
       supabase
         .from('profiles')
-        .select('user_id, display_name, avatar_path, preferred_quality, sync_player_quality')
+        .select('user_id, display_name, avatar_path, preferred_quality, sync_player_quality, unified_search')
         .eq('user_id', user.id)
         .maybeSingle(),
       countIncomingRequests(supabase, user.id),
@@ -72,6 +72,7 @@ export default async function Navbar() {
     playerPrefs = {
       quality: normalizeQuality(profileRow?.preferred_quality),
       sync: !!profileRow?.sync_player_quality,
+      unifiedSearch: !!profileRow?.unified_search,
     };
 
     const episodeNotifications: AppNotification[] = (episodeRows ?? []).map(
@@ -118,7 +119,7 @@ export default async function Navbar() {
             все результаты ведут на страницы за авторизацией, то есть каждый
             клик отправлял бы обратно на форму входа. Пустой flex-1 остаётся
             распоркой, иначе кнопки входа съезжают к логотипу. */}
-        <div className="flex-1">{user && <SearchBox />}</div>
+        <div className="flex-1">{user && <SearchBox unified={playerPrefs.unifiedSearch} />}</div>
 
         {user ? (
           <div className="flex shrink-0 items-center gap-1">

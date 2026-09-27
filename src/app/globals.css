@@ -230,6 +230,63 @@ body {
   animation: quick-add-in 200ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
+/* Hero-карусель главной (см. components/HeroBanner.tsx).
+
+   Обложка медленно наезжает — 25 секунд на проход при слайде в 10 секунд,
+   то есть за показ кадр сдвигается меньше чем наполовину хода. Так картинка
+   перестаёт быть мёртвой, но движение остаётся на грани заметности и не
+   спорит с текстом поверх. alternate — обратный ход вместо прыжка в начало.
+   Сдвиг маленький (1.5%) и вместе с масштабом 1.06: при большем ходе из-под
+   краёв кадра начинает выглядывать фон контейнера. */
+@keyframes hero-pan {
+  from {
+    transform: scale(1.06) translate3d(-1.5%, 0, 0);
+  }
+  to {
+    transform: scale(1.06) translate3d(1.5%, -1.5%, 0);
+  }
+}
+
+.animate-hero-pan {
+  animation: hero-pan 25s ease-in-out infinite alternate;
+  /* will-change: браузер держит слой на GPU — без него наезд на большой
+     картинке даёт заметный джиттер по краю. */
+  will-change: transform;
+}
+
+/* Заливка полоски-страницы: ровно столько же, сколько живёт слайд (SLIDE_MS
+   в HeroBanner.tsx). linear — полоска показывает время, а не «красиво
+   разгоняется»: любое ускорение здесь врало бы про остаток. */
+@keyframes hero-progress {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+.animate-hero-progress {
+  animation: hero-progress 10s linear forwards;
+}
+
+/* Подпись нового слайда всплывает, а не подменяется мгновенно: смена
+   картинки идёт 700 мс, и резкий скачок текста посреди неё читался сбоем. */
+@keyframes hero-text-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-hero-text {
+  animation: hero-text-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 /* Появление секций/карточек: мягкий подъём с растворением */
 @keyframes rise {
   from {
@@ -525,6 +582,19 @@ body {
   .skeleton {
     animation: none !important;
     background-image: none;
+  }
+
+  /* Наезд обложки в hero — чистое украшение, гасим целиком: схлопнутая до
+     мгновенной, эта анимация прыгнула бы в конечный кадр и оставила картинку
+     сдвинутой и увеличенной. Сама карусель при reduce не листает себя
+     (см. HeroBanner.tsx), поэтому и полоске нечего заливать — она сразу
+     показывает полную длину. */
+  .animate-hero-pan {
+    animation: none !important;
+  }
+  .animate-hero-progress {
+    animation: none !important;
+    width: 100%;
   }
 
   /* Сдвиги при наведении и нажатии — это и есть то самое движение.

@@ -32,15 +32,51 @@ export async function GET(request: NextRequest) {
   }
 
   const q = (request.nextUrl.searchParams.get('q') ?? '').trim();
-  const type = request.nextUrl.searchParams.get('type') === 'cinema'
-    ? 'cinema'
-    : 'anime';
+  // 'all' — общий поиск (личная настройка, миграция 0045): ищем сразу по
+  // обоим разделам и показываем вперемешку.
+  const rawType = request.nextUrl.searchParams.get('type');
+  const type: 'cinema' | 'anime' | 'all' =
+    rawType === 'cinema' ? 'cinema' : rawType === 'all' ? 'all' : 'anime';
 
   if (q.length < 2) {
     return NextResponse.json({ items: [] });
   }
 
   try {
+    if (type === 'all') {
+      // По три с каждой стороны, а не по шесть: длина списка подсказок
+      // остаётся прежней, иначе дропдаун на телефоне занял бы пол-экрана.
+      // Оба запроса идут параллельно — общий поиск не должен быть вдвое
+      // медленнее обычного.
+      const [anime, cinema] = await Promise.all([
+        searchAnimeFromIndex(q, 3),
+        searchCinemaFromIndex(q, 3),
+      ]);
+      const animeItems: SearchSuggestion[] = (anime ?? []).map((a) => ({
+        id: a.id,
+        title: a.russian || a.name,
+        poster: a.localPoster ?? imageUrl(a.image?.preview),
+        contentType: 'anime' as const,
+        year: a.aired_on ? Number(a.aired_on.slice(0, 4)) : null,
+      }));
+      const cinemaItems: SearchSuggestion[] = (cinema ?? []).map((item) => ({
+        id: item.id,
+        title: item.title,
+        poster: item.poster,
+        contentType: 'cinema' as const,
+        year: item.year,
+      }));
+      // Чередуем, а не склеиваем встык: иначе кино всегда оказывалось бы
+      // внизу списка, и при трёх точных совпадениях по аниме его просто не
+      // было бы видно.
+      const mixed: SearchSuggestion[] = [];
+      for (let i = 0; i < Math.max(animeItems.length, cinemaItems.length); i++) {
+        if (animeItems[i]) mixed.push(animeItems[i]);
+        if (cinemaItems[i]) mixed.push(cinemaItems[i]);
+      }
+      return NextResponse.json({ items: mixed });
+    }
+
     // Сперва локальный индекс: один запрос к своей базе вместо похода в
     // Shikimori/Videoseed на каждое нажатие клавиши. null — индекса нет или
     // он недоступен, тогда работаем по-старому.

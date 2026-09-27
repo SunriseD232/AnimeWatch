@@ -13,14 +13,22 @@ import type { ContentType } from '@/lib/types';
  * Список рекомендаций считает крон раз в сутки (api/cron/refresh-
  * recommendations, lib/recommendationsEngine.ts) — тот же крон докачивает
  * backdrop ВСЕГО списка. А вот КАКОЙ конкретно тайтл станет hero решается
- * прямо здесь, на каждом заходе на главную: getHeroPick случайно выбирает
- * один из уже закэшированных backdrop'ов пользователя — так hero меняется
- * при перезагрузке, а не залипает на весь день до следующего прогона крона.
+ * прямо здесь, на каждом заходе на главную: getHeroPicks берёт всю подборку,
+ * у которой уже есть скачанный backdrop, и баннер листает её сам (слайды
+ * переключаются вручную и автоматически раз в 10 секунд).
  * Ничего не бросает: нет данных (новый пользователь, крон ещё не
  * прогонялся, гость) — тихий фоллбэк на популярное из локального индекса.
  */
 
 const RECOMMENDED_LIMIT = 12;
+
+/**
+ * Сколько слайдов держим в hero-карусели. Десять — это сто секунд полного
+ * круга при автопереключении раз в 10 секунд; больше полосок прогресса в ряд
+ * на телефоне уже не умещается так, чтобы по ним можно было попасть пальцем
+ * (WCAG 2.5.8 — цель не меньше 24 пикселей).
+ */
+const HERO_LIMIT = 10;
 
 async function getRecommendedIds(userId: string, contentType: ContentType): Promise<number[]> {
   try {
@@ -40,23 +48,43 @@ async function getRecommendedIds(userId: string, contentType: ContentType): Prom
 }
 
 /**
- * id тайтлов, которые пользователь уже как-то отметил (любой статус
- * user_list — запланировал, смотрит, бросил, посмотрел). Подборка
- * пересчитывается кроном раз в сутки и не знает про действия, случившиеся
- * ПОСЛЕ прогона — без этого фильтра тайтл, отмеченный «Просмотрено» через
- * «+» на карточке прямо в этом блоке, продолжал бы в нём висеть до
+ * id тайтлов, которых в рекомендациях быть не должно.
+ *
+ * ПРАВИЛО: рекомендуем только то, что человек ПЛАНИРУЕТ смотреть или чего в
+ * его списке нет вовсе. Всё остальное — посмотрел, смотрит, пересматривает,
+ * бросил — из подборки убираем: советовать «Во все тяжкие» тому, кто его
+ * досмотрел, бессмысленно. Запланированное, наоборот, оставляем намеренно —
+ * это как раз напоминание «ты хотел, вот оно».
+ *
+ * Начатое считается по watch_progress, а не только по статусу: человек мог
+ * смотреть, не отмечая тайтл в списке, и статуса у него нет вообще.
+ *
+ * Фильтр нужен и на чтении, а не только в кроне: подборка пересчитывается
+ * раз в сутки и не знает про действия ПОСЛЕ прогона — без него тайтл,
+ * отмеченный «Просмотрено» через «+» прямо в этом блоке, висел бы в нём до
  * следующей ночи.
  */
-async function getUserListIds(userId: string, contentType: ContentType): Promise<Set<number>> {
+async function getExcludedIds(userId: string, contentType: ContentType): Promise<Set<number>> {
   try {
     const supabase = createClient();
-    const { data, error } = await supabase
-      .from('user_list')
-      .select('shikimori_id')
-      .eq('user_id', userId)
-      .eq('content_type', contentType);
-    if (error || !data) return new Set();
-    return new Set(data.map((r) => (r as { shikimori_id: number }).shikimori_id));
+    const [{ data: listRows, error: listError }, { data: progressRows }] = await Promise.all([
+      supabase
+        .from('user_list')
+        .select('shikimori_id, status')
+        .eq('user_id', userId)
+        .eq('content_type', contentType)
+        .neq('status', 'planned'),
+      supabase
+        .from('watch_progress')
+        .select('shikimori_id')
+        .eq('user_id', userId)
+        .eq('content_type', contentType),
+    ]);
+    if (listError) return new Set();
+    const out = new Set<number>();
+    for (const r of listRows ?? []) out.add((r as { shikimori_id: number }).shikimori_id);
+    for (const r of progressRows ?? []) out.add((r as { shikimori_id: number }).shikimori_id);
+    return out;
   } catch {
     return new Set();
   }
@@ -65,7 +93,7 @@ async function getUserListIds(userId: string, contentType: ContentType): Promise
 /** Персональные рекомендации аниме, готовые к AnimeCard. Гость/пустой набор
  *  от крона/крон ни разу не отработал — топ по популярности из anime_index. */
 export async function getRecommendedAnime(userId: string | null): Promise<ShikimoriAnimeShort[]> {
-  const excludeIds = userId ? await getUserListIds(userId, 'anime') : new Set<number>();
+  const excludeIds = userId ? await getExcludedIds(userId, 'anime') : new Set<number>();
   const ids = userId ? await getRecommendedIds(userId, 'anime') : [];
   if (ids.length > 0) {
     const items = (await getAnimeIndexByIds(ids)).filter((a) => !excludeIds.has(a.id));
@@ -84,7 +112,7 @@ export async function getRecommendedAnime(userId: string | null): Promise<Shikim
 
 /** То же для кино, см. getRecommendedAnime. */
 export async function getRecommendedCinema(userId: string | null): Promise<CinemaShort[]> {
-  const excludeIds = userId ? await getUserListIds(userId, 'cinema') : new Set<number>();
+  const excludeIds = userId ? await getExcludedIds(userId, 'cinema') : new Set<number>();
   const ids = userId ? await getRecommendedIds(userId, 'cinema') : [];
   if (ids.length > 0) {
     const items = (await getCinemaIndexByIds(ids)).filter((c) => !excludeIds.has(c.id));
@@ -113,15 +141,24 @@ export interface HeroData {
   year: number | null;
   rating: number | null;
   genres: string[];
-  /** Всегда локальная ссылка (/backdrops/...) — getHeroPick выбирает только
-   *  из уже скачанных кроном обложек (backdrop_cache), см. миграцию 0042.
+  /** Всегда локальная ссылка (/backdrops/...) — getHeroPicks берёт только
+   *  уже скачанные кроном обложки (backdrop_cache), см. миграцию 0042.
    *  Рендер сам в Kitsu/TMDB никогда не ходит. */
   backdropUrl: string;
 }
 
-async function getAnimeHeroDetail(
-  id: number,
-): Promise<Omit<HeroData, 'contentType' | 'backdropUrl'> | null> {
+/**
+ * Детали сразу для СПИСКА id — hero на главной теперь не один тайтл, а
+ * карусель по всей подборке (см. getHeroPicks), и прежние «две выборки на
+ * тайтл» превратились бы в двадцать с лишним запросов на каждый заход.
+ * Порядок результата — как в переданном списке; чего нет в индексе, тихо
+ * выпадает.
+ */
+async function getAnimeHeroDetails(
+  ids: number[],
+): Promise<Map<number, Omit<HeroData, 'contentType' | 'backdropUrl'>>> {
+  const out = new Map<number, Omit<HeroData, 'contentType' | 'backdropUrl'>>();
+  if (ids.length === 0) return out;
   try {
     const supabase = createClient();
     const { data: state } = await supabase
@@ -130,43 +167,55 @@ async function getAnimeHeroDetail(
       .eq('id', true)
       .maybeSingle();
     const batchId = state?.active_batch as string | undefined;
-    if (!batchId) return null;
+    if (!batchId) return out;
 
     const { data, error } = await supabase
       .from('anime_index')
       .select('shikimori_id, russian, name, description, aired_year, score, genre_ids')
       .eq('batch_id', batchId)
-      .eq('shikimori_id', id)
-      .maybeSingle();
-    if (error || !data) return null;
+      .in('shikimori_id', ids);
+    if (error || !data) return out;
 
-    const genreIds = ((data.genre_ids as number[] | null) ?? []).slice(0, 4);
-    let genres: string[] = [];
-    if (genreIds.length > 0) {
-      const { data: names } = await supabase
+    // Названия жанров — одним запросом на всю пачку, а не по тайтлу.
+    const allGenreIds = [
+      ...new Set(data.flatMap((r) => ((r.genre_ids as number[] | null) ?? []).slice(0, 4))),
+    ];
+    const names = new Map<number, string>();
+    if (allGenreIds.length > 0) {
+      const { data: genreRows } = await supabase
         .from('anime_genres')
         .select('id, russian')
-        .in('id', genreIds);
-      const byId = new Map((names ?? []).map((g) => [g.id as number, g.russian as string]));
-      genres = genreIds.map((gid) => byId.get(gid)).filter((x): x is string => Boolean(x));
+        .in('id', allGenreIds);
+      for (const g of genreRows ?? []) names.set(g.id as number, g.russian as string);
     }
 
-    return {
-      id,
-      title: (data.russian as string | null) || (data.name as string | null) || '',
-      description: data.description as string | null,
-      year: data.aired_year as number | null,
-      rating: data.score !== null ? Number(data.score) : null,
-      genres,
-    };
+    for (const row of data) {
+      const id = row.shikimori_id as number;
+      const genres = ((row.genre_ids as number[] | null) ?? [])
+        .slice(0, 4)
+        .map((gid) => names.get(gid))
+        .filter((x): x is string => Boolean(x));
+      out.set(id, {
+        id,
+        title: (row.russian as string | null) || (row.name as string | null) || '',
+        description: row.description as string | null,
+        year: row.aired_year as number | null,
+        rating: row.score !== null ? Number(row.score) : null,
+        genres,
+      });
+    }
+    return out;
   } catch {
-    return null;
+    return out;
   }
 }
 
-async function getCinemaHeroDetail(
-  id: number,
-): Promise<Omit<HeroData, 'contentType' | 'backdropUrl'> | null> {
+/** То же для кино, см. getAnimeHeroDetails. */
+async function getCinemaHeroDetails(
+  ids: number[],
+): Promise<Map<number, Omit<HeroData, 'contentType' | 'backdropUrl'>>> {
+  const out = new Map<number, Omit<HeroData, 'contentType' | 'backdropUrl'>>();
+  if (ids.length === 0) return out;
   try {
     const supabase = createClient();
     const { data: state } = await supabase
@@ -175,38 +224,48 @@ async function getCinemaHeroDetail(
       .eq('id', true)
       .maybeSingle();
     const batchId = state?.active_batch as string | undefined;
-    if (!batchId) return null;
+    if (!batchId) return out;
 
     const { data, error } = await supabase
       .from('cinema_index')
       .select('kp_id, title, original_title, description, year, rating, genre_ids')
       .eq('batch_id', batchId)
-      .eq('kp_id', id)
-      .maybeSingle();
-    if (error || !data) return null;
+      .in('kp_id', ids);
+    if (error || !data) return out;
 
-    const genreIds = ((data.genre_ids as number[] | null) ?? []).slice(0, 4);
-    let genres: string[] = [];
-    if (genreIds.length > 0) {
-      const { data: names } = await supabase
+    const allGenreIds = [
+      ...new Set(data.flatMap((r) => ((r.genre_ids as number[] | null) ?? []).slice(0, 4))),
+    ];
+    const names = new Map<number, string>();
+    if (allGenreIds.length > 0) {
+      const { data: genreRows } = await supabase
         .from('cinema_genres')
         .select('id, name')
+        // kind='genre' — маркеры типа (Сериалы=20, Мультфильмы=21) в подписи
+        // hero не нужны, они дублируют сам раздел сайта.
         .eq('kind', 'genre')
-        .in('id', genreIds);
-      const byId = new Map((names ?? []).map((g) => [g.id as number, g.name as string]));
-      genres = genreIds.map((gid) => byId.get(gid)).filter((x): x is string => Boolean(x));
+        .in('id', allGenreIds);
+      for (const g of genreRows ?? []) names.set(g.id as number, g.name as string);
     }
 
-    return {
-      id,
-      title: (data.title as string | null) || (data.original_title as string | null) || '',
-      description: data.description as string | null,
-      year: data.year as number | null,
-      rating: data.rating !== null ? Number(data.rating) : null,
-      genres,
-    };
+    for (const row of data) {
+      const id = row.kp_id as number;
+      const genres = ((row.genre_ids as number[] | null) ?? [])
+        .slice(0, 4)
+        .map((gid) => names.get(gid))
+        .filter((x): x is string => Boolean(x));
+      out.set(id, {
+        id,
+        title: (row.title as string | null) || (row.original_title as string | null) || '',
+        description: row.description as string | null,
+        year: row.year as number | null,
+        rating: row.rating !== null ? Number(row.rating) : null,
+        genres,
+      });
+    }
+    return out;
   } catch {
-    return null;
+    return out;
   }
 }
 
@@ -240,34 +299,49 @@ async function getPopularIds(contentType: ContentType): Promise<number[]> {
 }
 
 /**
- * Hero-тайтл для баннера главной. Выбирается случайно на каждом рендере из
- * (рекомендации пользователя, либо топ популярного для гостя) ∩ (что уже
- * реально скачано в backdrop_cache — крон кэширует backdrop всего списка,
- * см. lib/recommendationsEngine.ts). Никакого похода в Kitsu/TMDB отсюда
- * нет — только чтение уже готового реестра. Пустой пул (крон ещё не
- * прогонялся, у раздела совсем нет закэшированных обложек) — null,
- * вызывающий (page.tsx) просто не рендерит hero-баннер.
+ * Тайтлы для hero-карусели главной, в порядке подборки (лучшее первым).
+ *
+ * Пул — (рекомендации пользователя, либо топ популярного для гостя) ∩ (что
+ * уже реально скачано в backdrop_cache; крон кэширует backdrop ВСЕГО списка,
+ * см. lib/recommendationsEngine.ts). Никакого похода в Kitsu/TMDB отсюда нет
+ * — только чтение готового реестра.
+ *
+ * РАНЬШЕ здесь выбирался ОДИН тайтл, случайно на каждом рендере: так hero
+ * менялся при перезагрузке и не залипал на весь день. Теперь вся подборка
+ * переехала в сам баннер (слайды переключаются вручную и сами каждые 10
+ * секунд), и случайность больше не нужна — порядок честно идёт от лучшего
+ * совпадения к худшему.
+ *
+ * Пустой массив (крон ещё не прогонялся, обложки не скачаны) — законное
+ * состояние: вызывающий просто не рендерит баннер.
  */
-export async function getHeroPick(
+export async function getHeroPicks(
   userId: string | null,
   contentType: ContentType,
-): Promise<HeroData | null> {
+): Promise<HeroData[]> {
   try {
     const recommendedIds = userId ? await getRecommendedIds(userId, contentType) : [];
-    const ids = recommendedIds.length > 0 ? recommendedIds : await getPopularIds(contentType);
-    if (ids.length === 0) return null;
+    const excludeIds = userId ? await getExcludedIds(userId, contentType) : new Set<number>();
+    const source = recommendedIds.length > 0 ? recommendedIds : await getPopularIds(contentType);
+    const ids = source.filter((id) => !excludeIds.has(id));
+    if (ids.length === 0) return [];
 
     const cachedIds = await getLocalBackdropIds(contentType, ids);
-    const pool = ids.filter((id) => cachedIds.has(id));
-    if (pool.length === 0) return null;
+    // Без скачанного backdrop слайда нет: постер — портретный, в широком
+    // баннере он растянулся бы или обрезался до неузнаваемости.
+    const pool = ids.filter((id) => cachedIds.has(id)).slice(0, HERO_LIMIT);
+    if (pool.length === 0) return [];
 
-    const pick = pool[Math.floor(Math.random() * pool.length)];
-    const detail =
-      contentType === 'anime' ? await getAnimeHeroDetail(pick) : await getCinemaHeroDetail(pick);
-    if (!detail || !detail.title) return null;
+    const details =
+      contentType === 'anime'
+        ? await getAnimeHeroDetails(pool)
+        : await getCinemaHeroDetails(pool);
 
-    return { ...detail, contentType, backdropUrl: localBackdropUrl(contentType, pick) };
+    return pool
+      .map((id) => details.get(id))
+      .filter((d): d is Omit<HeroData, 'contentType' | 'backdropUrl'> => Boolean(d?.title))
+      .map((d) => ({ ...d, contentType, backdropUrl: localBackdropUrl(contentType, d.id) }));
   } catch {
-    return null;
+    return [];
   }
 }

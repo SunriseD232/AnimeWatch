@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useEffect, useId, useState } from 'react';
 import { useToast } from '@/components/ToastProvider';
 import {
@@ -26,8 +27,9 @@ const HINTS: Record<PreferredQuality, string> = {
 };
 
 /**
- * Настройки плеера: качество по умолчанию и синхронизация выбора между
- * устройствами.
+ * Настройки раздела «Плеер и навигация»: качество видео по умолчанию,
+ * синхронизация выбора между устройствами и общий поиск по обоим разделам
+ * сайта (миграция 0045).
  *
  * Качество всегда пишется в localStorage — плеер читает его синхронно, в
  * обработчике манифеста hls.js, где ждать сеть негде. При включённой
@@ -40,8 +42,10 @@ const HINTS: Record<PreferredQuality, string> = {
  */
 export default function PlayerSettings({ initial }: { initial: PlayerPrefs }) {
   const { toast } = useToast();
+  const router = useRouter();
   const [quality, setQuality] = useState<PreferredQuality>(initial.quality ?? DEFAULT_QUALITY);
   const [sync, setSync] = useState(initial.sync);
+  const [unifiedSearch, setUnifiedSearch] = useState(initial.unifiedSearch);
   const [saving, setSaving] = useState(false);
   const headingId = useId();
   const descId = useId();
@@ -52,7 +56,11 @@ export default function PlayerSettings({ initial }: { initial: PlayerPrefs }) {
     if (!initial.sync || initial.quality == null) setQuality(readPreferredQuality());
   }, [initial.sync, initial.quality]);
 
-  async function save(patch: { preferredQuality?: PreferredQuality; syncPlayerQuality?: boolean }) {
+  async function save(patch: {
+    preferredQuality?: PreferredQuality;
+    syncPlayerQuality?: boolean;
+    unifiedSearch?: boolean;
+  }) {
     setSaving(true);
     try {
       const res = await fetch('/api/profile', {
@@ -91,6 +99,20 @@ export default function PlayerSettings({ initial }: { initial: PlayerPrefs }) {
       return;
     }
     toast(next ? 'Качество синхронизируется между устройствами' : 'Синхронизация выключена', 'success');
+  }
+
+  async function toggleUnifiedSearch(next: boolean) {
+    setUnifiedSearch(next);
+    const ok = await save({ unifiedSearch: next });
+    if (!ok) {
+      setUnifiedSearch(!next);
+      return;
+    }
+    // Строка поиска живёт в шапке и читает эту настройку при отрисовке
+    // страницы на сервере — без обновления она до следующего перехода
+    // продолжала бы искать по-старому.
+    router.refresh();
+    toast(next ? 'Поиск ищет по аниме и фильмам сразу' : 'Поиск снова по текущему разделу', 'success');
   }
 
   return (
@@ -178,6 +200,26 @@ export default function PlayerSettings({ initial }: { initial: PlayerPrefs }) {
             checked={sync}
             disabled={saving}
             onChange={(e) => void toggleSync(e.target.checked)}
+            className="mt-1 h-5 w-5 shrink-0 cursor-pointer accent-accent disabled:opacity-50"
+          />
+        </label>
+      </section>
+
+      <section className="flex flex-col gap-3 rounded-2xl bg-bg-card p-4 ring-1 ring-white/5 sm:p-5">
+        <label className="flex items-start justify-between gap-4">
+          <span>
+            <span className="block text-base font-semibold text-gray-100">Общий поиск</span>
+            <span className="mt-0.5 block text-sm text-gray-400">
+              Выключено — поиск ищет по тому разделу, в котором вы находитесь: в «Фильмах и сериалах»
+              по фильмам, в остальных — по аниме. Включено — ищет сразу везде и показывает всё
+              найденное в одном списке.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={unifiedSearch}
+            disabled={saving}
+            onChange={(e) => void toggleUnifiedSearch(e.target.checked)}
             className="mt-1 h-5 w-5 shrink-0 cursor-pointer accent-accent disabled:opacity-50"
           />
         </label>

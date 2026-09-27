@@ -14,7 +14,7 @@ import { getCinemaById, getCinemaSeasonCountMap } from '@/lib/videoseed-catalog'
 import { getTmdbSeriesOngoing } from '@/lib/tmdb';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
-import { getHeroPick, getRecommendedCinema } from '@/lib/recommendations';
+import { getHeroPicks, getRecommendedCinema } from '@/lib/recommendations';
 import { getLocalPosterMap } from '@/lib/posterCacheServer';
 
 export const metadata = { title: 'Фильмы и сериалы — MediaWatch' };
@@ -85,15 +85,15 @@ async function HeroAndContinueRow() {
   const {
     data: { user },
   } = await getCachedUser();
-  const [hero, { loggedIn, entries }] = await Promise.all([
-    getHeroPick(user?.id ?? null, 'cinema'),
+  const [heroes, { loggedIn, entries }] = await Promise.all([
+    getHeroPicks(user?.id ?? null, 'cinema'),
     getContinueEntries(),
   ]);
 
-  if (hero) {
+  if (heroes.length > 0) {
     return (
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px] lg:items-stretch">
-        <HeroBanner hero={hero}>
+        <HeroBanner heroes={heroes}>
           <ModeSwitch active="cinema" />
         </HeroBanner>
         <ContinueWatchingPanel entries={entries} loggedIn={loggedIn} />
@@ -101,15 +101,25 @@ async function HeroAndContinueRow() {
     );
   }
 
+  // Баннера нет — крон рекомендаций ещё не прогонялся или ни у одного
+  // тайтла подборки не скачан backdrop. Тогда рекомендации показываем
+  // прежней каруселью карточек: без неё они бы не показались нигде.
   return (
     <div className="flex flex-col gap-4">
       <ModeSwitch active="cinema" />
       <ContinueWatchingFull entries={entries} loggedIn={loggedIn} />
+      <RecommendedFallback />
     </div>
   );
 }
 
-async function RecommendedSection() {
+/**
+ * Карусель «Рекомендуем посмотреть» — ТОЛЬКО на случай, когда hero-баннер не
+ * сложился: сама подборка теперь живёт в баннере (см. HeroBanner.tsx —
+ * слайды по всем рекомендованным тайтлам). Держать её ещё и отдельной
+ * лентой значило бы дважды показать один и тот же список.
+ */
+async function RecommendedFallback() {
   const {
     data: { user },
   } = await getCachedUser();
@@ -179,8 +189,6 @@ export default function CinemaHomePage({
     redirect(`/cinema/catalog?${params.toString()}`);
   }
 
-  const tab = searchParams.tab === 'popular' ? 'popular' : 'new';
-
   return (
     <div className="flex flex-col gap-10">
       <h1 className="sr-only">Фильмы и сериалы — MediaWatch</h1>
@@ -197,15 +205,11 @@ export default function CinemaHomePage({
       </Suspense>
 
       <Suspense fallback={<CarouselSkeleton count={6} wide={false} />}>
-        <RecommendedSection />
-      </Suspense>
-
-      <Suspense fallback={<CarouselSkeleton count={6} wide={false} />}>
         <PlannedCarousel />
       </Suspense>
 
       <Suspense fallback={<CarouselSkeleton count={6} wide={false} />}>
-        <CatalogTeaser contentType="cinema" tab={tab} />
+        <CatalogTeaser contentType="cinema" />
       </Suspense>
     </div>
   );

@@ -44,6 +44,16 @@ export function PlayIcon({ className, filled = false }: IconProps & { filled?: b
   );
 }
 
+/** Пауза — парная к PlayIcon, для остановки автопоказа слайдов в hero. */
+export function PauseIcon({ className }: IconProps) {
+  return (
+    <Svg className={className} filled>
+      <rect x="6" y="4" width="4" height="16" rx="1" />
+      <rect x="14" y="4" width="4" height="16" rx="1" />
+    </Svg>
+  );
+}
+
 export function UsersIcon({ className }: IconProps) {
   return (
     <Svg className={className}>

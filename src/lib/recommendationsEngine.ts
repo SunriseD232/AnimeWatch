@@ -91,7 +91,16 @@ async function getActiveUserIds(supabase: SupabaseService): Promise<string[]> {
 }
 
 interface UserHistory {
+  /** Что человек уже так или иначе трогал — по этим тайтлам считаем его
+   *  вкус (жанры) и по ним же не повторяемся в промпте. */
   watchedIds: number[];
+  /**
+   * Что НЕЛЬЗЯ предлагать: посмотрел, смотрит, пересматривает, бросил или
+   * начал (есть watch_progress). ЗАПЛАНИРОВАННОЕ сюда не входит — его
+   * рекомендовать можно и нужно, это напоминание «ты хотел, вот оно».
+   * Раньше исключались все записи списка без разбора статуса.
+   */
+  excludedIds: number[];
   genreIds: number[];
   watchedTitles: string[];
 }
@@ -112,19 +121,35 @@ async function getUserHistory(
       .eq('content_type', contentType),
     supabase
       .from('user_list')
-      .select('shikimori_id, anime_title')
+      .select('shikimori_id, anime_title, status')
       .eq('user_id', userId)
       .eq('content_type', contentType),
   ]);
 
-  const rows = [...(wp ?? []), ...(ul ?? [])] as { shikimori_id: number; anime_title: string }[];
+  const progressRows = (wp ?? []) as { shikimori_id: number; anime_title: string }[];
+  const listRows = (ul ?? []) as { shikimori_id: number; anime_title: string; status: string }[];
+
+  const rows = [...progressRows, ...listRows];
   const watchedIds = [...new Set(rows.map((r) => r.shikimori_id))].slice(0, WATCHED_ID_CAP);
   const watchedTitles = [...new Set(rows.map((r) => r.anime_title).filter(Boolean))].slice(0, 40);
 
-  if (watchedIds.length === 0) return { watchedIds: [], genreIds: [], watchedTitles: [] };
+  // Запланированное не исключаем: человек сам сказал, что хочет это
+  // посмотреть, — значит оно уместно и в подборке. Убираем только то, что он
+  // уже посмотрел, смотрит, пересматривает, бросил или начал без отметки в
+  // списке (есть watch_progress).
+  const excludedIds = [
+    ...new Set([
+      ...progressRows.map((r) => r.shikimori_id),
+      ...listRows.filter((r) => r.status !== 'planned').map((r) => r.shikimori_id),
+    ]),
+  ].slice(0, WATCHED_ID_CAP);
+
+  if (watchedIds.length === 0) {
+    return { watchedIds: [], excludedIds: [], genreIds: [], watchedTitles: [] };
+  }
 
   const batchId = await getActiveBatchId(supabase, contentType);
-  if (!batchId) return { watchedIds, genreIds: [], watchedTitles };
+  if (!batchId) return { watchedIds, excludedIds, genreIds: [], watchedTitles };
 
   const { data: rowsWithGenres } = await supabase
     .from(TABLE[contentType])
@@ -143,7 +168,7 @@ async function getUserHistory(
     .slice(0, 8)
     .map(([id]) => id);
 
-  return { watchedIds, genreIds, watchedTitles };
+  return { watchedIds, excludedIds, genreIds, watchedTitles };
 }
 
 interface Candidate {
@@ -151,13 +176,14 @@ interface Candidate {
   title: string;
 }
 
-/** Пул кандидатов: по вкусу (пересечение жанров), без уже просмотренного/
- *  запланированного, топ по популярности — НЕ весь каталог, только то, что
- *  реально пойдёт в промпт модели. */
+/** Пул кандидатов: по вкусу (пересечение жанров), без просмотренного и
+ *  начатого, топ по популярности — НЕ весь каталог, только то, что реально
+ *  пойдёт в промпт модели. Запланированное остаётся в пуле: см. excludedIds
+ *  в UserHistory. */
 async function getCandidatePool(
   supabase: SupabaseService,
   contentType: ContentType,
-  watchedIds: number[],
+  excludedIds: number[],
   genreIds: number[],
 ): Promise<Candidate[]> {
   const batchId = await getActiveBatchId(supabase, contentType);
@@ -172,7 +198,7 @@ async function getCandidatePool(
     .eq('batch_id', batchId);
 
   if (genreIds.length > 0) query = query.overlaps('genre_ids', genreIds);
-  if (watchedIds.length > 0) query = query.not(idCol, 'in', `(${watchedIds.join(',')})`);
+  if (excludedIds.length > 0) query = query.not(idCol, 'in', `(${excludedIds.join(',')})`);
 
   query =
     contentType === 'anime'
@@ -468,7 +494,7 @@ export async function refreshRecommendations(): Promise<RefreshRecommendationsRe
       const history = await getUserHistory(supabase, userId, contentType);
       const candidates =
         history.watchedIds.length > 0
-          ? await getCandidatePool(supabase, contentType, history.watchedIds, history.genreIds)
+          ? await getCandidatePool(supabase, contentType, history.excludedIds, history.genreIds)
           : popularPool;
 
       const pool = candidates.length > 0 ? candidates : popularPool;
