@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { useProgressSaver } from '@/hooks/useProgressSaver';
 import { logEvent } from '@/lib/clientLog';
@@ -2400,6 +2400,45 @@ export default function OwnPlayer({
     };
   }, [src, reloadKey]);
 
+  // --- Двойной тап по краю видео — перемотка на 10 сек ------------------------
+  // Тот же жест, что у YouTube/Netflix на телефоне: двойное касание левой
+  // половины видео — назад, правой — вперёд. Средняя треть оставлена под
+  // прежнее двойное нажатие (fullscreen, см. onDoubleClick у <video> ниже) —
+  // так десктопный двойной клик мимо этих зон продолжает работать как раньше.
+  const [tapFlash, setTapFlash] = useState<'left' | 'right' | null>(null);
+  const tapFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // HTMLElement, не HTMLVideoElement: используется и на самом <video>, и на
+  // кнопке-заглушке поверх него, пока видео на паузе (см. ниже) — нужны
+  // только getBoundingClientRect()/clientX, которые есть у любого элемента.
+  const onVideoDoubleClick = useCallback(
+    (e: MouseEvent<HTMLElement>) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const third = rect.width / 3;
+
+      if (x < third) {
+        seekBy(-10);
+      } else if (x > third * 2) {
+        seekBy(10);
+      } else {
+        toggleFullscreen();
+        return;
+      }
+
+      setTapFlash(x < third ? 'left' : 'right');
+      if (tapFlashTimerRef.current) clearTimeout(tapFlashTimerRef.current);
+      tapFlashTimerRef.current = setTimeout(() => setTapFlash(null), 500);
+    },
+    [seekBy, toggleFullscreen],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (tapFlashTimerRef.current) clearTimeout(tapFlashTimerRef.current);
+    };
+  }, []);
+
   const seekTo = useCallback((t: number) => {
     const v = videoRef.current;
     if (v) v.currentTime = t;
@@ -2792,7 +2831,7 @@ export default function OwnPlayer({
           preload="metadata"
           poster={posterUrl ?? undefined}
           onClick={togglePlay}
-          onDoubleClick={toggleFullscreen}
+          onDoubleClick={onVideoDoubleClick}
           className="absolute inset-0 h-full w-full"
         >
           {/* mode ('showing'/'hidden') выставляется отдельным эффектом по
@@ -2802,6 +2841,24 @@ export default function OwnPlayer({
             <track key={i} kind="subtitles" src={s.url} srcLang={s.lang} label={s.label} />
           ))}
         </video>
+
+        {/* Вспышка «−10 сек»/«+10 сек» — подтверждение жеста двойного тапа
+            (см. onVideoDoubleClick выше): без неё на сенсорном экране не
+            видно, сработало ли касание вообще, второй тап в ту же секунду
+            легко принять за «не отреагировало» и повторить зря. */}
+        {tapFlash && (
+          <div
+            aria-hidden="true"
+            className={[
+              'pointer-events-none absolute inset-y-0 z-10 flex w-1/2 items-center',
+              tapFlash === 'left' ? 'left-0 justify-start pl-6 sm:pl-12' : 'right-0 justify-end pr-6 sm:pr-12',
+            ].join(' ')}
+          >
+            <div className="rounded-full bg-black/60 px-4 py-2 text-sm font-semibold text-white backdrop-blur">
+              {tapFlash === 'left' ? '−10 сек' : '+10 сек'}
+            </div>
+          </div>
+        )}
 
         {/* Субтитры рисуем сами (см. lib/subtitleStyle.ts). Положение снизу
             зависит от панели управления: пока она видна, поднимаем текст над
@@ -2863,7 +2920,7 @@ export default function OwnPlayer({
           <button
             type="button"
             onClick={togglePlay}
-            onDoubleClick={toggleFullscreen}
+            onDoubleClick={onVideoDoubleClick}
             aria-label="Смотреть"
             // bottom-16, не inset-0: полное покрытие до самого низа перекрывало
             // кликабельную область панели управления (в частности, кнопку
@@ -2871,10 +2928,10 @@ export default function OwnPlayer({
             // (пауза/повторный play) вместо реального контрола под ней.
             //
             // onDoubleClick — эта кнопка перекрывает <video> (у него тоже
-            // есть onDoubleClick={toggleFullscreen}, см. ниже) всё время, пока
-            // видео на паузе/ещё не стартовало — без своего обработчика
+            // есть onDoubleClick={onVideoDoubleClick}, см. ниже) всё время,
+            // пока видео на паузе/ещё не стартовало — без своего обработчика
             // двойной клик по области просмотра в этом состоянии никуда не
-            // доходил и в полноэкранный режим не переключал.
+            // доходил (ни до перемотки, ни до полноэкранного режима).
             className="absolute inset-x-0 top-0 bottom-16 flex items-center justify-center"
           >
             <span className="flex h-16 w-16 items-center justify-center rounded-full bg-black/60 ring-1 ring-white/20 backdrop-blur transition hover:bg-black/80">
