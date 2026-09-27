@@ -2994,6 +2994,31 @@ export default function OwnPlayer({
               }}
             />
 
+            {/* Полноэкранный режим — сразу после громкости, а не последней
+                кнопкой в строке: на узком экране в портретной ориентации
+                строка не помещается целиком и обрезается с конца (нет ни
+                переноса, ни горизонтального скролла), а именно эта кнопка
+                нужнее всего. Раньше она стояла последней, после субтитров/
+                настроек/PiP, и первой пропадала — пользователь был вынужден
+                поворачивать телефон в альбомную ориентацию только чтобы
+                до неё дотянуться. */}
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              aria-label={fullscreen ? 'Выйти из полноэкранного режима' : 'На весь экран'}
+              className="shrink-0 rounded-md p-1.5 transition hover:bg-white/10"
+            >
+              {fullscreen ? (
+                <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
+                  <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
+                  <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" />
+                </svg>
+              )}
+            </button>
+
             {subtitles.length > 0 && (
               <div className="relative">
                 <button
@@ -3360,23 +3385,6 @@ export default function OwnPlayer({
                 </svg>
               </button>
             )}
-
-            <button
-              type="button"
-              onClick={toggleFullscreen}
-              aria-label={fullscreen ? 'Выйти из полноэкранного режима' : 'На весь экран'}
-              className="rounded-md p-1.5 transition hover:bg-white/10"
-            >
-              {fullscreen ? (
-                <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
-                  <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z" />
-                </svg>
-              ) : (
-                <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
-                  <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" />
-                </svg>
-              )}
-            </button>
           </div>
         </div>
       </div>
