@@ -197,7 +197,11 @@ export default function HeroBanner({
               же карточку, что и «Смотреть». */}
           <Link
             href={titleHref}
-            className="line-clamp-2 w-fit text-2xl font-bold text-white transition hover:underline sm:text-4xl"
+            // lg:text-5xl — на широком экране заголовок должен быть заметно
+            // крупнее текста страницы (правило дизайн-системы: не меньше
+            // 2.5× базового кегля). На 36px выходило 2.25×, и баннер читался
+            // как «жирный абзац», а не как главный объект экрана.
+            className="line-clamp-2 w-fit text-2xl font-bold text-white transition hover:underline sm:text-4xl lg:text-5xl"
           >
             {hero.title}
           </Link>

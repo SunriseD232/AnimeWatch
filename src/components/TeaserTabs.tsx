@@ -44,7 +44,14 @@ export default function TeaserTabs({
   const current = tabs.find((t) => t.key === active) ?? tabs[0];
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-4" aria-labelledby={`${baseId}-heading`}>
+      {/* Заголовок только для скринридера: на экране роль заголовка играют
+          сами вкладки. Без него в структуре страницы был провал — после
+          «Продолжить просмотр» (h2) сразу шли названия карточек (h3), и
+          переход по заголовкам выглядел как пропущенный уровень. */}
+      <h2 id={`${baseId}-heading`} className="sr-only">
+        Новинки и популярное
+      </h2>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div
           role="tablist"
