@@ -99,7 +99,7 @@ export async function fetchTmdbCreditsForCron(
   try {
     const append = mediaType === 'movie' ? 'credits' : 'aggregate_credits';
     const res = await fetch(
-      `${TMDB_API}/${mediaType}/${tmdbId}?api_key=${apiKey}&append_to_response=${append}`,
+      `${TMDB_API}/${mediaType}/${tmdbId}?api_key=${apiKey}&append_to_response=${append}&language=ru-RU`,
       {
         cache: 'no-store',
         signal: AbortSignal.timeout(CRON_FETCH_TIMEOUT_MS),
