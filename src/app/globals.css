@@ -607,3 +607,61 @@ body {
     transform: none;
   }
 }
+
+/* ── Старые браузеры без aspect-ratio (телевизоры) ──────────────────────
+   Браузер телевизоров LG webOS — это Chromium 87 (проверено по логам:
+   "Linux; NetCast ... Chrome/87.0.3945.79 ... SmartTV/10.0"), а свойство
+   aspect-ratio появилось в 88-м. Без него контейнер плеера (.aspect-video)
+   схлопывался В НОЛЬ по высоте: видео грузилось, сегменты шли, звук был —
+   а на экране плеера не было вовсе. Ровно та же беда была у всех обложек
+   (.aspect-[2/3] и соседи), поэтому правило общее, а не только для плеера.
+
+   Воспроизведено в обычном Chrome: с `aspect-ratio: auto` высота кадра
+   плеера и <video> = 0 при ширине 787.
+
+   Приём — старый добрый padding-top от ширины: 56.25% = 9/16. Содержимое
+   при этом обязано позиционироваться абсолютно, иначе оно ляжет НИЖЕ
+   коробки. Поэтому ...
+
+   @supports not — современные браузеры этих правил не видят вовсе, для них
+   ничего не меняется. */
+@supports not (aspect-ratio: 16 / 9) {
+  /* ... коробки-состояния (скелетон загрузки, сообщение об ошибке) сюда не
+     попадают: у них внутри отцентрованный flex, и абсолютные дети
+     наложились бы друг на друга. Им достаточно разумной высоты. */
+  .aspect-video:not(.flex),
+  .aspect-square:not(.flex),
+  .aspect-\[2\/3\]:not(.flex),
+  .aspect-\[3\/4\]:not(.flex) {
+    position: relative;
+    height: 0;
+  }
+
+  .aspect-video:not(.flex) {
+    padding-top: 56.25%;
+  }
+  .aspect-square:not(.flex) {
+    padding-top: 100%;
+  }
+  .aspect-\[2\/3\]:not(.flex) {
+    padding-top: 150%;
+  }
+  .aspect-\[3\/4\]:not(.flex) {
+    padding-top: 133.3333%;
+  }
+
+  .aspect-video:not(.flex) > *,
+  .aspect-square:not(.flex) > *,
+  .aspect-\[2\/3\]:not(.flex) > *,
+  .aspect-\[3\/4\]:not(.flex) > * {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+  }
+
+  .aspect-video.flex {
+    min-height: 12rem;
+  }
+}
