@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/service';
 import { mapWithConcurrency } from '@/lib/concurrency';
 import { vlessDispatcher } from '@/lib/net/vlessProxy';
+import { fetchTmdbCreditsForCron, type CinemaCredits } from '@/lib/tmdbCredits';
 
 /**
  * Недельное обновление рейтингов TMDB для каталога кино (см. миграцию 0027).
@@ -152,6 +153,11 @@ interface RatingRow {
 async function fetchRating(
   imdbId: string,
   apiKey: string,
+  // Кому нужен второй запрос за credits — см. hasCredits в loadKnownRatings:
+  // это отдельный поход в TMDB (в отличие от backdrop/popularity, которые
+  // приходят бесплатно в том же find/{imdbId}), поэтому берём его только
+  // для тайтлов, где credits ещё реально нет.
+  wantCredits: boolean,
 ): Promise<{
   rating: number | null;
   votes: number | null;
@@ -159,6 +165,11 @@ async function fetchRating(
   tmdbId: number | null;
   mediaType: string | null;
   backdropPath: string | null;
+  /** undefined — credits не запрашивали (wantCredits=false). null —
+   *  запрашивали, но сетевая неудача (не пишем в базу, пусть перепроверится
+   *  на следующей неделе). Объект — успех, в т.ч. пустые cast/crew/companies
+   *  у тайтла, где TMDB их правда не знает. */
+  credits?: CinemaCredits | null;
 } | null> {
   try {
     const res = await fetch(
@@ -200,6 +211,7 @@ async function fetchRating(
     }
 
     const votes = hit.vote_count ?? 0;
+    const mediaType: 'movie' | 'tv' = movie ? 'movie' : 'tv';
     return {
       // 0.0 без единого голоса — не рейтинг, а его отсутствие: в сортировке
       // такие тайтлы должны уходить в конец вместе с непроверенными.
@@ -207,8 +219,9 @@ async function fetchRating(
       votes,
       popularity: typeof hit.popularity === 'number' ? hit.popularity : null,
       tmdbId: hit.id,
-      mediaType: movie ? 'movie' : 'tv',
+      mediaType,
       backdropPath: hit.backdrop_path ?? null,
+      credits: wantCredits ? await fetchTmdbCreditsForCron(hit.id, mediaType, apiKey) : undefined,
     };
   } catch {
     return null;
@@ -243,21 +256,24 @@ async function loadBatchImdbIds(
   return out;
 }
 
+interface KnownRating {
+  checkedAt: number;
+  missCount: number;
+  hasPopularity: boolean;
+  hasBackdrop: boolean;
+  hasCredits: boolean;
+}
+
 /** Уже известные отметки — чтобы понять, что протухло, а что нет. */
 async function loadKnownRatings(
   supabase: ReturnType<typeof createServiceClient>,
-): Promise<
-  Map<string, { checkedAt: number; missCount: number; hasPopularity: boolean; hasBackdrop: boolean }>
-> {
-  const out = new Map<
-    string,
-    { checkedAt: number; missCount: number; hasPopularity: boolean; hasBackdrop: boolean }
-  >();
+): Promise<Map<string, KnownRating>> {
+  const out = new Map<string, KnownRating>();
 
   for (let from = 0; ; from += READ_PAGE) {
     const { data, error } = await supabase
       .from('cinema_ratings')
-      .select('imdb_id, checked_at, miss_count, popularity, rating, backdrop_path')
+      .select('imdb_id, checked_at, miss_count, popularity, rating, backdrop_path, credits')
       .order('imdb_id', { ascending: true })
       .range(from, from + READ_PAGE - 1);
 
@@ -272,6 +288,7 @@ async function loadKnownRatings(
         popularity: number | null;
         rating: number | null;
         backdrop_path: string | null;
+        credits: unknown | null;
       };
       out.set(row.imdb_id, {
         checkedAt: new Date(row.checked_at).getTime(),
@@ -285,6 +302,12 @@ async function loadKnownRatings(
         // popularity) — без неё старые «свежие» строки ждали бы месяц TTL,
         // хотя backdrop им ни разу не проверяли.
         hasBackdrop: row.backdrop_path !== null || row.rating === null,
+        // Credits (миграция 0044) — та же логика, но это уже НЕ бесплатное
+        // поле в find/{imdbId}: hasCredits=false заставляет fetchRating
+        // сделать второй запрос в TMDB (см. wantCredits), поэтому кандидаты
+        // без credits появляются в очереди ровно на один раз — до первого
+        // успешного заполнения.
+        hasCredits: row.credits !== null || row.rating === null,
       });
     }
   }
@@ -339,7 +362,7 @@ export async function refreshCinemaRatings(budget = DEFAULT_BUDGET): Promise<Rat
   // Кандидаты: ни разу не проверенные — вперёд, дальше самые несвежие.
   // Сортировка именно такая, чтобы за несколько недельных прогонов база
   // закрылась целиком, а не крутилась по одному и тому же началу списка.
-  const candidates: { imdbId: string; checkedAt: number }[] = [];
+  const candidates: { imdbId: string; checkedAt: number; wantCredits: boolean }[] = [];
   const seen = new Set<string>();
 
   for (const imdbId of imdbIds) {
@@ -348,17 +371,17 @@ export async function refreshCinemaRatings(budget = DEFAULT_BUDGET): Promise<Rat
 
     const prev = known.get(imdbId);
     if (!prev) {
-      candidates.push({ imdbId, checkedAt: 0 });
+      candidates.push({ imdbId, checkedAt: 0, wantCredits: true });
       continue;
     }
-    if (!prev.hasPopularity || !prev.hasBackdrop) {
-      candidates.push({ imdbId, checkedAt: prev.checkedAt });
+    if (!prev.hasPopularity || !prev.hasBackdrop || !prev.hasCredits) {
+      candidates.push({ imdbId, checkedAt: prev.checkedAt, wantCredits: !prev.hasCredits });
       continue;
     }
     const backoff = Math.min(prev.missCount, MAX_MISS_BACKOFF) * MISS_BACKOFF_DAYS;
     const ttl = (FRESH_DAYS + backoff) * day;
     if (now - prev.checkedAt >= ttl) {
-      candidates.push({ imdbId, checkedAt: prev.checkedAt });
+      candidates.push({ imdbId, checkedAt: prev.checkedAt, wantCredits: !prev.hasCredits });
     }
   }
 
@@ -379,10 +402,16 @@ export async function refreshCinemaRatings(budget = DEFAULT_BUDGET): Promise<Rat
 
     const part = slice.slice(offset, offset + BATCH);
     const results = await mapWithConcurrency(part, CONCURRENCY, (c) =>
-      fetchRating(c.imdbId, apiKey),
+      fetchRating(c.imdbId, apiKey, c.wantCredits),
     );
 
     const rows: RatingRow[] = [];
+    // Отдельно от rows: credits — не бесплатное поле в этом же ответе (в
+    // отличие от backdrop/popularity), поэтому пишем его отдельным upsert'ом
+    // только для строк, где реально запрашивали (см. wantCredits) — иначе
+    // общий upsert затёр бы credits СУЩЕСТВУЮЩИХ строк на null всякий раз,
+    // когда кандидат попал в очередь по другой причине (протухший рейтинг).
+    const creditsRows: { imdb_id: string; credits: CinemaCredits }[] = [];
     for (let i = 0; i < part.length; i++) {
       const imdbId = part[i].imdbId;
       const res = results[i];
@@ -410,6 +439,8 @@ export async function refreshCinemaRatings(budget = DEFAULT_BUDGET): Promise<Rat
         checked_at: new Date().toISOString(),
         miss_count: res.rating === null ? prevMiss + 1 : 0,
       });
+
+      if (res.credits) creditsRows.push({ imdb_id: imdbId, credits: res.credits });
     }
 
     for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
@@ -418,6 +449,15 @@ export async function refreshCinemaRatings(budget = DEFAULT_BUDGET): Promise<Rat
         .from('cinema_ratings')
         .upsert(chunk, { onConflict: 'imdb_id' });
       if (error) throw new Error(`не записались рейтинги: ${error.message}`);
+    }
+
+    // Отдельным upsert'ом и ПОСЛЕ строки выше: та уже гарантировала, что
+    // строка imdb_id существует (в т.ч. для первого визита нового тайтла) —
+    // здесь остаётся только дописать colonку credits, ничего больше.
+    for (let i = 0; i < creditsRows.length; i += UPSERT_CHUNK) {
+      const chunk = creditsRows.slice(i, i + UPSERT_CHUNK);
+      const { error } = await supabase.from('cinema_ratings').upsert(chunk, { onConflict: 'imdb_id' });
+      if (error) throw new Error(`не записались credits: ${error.message}`);
     }
 
     checked += part.length;

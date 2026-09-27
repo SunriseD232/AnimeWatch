@@ -8,6 +8,8 @@ import ListButton from '@/components/ListButton';
 import TrailerButton from '@/components/TrailerButton';
 import { getCinemaById, getCinemaCatalog, type CinemaShort } from '@/lib/videoseed-catalog';
 import { getCinemaGenreNamesFromIndex, getSimilarFromIndex } from '@/lib/cinemaIndexQuery';
+import CinemaTitleCredits from '@/components/CinemaTitleCredits';
+import type { CinemaCredits } from '@/lib/tmdbCredits';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
@@ -129,6 +131,13 @@ export default async function CinemaPage({
   // тайтла в нём нет — остаёмся на списке от Videoseed.
   const genres = indexGenres ?? item.genres;
 
+  // Съёмочная группа TMDB — cinema_ratings.credits, заполняется недельным
+  // кроном (см. lib/cinemaRatings.ts, lib/tmdbCredits.ts), тут только читаем
+  // по imdb_id. Публичная таблица (RLS "anyone can read"), обычный клиент.
+  const creditsPromise = item.idImdb
+    ? supabase.from('cinema_ratings').select('credits').eq('imdb_id', item.idImdb).maybeSingle()
+    : Promise.resolve({ data: null });
+
   // Прогресс и статус списка для этого тайтла (если пользователь вошёл).
   const progressPromise = user
     ? Promise.all([
@@ -153,10 +162,12 @@ export default async function CinemaPage({
       ])
     : null;
 
-  const [hasAnyPlayer, progressResult] = await Promise.all([
+  const [hasAnyPlayer, progressResult, creditsResult] = await Promise.all([
     hasAnyPlayerPromise,
     progressPromise,
+    creditsPromise,
   ]);
+  const cinemaCredits = (creditsResult.data?.credits as CinemaCredits | null) ?? null;
 
   let progress: WatchProgress | null = null;
   let listItem: UserListItem | null = null;
@@ -195,7 +206,7 @@ export default async function CinemaPage({
           </div>
         )}
         <div className="flex flex-col gap-5 p-5 sm:flex-row sm:p-8">
-        <div className="relative mx-auto aspect-[2/3] w-40 shrink-0 overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 sm:mx-0 sm:w-48">
+        <div className="relative mx-auto aspect-[2/3] w-40 shrink-0 self-start overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 sm:mx-0 sm:w-48">
           {item.poster ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -263,6 +274,8 @@ export default async function CinemaPage({
               ))}
             </div>
           )}
+
+          {cinemaCredits && <CinemaTitleCredits credits={cinemaCredits} />}
 
           <div className="mt-1 flex flex-wrap items-center gap-3">
             {hasAnyPlayer ? (

@@ -1,0 +1,15 @@
+-- MediaWatch — миграция 0044: съёмочная группа TMDB для кино/сериалов
+--
+-- Только cinema_ratings, не cinema_index (в отличие от backdrop_path в
+-- 0043): съёмочная группа нужна ТОЛЬКО странице конкретного тайтла (см.
+-- app/cinema/[id]/page.tsx), а не пачкой сразу по многим карточкам, как
+-- backdrop для hero главной. Страница тайтла и так делает точечный запрос
+-- по imdb_id (getCinemaById не читает cinema_index вовсе) — читать оттуда
+-- же и credits проще и без задержки до ночной перестройки индекса.
+--
+-- Заполняется отдельным TMDB-запросом (append_to_response=credits/
+-- aggregate_credits) поверх уже идущего еженедельного крона рейтингов
+-- (см. lib/cinemaRatings.ts, lib/tmdbCredits.ts) — в отличие от
+-- backdrop_path это НЕ бесплатное поле в ответе find/{imdbId}, второй
+-- запрос идёт только для тайтлов, где credits ещё нет.
+alter table cinema_ratings add column if not exists credits jsonb;

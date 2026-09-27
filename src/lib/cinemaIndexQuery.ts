@@ -260,6 +260,37 @@ export async function getCinemaIndexByIds(ids: number[]): Promise<CinemaShort[]>
   }
 }
 
+/**
+ * tmdb_id → kp_id для тайтлов, которые есть в нашем каталоге. Нужно
+ * страницам персон/студий TMDB (см. lib/tmdbCredits.ts): их фильмография
+ * приходит списком TMDB id, а сайт умеет открывать только свои /cinema/:id
+ * по kp_id — tmdb_id на cinema_index уже есть (та же колонка, что и у
+ * cinema_ratings, копируется при перестройке, см. lib/cinemaIndex.ts), так
+ * что резолв — один запрос по своей же базе, без похода в TMDB.
+ */
+export async function getKpIdsByTmdbIds(tmdbIds: number[]): Promise<Map<number, number>> {
+  if (tmdbIds.length === 0) return new Map();
+  try {
+    const batchId = await getActiveBatchId();
+    if (!batchId) return new Map();
+
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('cinema_index')
+      .select('kp_id, tmdb_id')
+      .eq('batch_id', batchId)
+      .in('tmdb_id', tmdbIds);
+
+    if (error || !data) return new Map();
+    const rows = data as unknown as { kp_id: number; tmdb_id: number | null }[];
+    return new Map(
+      rows.filter((r): r is { kp_id: number; tmdb_id: number } => r.tmdb_id != null).map((r) => [r.tmdb_id, r.kp_id]),
+    );
+  } catch {
+    return new Map();
+  }
+}
+
 export interface IndexedRef {
   id: number;
   name: string;
