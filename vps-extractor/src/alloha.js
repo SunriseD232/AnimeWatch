@@ -143,13 +143,21 @@ async function fetchBnsiData(browser, rawEmbedUrl) {
       const url = request.url();
       if (!cdnAuthHeaders && CDN_URL_RE.test(url)) {
         const h = request.headers();
-        if (h.authorizations || h['accepts-controls']) {
+        if (h.authorizations || h['accepts-controls'] || h.origin) {
           cdnAuthHeaders = {};
           if (h.authorizations) cdnAuthHeaders.Authorizations = h.authorizations;
           if (h['accepts-controls']) cdnAuthHeaders['Accepts-Controls'] = h['accepts-controls'];
           // Referer у самого CDN-запроса — НЕ тот же, что у /bnsi/: плеер
           // шлёт корневой yani.tv, а не origin эмбеда. Берём как есть.
           if (h.referer) cdnAuthHeaders.Referer = h.referer;
+          // ORIGIN — то, что CDN реально проверяет. Замерено 27.09.2026 на
+          // живой ссылке: с Origin плеера — 200, с origin эмбеда
+          // (alloha.yani.tv) — 403, причём Referer на ответ не влияет
+          // вообще, а Authorizations для плейлиста даже не нужен. Плеер
+          // Alloha переехал на свой домен (…thealloha.club), эмбед остался
+          // на старом, и подпись считается под НОВЫЙ origin. Пока мы
+          // подставляли origin эмбеда, всё извлечение упиралось в 403.
+          if (h.origin) cdnAuthHeaders.Origin = h.origin;
         }
       }
       if (url === WRAPPER_URL) {
@@ -300,9 +308,9 @@ function buildResolvedStream(bnsiData, embedOrigin, cdnAuthHeaders) {
   return {
     url,
     // Заголовки подписи — поверх Referer/Origin: без них CDN отдаёт 403
-    // всем подряд (см. cdnAuthHeaders в fetchBnsiData). Referer внутри них
-    // намеренно перекрывает наш: плеер шлёт корневой yani.tv, а не origin
-    // эмбеда, и подпись считается под него.
+    // всем подряд (см. cdnAuthHeaders в fetchBnsiData). И Referer, и Origin
+    // внутри них намеренно перекрывают наши: плеер шлёт СВОИ, а подпись
+    // считается именно под них (Origin — решающий, см. там же).
     headers: { Referer: `${embedOrigin}/`, Origin: embedOrigin, ...(cdnAuthHeaders || {}) },
     isHls: true,
     ...(qualities.length > 1 ? { qualities, qualitySwitch: 'reload' } : {}),
