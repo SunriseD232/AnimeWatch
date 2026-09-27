@@ -7,6 +7,7 @@ import ListButton from '@/components/ListButton';
 import { RelatedAnimeSections, RelatedAnimeSectionsSkeleton } from '@/components/RelatedAnimeSections';
 import TrailerButton from '@/components/TrailerButton';
 import PosterImage from '@/components/PosterImage';
+import TitleCredits from '@/components/TitleCredits';
 import {
   episodeCount,
   getAnime,
@@ -14,6 +15,7 @@ import {
   stripBbCode,
   trailerEmbedUrl,
 } from '@/lib/shikimori';
+import { getAnimeCredits } from '@/lib/shikimoriCredits';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { UserListItem, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
@@ -34,8 +36,11 @@ export default async function AnimePage({
   if (!Number.isFinite(id)) notFound();
 
   // getAnime и getUser независимы — запускаем параллельно (см. тот же приём
-  // и его обоснование в app/watch/[shikimoriId]/[episode]/page.tsx).
+  // и его обоснование в app/watch/[shikimoriId]/[episode]/page.tsx). Съёмочная
+  // группа — отдельный GraphQL-запрос (см. lib/shikimoriCredits.ts), тоже
+  // независимый — туда же.
   const userPromise = getCachedUser();
+  const creditsPromise = getAnimeCredits(id);
   let anime;
   try {
     anime = await getAnime(id);
@@ -67,6 +72,7 @@ export default async function AnimePage({
   const {
     data: { user },
   } = await userPromise;
+  const credits = await creditsPromise;
 
   let progress: WatchProgress | null = null;
   let listItem: UserListItem | null = null;
@@ -209,6 +215,8 @@ export default async function AnimePage({
               ))}
             </div>
           ) : null}
+
+          {credits && <TitleCredits credits={credits} />}
 
           <div className="mt-1 flex flex-wrap items-center gap-3">
             {isAnons ? (

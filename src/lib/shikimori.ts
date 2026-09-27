@@ -84,7 +84,7 @@ async function throttle(): Promise<void> {
 // часть сайта: главная, каталог, тайтл, просмотр, календарь, поиск).
 const SHIKIMORI_FETCH_TIMEOUT_MS = 8_000;
 
-async function shikimoriFetch<T>(
+export async function shikimoriFetch<T>(
   path: string,
   revalidate: number,
 ): Promise<T> {
@@ -104,6 +104,32 @@ async function shikimoriFetch<T>(
     );
   }
   return (await res.json()) as T;
+}
+
+/**
+ * GraphQL Shikimori — тот же троттлер, что и у REST (throttle() один на
+ * оба протокола: лимит апстрима общий, не по эндпоинту). Без ретраев —
+ * это путь живого запроса страницы, а не ночной перезакачки индекса (см.
+ * gql() в lib/animeIndex.ts — тот отдельный, с ретраями, для крона).
+ */
+export async function shikimoriGraphQL<T>(query: string): Promise<T> {
+  await throttle();
+  const res = await fetch(`${API_URL}/graphql`, {
+    method: 'POST',
+    headers: {
+      'User-Agent': USER_AGENT,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({ query }),
+    signal: AbortSignal.timeout(SHIKIMORI_FETCH_TIMEOUT_MS),
+  });
+
+  if (!res.ok) throw new Error(`Shikimori GraphQL error ${res.status}`);
+  const json = (await res.json()) as { data?: T; errors?: { message: string }[] };
+  if (json.errors?.length) throw new Error(json.errors.map((e) => e.message).join('; '));
+  if (!json.data) throw new Error('пустой data в ответе Shikimori GraphQL');
+  return json.data;
 }
 
 /** Абсолютный URL картинки из относительного пути Shikimori. */
