@@ -94,7 +94,13 @@ export default function RootLayout({
             </Suspense>
             {/* Запас снизу под нижний док на телефоне (MobileDock): он
                 fixed, то есть контент под ним иначе не докручивается. */}
-            <main className="mx-auto max-w-6xl px-4 pb-[calc(4.75rem+env(safe-area-inset-bottom))] pt-6 md:pb-6">
+            {/* Поля страницы срезаны примерно на четверть в пользу содержимого:
+              по бокам было 16 пикселей на телефоне и вся разница до 1152
+              пикселей на широком экране. Теперь 12 и до 1280 — прибавка
+              достаётся в первую очередь hero-баннеру: в его ряду вторая
+              колонка фиксированной ширины (360px), и весь прирост уходит
+              картинке. */}
+          <main className="mx-auto max-w-7xl px-3 pb-[calc(4.75rem+env(safe-area-inset-bottom))] pt-6 sm:px-4 md:pb-6">
               {children}
             </main>
           </PipPlayerHost>

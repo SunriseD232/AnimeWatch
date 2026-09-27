@@ -46,6 +46,11 @@ export default function HeroBanner({
   // человек нажал бы Enter уже на другом тайтле. Полоски и сама кнопка паузы
   // сюда не входят — иначе клик по полоске останавливал бы показ навсегда.
   const [focusHeld, setFocusHeld] = useState(false);
+  // Курсор над баннером — показ ждёт. Раньше пауза по наведению была
+  // сделана грубо: отсчёт начинался заново, и на слайде, над которым
+  // подержали мышь, он фактически не кончался. Теперь остаток времени
+  // сохраняется (см. remainingRef) и после увода курсора доигрывается.
+  const [hovered, setHovered] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
   // Вкладка не на экране — крутить нечего. Отдельным состоянием, а не общей
   // паузой: возвращение на вкладку не должно отменять нажатую человеком
@@ -67,16 +72,38 @@ export default function HeroBanner({
     return () => mq.removeEventListener('change', onChange);
   }, []);
 
-  const running = count > 1 && !paused && !focusHeld && !reducedMotion && visible;
+  const running = count > 1 && !paused && !focusHeld && !hovered && !reducedMotion && visible;
 
-  // Один таймер на активный слайд, а не общий интервал: при переключении
-  // вручную эффект перезапускается, и следующий слайд получает свои полные
-  // 10 секунд — иначе он сменился бы через мгновение, доедая остаток
-  // чужого отсчёта.
+  /**
+   * Сколько этому слайду ещё висеть. Пауза не обнуляет отсчёт, а
+   * замораживает его: увели курсор — слайд доигрывает свой остаток, а не
+   * начинает десять секунд заново. Полоска под кнопками ведёт себя так же
+   * (CSS-анимация встаёт на паузу, а не перезапускается), поэтому картинка и
+   * индикатор не расходятся.
+   */
+  const remainingRef = useRef(SLIDE_MS);
+  /** Слайд сменился сам — следующему причитаются полные десять секунд. */
+  const advancedRef = useRef(false);
+
   useEffect(() => {
     if (!running) return;
-    const timer = setTimeout(() => setIndex((i) => (i + 1) % count), SLIDE_MS);
-    return () => clearTimeout(timer);
+    const startedAt = Date.now();
+    const wait = remainingRef.current;
+    const timer = setTimeout(() => {
+      advancedRef.current = true;
+      setIndex((i) => (i + 1) % count);
+    }, wait);
+    return () => {
+      clearTimeout(timer);
+      if (advancedRef.current) {
+        // Отсчёт кончился, слайд уехал — новому полный срок.
+        advancedRef.current = false;
+        remainingRef.current = SLIDE_MS;
+        return;
+      }
+      // Остановили посередине — запоминаем, сколько не доиграли.
+      remainingRef.current = Math.max(0, wait - (Date.now() - startedAt));
+    };
   }, [index, running, count]);
 
   // Вкладка в фоне — браузер всё равно душит таймеры, но CSS-анимация
@@ -95,21 +122,27 @@ export default function HeroBanner({
   if (!hero) return null;
 
   const titleHref = hero.contentType === 'anime' ? `/anime/${hero.id}` : `/cinema/${hero.id}`;
-  const meta = [hero.genres[0], hero.year, hero.rating ? hero.rating.toFixed(1) : null].filter(
+  // Жанра здесь нет намеренно: он уже показан чипами прямо над названием, и
+  // в строке «Сёнен · 2019 · 8.4» повторялся вторым слова в слово.
+  const meta = [hero.year, hero.rating ? hero.rating.toFixed(1) : null].filter(
     (v): v is string | number => v !== null && v !== undefined && v !== '',
   );
 
-  const go = (next: number) => setIndex(((next % count) + count) % count);
+  // Ручное переключение — всегда с полного отсчёта: человек выбрал слайд,
+  // и он не должен смениться через секунду, доедая чужой остаток.
+  const go = (next: number) => {
+    remainingRef.current = SLIDE_MS;
+    advancedRef.current = false;
+    setIndex(((next % count) + count) % count);
+  };
 
   return (
     <section
       aria-roledescription="карусель"
       aria-label="Рекомендуем посмотреть"
       className="relative h-[46vh] min-h-[260px] max-h-[360px] w-full overflow-hidden rounded-3xl bg-bg-card lg:h-[440px] lg:max-h-none"
-      // Наведения мыши здесь НЕТ намеренно. Баннер занимает половину первого
-      // экрана, и курсор оказывается над ним просто потому, что лежит в
-      // середине окна: пауза «пока курсор сверху» означала, что у человека с
-      // мышью слайды не листались вовсе — ровно так это и выглядело живьём.
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       onFocus={(e) => {
         if (!(e.target as HTMLElement).closest('[data-hero-controls]')) setFocusHeld(true);
       }}
@@ -147,7 +180,7 @@ export default function HeroBanner({
           key={`${h.contentType}:${h.id}`}
           aria-hidden="true"
           className={[
-            'absolute inset-0 transition-opacity duration-700 ease-out',
+            'absolute inset-0 transition-opacity duration-500 ease-out',
             i === index ? 'opacity-100' : 'opacity-0',
           ].join(' ')}
         >
@@ -187,7 +220,7 @@ export default function HeroBanner({
           вверх и перекрывали переключатель раздела. */}
       <div className="absolute inset-x-0 bottom-0 top-14 z-10 flex flex-col justify-end gap-3 overflow-hidden p-4 sm:top-16 sm:p-6">
         {/* key — чтобы текст нового слайда не подменялся мгновенно, а
-            всплывал: смена картинки идёт 700 мс, и резкая подмена подписи
+            всплывал: смена картинки идёт 500 мс, и резкая подмена подписи
             посреди неё читалась как сбой. */}
         <div key={`${hero.contentType}:${hero.id}`} className="animate-hero-text flex flex-col gap-3">
           {hero.genres.length > 0 && (
@@ -234,7 +267,15 @@ export default function HeroBanner({
             <PlayIcon className="h-4 w-4" filled />
             Смотреть
           </Link>
+          {/* key — обязателен. Кнопка помнит выбранный статус у себя в
+              состоянии (см. useQuickListStatus), а при смене слайда React
+              переиспользовал бы тот же экземпляр: добавив один тайтл в
+              список, галочку было видно и на всех следующих слайдах, а
+              попытка поставить тот же статус другому тайтлу молча ничего не
+              делала (choose выходит, если статус «не изменился»). С ключом
+              на каждый тайтл кнопка начинается заново. */}
           <QuickListButton
+            key={`${hero.contentType}:${hero.id}`}
             shikimoriId={hero.id}
             contentType={hero.contentType}
             title={hero.title}
@@ -330,10 +371,11 @@ function HeroTabs({
                   // key — чтобы анимация начиналась заново на каждом слайде,
                   // а не продолжала предыдущий отсчёт.
                   key={`fill:${index}`}
-                  className={[
-                    'absolute inset-y-0 left-0 rounded-full bg-white',
-                    running ? 'animate-hero-progress' : 'w-full',
-                  ].join(' ')}
+                  // animation-play-state, а не снятие класса: пауза
+                  // замораживает заливку на месте, и после возврата курсора
+                  // она доигрывает остаток — ровно как и сам таймер слайда.
+                  style={{ animationPlayState: running ? 'running' : 'paused' }}
+                  className="animate-hero-progress absolute inset-y-0 left-0 rounded-full bg-white"
                 />
               )}
             </span>
