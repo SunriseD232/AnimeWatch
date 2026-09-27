@@ -2166,15 +2166,17 @@ export default function OwnPlayer({
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
 
-  const toggleFullscreen = useCallback(() => {
+  // Вынесено из toggleFullscreen отдельной функцией: нужно ОДНОНАПРАВЛЕННО
+  // «войти», а не переключить — авто-вход по повороту телефона (см. эффект
+  // ниже) должен именно входить, а не выходить, если вдруг уже в fullscreen
+  // по другой причине.
+  const enterFullscreen = useCallback(() => {
     const container = containerRef.current;
     const video = videoRef.current as
       | (HTMLVideoElement & { webkitEnterFullscreen?: () => void })
       | null;
     if (!container) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
-    } else if (container.requestFullscreen) {
+    if (container.requestFullscreen) {
       container
         .requestFullscreen({ navigationUI: 'hide' })
         .then(() => lockLandscape(video))
@@ -2183,6 +2185,37 @@ export default function OwnPlayer({
       video.webkitEnterFullscreen();
     }
   }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      enterFullscreen();
+    }
+  }, [enterFullscreen]);
+
+  // --- Авто-fullscreen по повороту телефона -----------------------------------
+  // Раньше единственный путь на весь экран был через кнопку — а на неё
+  // сначала нужно было физически повернуть телефон, чтобы до неё дотянуться
+  // (строка управления не помещается в портретной ориентации, см. комментарий
+  // у кнопки ниже). Замкнутый круг: поворачивать приходилось ИЗ-ЗА кнопки, а
+  // не вместо неё. Теперь реальный поворот в альбомную сам включает
+  // fullscreen; обратно в портретную — выключает, иначе видео осталось бы в
+  // fullscreen, но в портретных пропорциях, что выглядело бы сломанным.
+  // Только сенсорные экраны — на ноутбуке поворота не бывает.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia('(pointer: coarse)').matches) return;
+    const mql = window.matchMedia('(orientation: landscape)');
+    const onChange = (e: MediaQueryListEvent) => {
+      if (e.matches) {
+        if (!document.fullscreenElement) enterFullscreen();
+      } else if (document.fullscreenElement === containerRef.current) {
+        document.exitFullscreen().catch(() => {});
+      }
+    };
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, [enterFullscreen]);
 
   // --- Picture-in-Picture ------------------------------------------------------
   // iOS Safari не поддерживает стандартный document.pictureInPictureEnabled/
