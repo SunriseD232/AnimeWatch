@@ -755,6 +755,17 @@ export default function OwnPlayer({
     });
   }, []);
   const [activeSubtitleIndex, setActiveSubtitleIndex] = useState<number | null>(null); // null = выкл
+  // Дёргаем, когда нужно заново применить mode/cuechange к <track> (см. эффект
+  // ниже, ключ subtitleReattachTick в его deps) — из мест, куда React-стейт
+  // не долетает: обработчик HLS.Events.MANIFEST_PARSED в эффекте подключения
+  // источника. Разбор жалобы «субтитры слетают при перемотке»: recoverMediaError()
+  // при MEDIA_ERROR (сик в непрогруженный участок — частый триггер) пересоздаёт
+  // MediaSource и переприсваивает video.src — по спеке HTML это заново гоняет
+  // алгоритм загрузки медиаресурса, который сбрасывает mode ВСЕХ TextTrack в
+  // 'disabled' и может пересоздать сами объекты TextTrack. Без этого тика
+  // выбор дорожки и слушатель cuechange остаются привязаны к уже неактуальному
+  // состоянию — субтитры гаснут молча и не возвращаются сами.
+  const [subtitleReattachTick, setSubtitleReattachTick] = useState(0);
   const { toast } = useToast();
   // Предупреждение о несостоявшемся сочетании показываем ОДИН раз на серию:
   // эффекты озвучки и субтитров срабатывают отдельно и оба могут промахнуться,
@@ -1332,6 +1343,11 @@ export default function OwnPlayer({
           hls.on(Hls.Events.MANIFEST_PARSED, (_evt, data) => {
             if (cancelled) return;
             hlsErrorRecoveryRef.current = 0;
+            // См. объявление subtitleReattachTick — MANIFEST_PARSED также
+            // перевызывается изнутри recoverMediaError() (см. обработчик
+            // ERROR/MEDIA_ERROR ниже), а именно тогда браузер молча сбрасывает
+            // выбор дорожки субтитров.
+            setSubtitleReattachTick((t) => t + 1);
             let chosenLevel: number | null = null;
             const levels = data.levels
               // maxBitrate нужен, чтобы зажать ABR снизу — см.
@@ -1717,7 +1733,11 @@ export default function OwnPlayer({
     onCueChange();
     track.addEventListener('cuechange', onCueChange);
     return () => track.removeEventListener('cuechange', onCueChange);
-  }, [activeSubtitleIndex, subtitles]);
+    // subtitleReattachTick — см. её объявление: заставляет этот эффект
+    // перевыполниться после HLS.Events.MANIFEST_PARSED (в т.ч. повторного,
+    // от recoverMediaError()), когда браузер мог сбросить mode/сами объекты
+    // TextTrack без единого изменения этих двух React-стейтов.
+  }, [activeSubtitleIndex, subtitles, subtitleReattachTick]);
 
   // --- События <video> -------------------------------------------------------
   useEffect(() => {
