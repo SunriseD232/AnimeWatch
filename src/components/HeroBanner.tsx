@@ -128,11 +128,21 @@ export default function HeroBanner({
         go(delta < 0 ? index + 1 : index - 1);
       }}
     >
-      {/* Все backdrop'ы лежат слоями, видимый — с opacity 1: так смена слайда
-          это плавное растворение, а не мигание белым на момент загрузки
-          следующего файла. Картинки локальные (/backdrops/...), лишнего
-          трафика от этого нет. */}
-      {heroes.map((h, i) => (
+      {/* Backdrop'ы лежат слоями, видимый — с opacity 1: так смена слайда это
+          плавное растворение, а не мигание пустым местом на время загрузки
+          следующего файла.
+
+          Но держим В РАЗМЕТКЕ только три: текущий, следующий и предыдущий.
+          Все десять сразу — это 0,9 МБ картинок на первой отрисовке главной
+          (замерено на проде: в среднем 93 КБ на файл), из которых девять
+          человек не видит. Соседние нужны: следующий должен быть готов к
+          моменту растворения, предыдущий — чтобы шаг назад был таким же
+          мгновенным. */}
+      {heroes.map((h, i) => {
+        const near =
+          i === index || i === (index + 1) % count || i === (index - 1 + count) % count;
+        if (!near) return null;
+        return (
         <div
           key={`${h.contentType}:${h.id}`}
           aria-hidden="true"
@@ -164,7 +174,8 @@ export default function HeroBanner({
             placeholderClassName="absolute inset-0 bg-bg-soft"
           />
         </div>
-      ))}
+        );
+      })}
 
       {/* Снизу сплошной — текст читается независимо от того, что на картинке. */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
