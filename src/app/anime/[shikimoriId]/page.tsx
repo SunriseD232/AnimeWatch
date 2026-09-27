@@ -133,7 +133,7 @@ export default async function AnimePage({
           </div>
         )}
         <div className="flex flex-col gap-5 p-5 sm:flex-row sm:p-8">
-          <div className="relative mx-auto aspect-[2/3] w-40 shrink-0 overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 sm:mx-0 sm:w-48">
+          <div className="relative mx-auto aspect-[2/3] w-40 shrink-0 self-start overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 sm:mx-0 sm:w-48">
             {/* Запасные ссылки — на случай, когда основная отдаёт 404:
                 постер из индекса, оригинал Shikimori, его же превью. */}
             <PosterImage
