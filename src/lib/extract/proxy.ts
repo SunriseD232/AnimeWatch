@@ -369,25 +369,78 @@ async function wreqFetch(
   });
 }
 
+/**
+ * Потолок ожидания ЗАГОЛОВКОВ апстрима. Тело после этого течёт сколько
+ * нужно: таймер снимается, как только ответ начался (см. finally) — иначе
+ * оборвалась бы загрузка длинного сегмента.
+ *
+ * Зачем вообще: у fetch здесь не было никакого срока, и зависший апстрим
+ * держал наш запрос до тайм-аута nginx (90с). Живой случай — Alloha
+ * 27.09.2026: запрос к её CDN с рабочими заголовками не отвечал по 30
+ * секунд, роут делал три попытки, и плеер получал 504 вместо ответа.
+ */
+const UPSTREAM_HEADERS_TIMEOUT_MS = 12_000;
+
+async function fetchWithHeadersTimeout(
+  url: string,
+  init: RequestInit & { dispatcher?: unknown },
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), UPSTREAM_HEADERS_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal } as RequestInit);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchUpstream(
   url: string,
   upstreamHeaders: Record<string, string>,
 ): Promise<UpstreamResponse> {
   if (needsFingerprintClient(url)) {
+    // СНАЧАЛА туннель, и только если не вышло — клиент с подменой отпечатка.
+    //
+    // Замерено на проде 27.09.2026 на одной и той же подписанной ссылке
+    // Alloha (kp/shikimori 8425, серия 4): обычный fetch С НУЖНЫМИ
+    // ЗАГОЛОВКАМИ — тишина и обрыв по таймауту (20с), node-wreq — тишина и
+    // «operation timed out» (30с), тот же fetch ЧЕРЕЗ ТУННЕЛЬ — 200 за
+    // 0.3с. Без заголовков хост отвечает 403 мгновенно, то есть он
+    // достижим: блокируется именно настоящий запрос с адреса этой VPS.
+    //
+    // Отпечаток остаётся запасным путём: раньше та же CDN отдавала 403
+    // обычному клиенту (см. FINGERPRINT_CLIENT_HOSTS выше) — если туннель
+    // не поднят или его edge тоже упрётся в 403, пробуем прежним способом.
+    try {
+      const viaTunnel = await fetchWithHeadersTimeout(url, {
+        headers: upstreamHeaders,
+        redirect: 'follow',
+        dispatcher: vlessDispatcher(),
+      });
+      if (viaTunnel.ok || viaTunnel.status === 206 || viaTunnel.status === 404) return viaTunnel;
+      console.error(
+        `[extract/proxy] туннель ответил ${viaTunnel.status} на ${new URL(url).hostname} — пробуем отпечаток`,
+      );
+      await viaTunnel.body?.cancel().catch(() => {});
+    } catch (err) {
+      console.error(
+        `[extract/proxy] туннель не смог ${new URL(url).hostname}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
     return wreqFetch(url, upstreamHeaders);
   }
 
   if (needsVlessProxy(url)) {
-    return fetch(url, {
+    return fetchWithHeadersTimeout(url, {
       headers: upstreamHeaders,
       redirect: 'follow',
-      // @ts-expect-error -- dispatcher — опция undici, не входит в типы lib.dom fetch.
       dispatcher: vlessDispatcher(),
     });
   }
 
   if (!(await needsVpsRelay(url))) {
-    return fetch(url, { headers: upstreamHeaders, redirect: 'follow' });
+    return fetchWithHeadersTimeout(url, { headers: upstreamHeaders, redirect: 'follow' });
   }
 
   const baseUrl = process.env.VPS_EXTRACTOR_URL;
@@ -399,7 +452,7 @@ async function fetchUpstream(
   const relayUrl = new URL('/relay', baseUrl);
   relayUrl.searchParams.set('u', url);
   relayUrl.searchParams.set('h', JSON.stringify(restHeaders));
-  return fetch(relayUrl, {
+  return fetchWithHeadersTimeout(relayUrl.toString(), {
     headers: { Authorization: `Bearer ${token}`, ...(Range ? { Range } : {}) },
   });
 }
