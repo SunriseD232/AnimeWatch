@@ -627,6 +627,42 @@ export default function OwnPlayer({
   // успел решить, что сайт сломан, прежде чем сработает автовосстановление.
   const PLAYBACK_STALL_CHECK_MS = 5_000;
   const PLAYBACK_STALL_TICKS_LIMIT = 2;
+  /**
+   * Сколько ждём после РУЧНОЙ перемотки, прежде чем считать простой
+   * зависанием, и как долго действует эта поблажка.
+   *
+   * Разбор жалобы «перемотка сильно вдаль сбрасывает и перегружает плеер».
+   * Перемотка в место, которого нет в буфере, — это холодная загрузка
+   * сегментов с нуля: у Videoseed один сегмент 1080p весит до 9 МБ
+   * (замерено), и через наш прокси на небыстрой сети он спокойно едет
+   * дольше десяти секунд. Всё это время currentTime стоит на цели — ровно
+   * тот признак, по которому вотчдог считал воспроизведение зависшим и
+   * пересоздавал hls.js. То есть плеер перезагружал сам себя именно тогда,
+   * когда всё шло нормально, просто медленно.
+   *
+   * Поэтому: в окне после перемотки порог выше (20с вместо 10), и простой
+   * засчитывается, только если НЕ РАСТЁТ ЕЩЁ И БУФЕР. Вне окна правило
+   * прежнее, по одному лишь currentTime — в том зависании, ради которого
+   * вотчдог заводился, буфер как раз стоял на месте (hls.js гонял по кругу
+   * три соседних сегмента), так что эта проверка его не ослабляет.
+   */
+  const PLAYBACK_STALL_TICKS_AFTER_SEEK = 4;
+  const SEEK_GRACE_MS = 30_000;
+  /**
+   * Прежде чем пересоздавать плеер, пробуем перепрыгнуть ДЫРУ В БУФЕРЕ.
+   *
+   * Воспроизведено на проде (kp=1209839, перемотка с 6-й секунды на 3100-ю):
+   * после дальней перемотки hls.js оставляет в буфере разрывы, и
+   * воспроизведение упирается в такой разрыв — данные дальше есть, но
+   * currentTime стоит. Вотчдог видел простой и пересоздавал hls.js целиком,
+   * то есть плеер перезагружался ровно на ровном месте. Прыжок в начало
+   * следующего куска решает это одним присвоением currentTime.
+   *
+   * Две попытки: если и после прыжка стоим, дело не в разрыве — тогда
+   * прежний путь с полным переподключением.
+   */
+  const STALL_HOLE_JUMP_MAX_S = 60;
+  const STALL_NUDGE_LIMIT = 2;
   // Content-Type из проверочного HEAD (см. эффект резолва ниже) — переносится
   // во второй эффект (подключение к <video>), чтобы не запрашивать HEAD дважды.
   const upstreamContentTypeRef = useRef<string | null>(null);
@@ -2048,21 +2084,43 @@ export default function OwnPlayer({
     // обработчиков это не ловит, потому что все они реагируют на СОБЫТИЯ
     // hls.js/<video>, а тут таких событий просто нет. Следим за currentTime
     // напрямую по таймеру, независимо от того, что (не) шлёт сам hls.js.
+    /** Момент последней перемотки — любой, включая ручную (см. onSeeking). */
+    let lastSeekStartedAt = 0;
     let lastStallCheckTime = -1;
+    let lastBufferedEnd = -1;
     let stallTicks = 0;
+    let stallNudges = 0;
+    /** Конец самого дальнего буферизованного куска — «сколько уже скачано». */
+    const bufferedEnd = () => {
+      try {
+        const b = video.buffered;
+        return b.length > 0 ? b.end(b.length - 1) : 0;
+      } catch {
+        return 0;
+      }
+    };
     const stallWatchdogInterval = setInterval(() => {
-      if (!playingRef.current || userPausedRef.current || seekPending) {
+      const buffered = bufferedEnd();
+      // video.seeking — сама перемотка ещё идёт: currentTime стоит на цели
+      // по определению, и считать это простоем нельзя.
+      if (!playingRef.current || userPausedRef.current || seekPending || video.seeking) {
         stallTicks = 0;
         lastStallCheckTime = video.currentTime;
+        lastBufferedEnd = buffered;
         return;
       }
-      if (Math.abs(video.currentTime - lastStallCheckTime) < 0.5) {
-        stallTicks += 1;
-      } else {
-        stallTicks = 0;
-      }
+      const timeMoved = Math.abs(video.currentTime - lastStallCheckTime) >= 0.5;
+      const bufferGrew = buffered - lastBufferedEnd >= 0.5;
+      const afterSeek = Date.now() - lastSeekStartedAt < SEEK_GRACE_MS;
+      // Сразу после перемотки растущий буфер считается прогрессом: данные
+      // идут, их просто ещё не хватает на воспроизведение.
+      const progressed = afterSeek ? timeMoved || bufferGrew : timeMoved;
+      if (progressed) stallNudges = 0;
+      stallTicks = progressed ? 0 : stallTicks + 1;
       lastStallCheckTime = video.currentTime;
-      if (stallTicks < PLAYBACK_STALL_TICKS_LIMIT) return;
+      lastBufferedEnd = buffered;
+      const limit = afterSeek ? PLAYBACK_STALL_TICKS_AFTER_SEEK : PLAYBACK_STALL_TICKS_LIMIT;
+      if (stallTicks < limit) return;
       stallTicks = 0;
       logEvent('player.playback_stall', {
         source: effectiveSource,
@@ -2070,7 +2128,40 @@ export default function OwnPlayer({
         season,
         episode,
         at: video.currentTime,
+        buffered,
+        afterSeek,
       });
+      // Сначала дешёвое: если дальше по времени уже есть загруженный кусок,
+      // значит мы упёрлись в разрыв буфера — перепрыгиваем его, а не
+      // пересоздаём плеер (см. STALL_HOLE_JUMP_MAX_S).
+      const holeTarget = (() => {
+        try {
+          const b = video.buffered;
+          for (let i = 0; i < b.length; i++) {
+            const start = b.start(i);
+            if (start > video.currentTime && start - video.currentTime <= STALL_HOLE_JUMP_MAX_S) {
+              return start + 0.1;
+            }
+          }
+        } catch {
+          /* buffered недоступен — ниже обычный путь */
+        }
+        return null;
+      })();
+      if (holeTarget != null && stallNudges < STALL_NUDGE_LIMIT) {
+        stallNudges += 1;
+        logEvent('player.stall_hole_jump', {
+          source: effectiveSource,
+          shikimoriId,
+          season,
+          episode,
+          from: video.currentTime,
+          to: holeTarget,
+        });
+        video.currentTime = holeTarget;
+        return;
+      }
+
       // Тот же приём сдвига цели, что и у сик-вотчдога (см.
       // seekNudgeSecondsRef выше) — раз воспроизведение застряло ровно на
       // этой секунде, повтор в ту же точку рискует застрять там же снова.
@@ -2102,7 +2193,13 @@ export default function OwnPlayer({
     // отдельного пользовательского намерения поставить на паузу. attemptPlay
     // уже проверяет playingRef/userPausedRef — если видео и так играет или
     // пользователь сам поставил паузу, это просто no-op.
+    // Любая перемотка, включая ручную скраббером и кнопками ±10 — отсюда
+    // считается поблажка вотчдогу простоя (см. SEEK_GRACE_MS).
+    const onSeeking = () => {
+      lastSeekStartedAt = Date.now();
+    };
     const onSeeked = () => {
+      lastSeekStartedAt = Date.now();
       clearSeekWatchdog();
       seekPending = false;
       setSeeking(false);
@@ -2129,6 +2226,7 @@ export default function OwnPlayer({
     video.addEventListener('waiting', onWaiting);
     video.addEventListener('canplay', onCanPlay);
     video.addEventListener('playing', onCanPlay);
+    video.addEventListener('seeking', onSeeking);
     video.addEventListener('seeked', onSeeked);
     video.addEventListener('error', onError);
     return () => {
@@ -2141,6 +2239,7 @@ export default function OwnPlayer({
       video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('canplay', onCanPlay);
       video.removeEventListener('playing', onCanPlay);
+      video.removeEventListener('seeking', onSeeking);
       video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('error', onError);
       clearGapWatchdog();
