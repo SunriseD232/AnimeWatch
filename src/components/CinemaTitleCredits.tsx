@@ -9,6 +9,11 @@ const CHIP_CLASS =
   'press rounded-md bg-bg-card px-2 py-1 text-gray-300 transition hover:bg-accent/15 hover:text-accent-text';
 
 const CAST_PREVIEW_COUNT = 9;
+// У длинных сериалов (аниме тут ни при чём — только TMDB aggregate_credits)
+// под одной должностью может набраться по эпизодному режиссёру за десяток
+// сезонов — не единицы, а десятки имён. Схлопываем до 5 видимых элементов
+// (4 человека + кнопка «ещё…» пятым), а не тащим полсотни чипов в шапку.
+const FEATURED_PREVIEW_COUNT = 4;
 
 /**
  * Съёмочная группа/каст фильма или сериала (см. ТЗ, фаза 2 — TMDB). Тот же
@@ -21,6 +26,15 @@ const CAST_PREVIEW_COUNT = 9;
  */
 export default function CinemaTitleCredits({ credits }: { credits: CinemaCredits }) {
   const [expanded, setExpanded] = useState(false);
+  const [expandedRoles, setExpandedRoles] = useState<Set<string>>(new Set());
+
+  const toggleRole = (label: string) =>
+    setExpandedRoles((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
 
   const featuredCrew = FEATURED_CREW_JOBS.map((job) => ({
     label: CREW_JOB_LABELS_RU[job] ?? job,
@@ -38,16 +52,31 @@ export default function CinemaTitleCredits({ credits }: { credits: CinemaCredits
   return (
     <div className="mt-2 flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
-        {featuredCrew.map((group) => (
-          <div key={group.label} className="flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="text-gray-500">{group.label}:</span>
-            {group.people.map((p) => (
-              <Link key={`${p.id}-${group.label}`} href={`/person/tmdb/${p.id}`} className={CHIP_CLASS}>
-                {p.name}
-              </Link>
-            ))}
-          </div>
-        ))}
+        {featuredCrew.map((group) => {
+          const isExpanded = expandedRoles.has(group.label);
+          const showAll = isExpanded || group.people.length <= FEATURED_PREVIEW_COUNT + 1;
+          const visible = showAll ? group.people : group.people.slice(0, FEATURED_PREVIEW_COUNT);
+          return (
+            <div key={group.label} className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="text-gray-500">{group.label}:</span>
+              {visible.map((p) => (
+                <Link key={p.id} href={`/person/tmdb/${p.id}`} className={CHIP_CLASS}>
+                  {p.name}
+                </Link>
+              ))}
+              {!showAll && (
+                <button type="button" onClick={() => toggleRole(group.label)} className={CHIP_CLASS}>
+                  ещё…
+                </button>
+              )}
+              {isExpanded && group.people.length > FEATURED_PREVIEW_COUNT + 1 && (
+                <button type="button" onClick={() => toggleRole(group.label)} className={CHIP_CLASS}>
+                  Свернуть
+                </button>
+              )}
+            </div>
+          );
+        })}
         {credits.companies.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
             <span className="text-gray-500">Студия:</span>
