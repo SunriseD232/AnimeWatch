@@ -41,10 +41,16 @@ export default function HeroBanner({
 }) {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
-  // Пауза «от наведения» отдельно от нажатой кнопки: увести мышь не должно
-  // отменять осознанную остановку, и наоборот.
-  const [hovered, setHovered] = useState(false);
+  // Фокус внутри баннера держит слайд на месте, но ТОЛЬКО когда он стоит на
+  // ссылке или кнопке «в список»: у них при смене слайда меняется адрес, и
+  // человек нажал бы Enter уже на другом тайтле. Полоски и сама кнопка паузы
+  // сюда не входят — иначе клик по полоске останавливал бы показ навсегда.
+  const [focusHeld, setFocusHeld] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+  // Вкладка не на экране — крутить нечего. Отдельным состоянием, а не общей
+  // паузой: возвращение на вкладку не должно отменять нажатую человеком
+  // кнопку паузы, и наоборот.
+  const [visible, setVisible] = useState(true);
   const touchStartX = useRef<number | null>(null);
 
   const count = heroes.length;
@@ -61,7 +67,7 @@ export default function HeroBanner({
     return () => mq.removeEventListener('change', onChange);
   }, []);
 
-  const running = count > 1 && !paused && !hovered && !reducedMotion;
+  const running = count > 1 && !paused && !focusHeld && !reducedMotion && visible;
 
   // Один таймер на активный слайд, а не общий интервал: при переключении
   // вручную эффект перезапускается, и следующий слайд получает свои полные
@@ -76,10 +82,14 @@ export default function HeroBanner({
   // Вкладка в фоне — браузер всё равно душит таймеры, но CSS-анимация
   // полоски продолжает идти: вернувшись, человек увидел бы полную полоску на
   // слайде, который никуда не уехал. Проще остановить всё явно.
+  //
+  // Начальное значение читаем В ЭФФЕКТЕ, а не при рендере: на сервере
+  // document нет, а разметка должна совпасть с клиентской.
   useEffect(() => {
-    const onVisibility = () => setPaused(document.hidden);
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
+    const sync = () => setVisible(!document.hidden);
+    sync();
+    document.addEventListener('visibilitychange', sync);
+    return () => document.removeEventListener('visibilitychange', sync);
   }, []);
 
   if (!hero) return null;
@@ -96,10 +106,14 @@ export default function HeroBanner({
       aria-roledescription="карусель"
       aria-label="Рекомендуем посмотреть"
       className="relative h-[46vh] min-h-[260px] max-h-[360px] w-full overflow-hidden rounded-3xl bg-bg-card lg:h-[440px] lg:max-h-none"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onFocus={() => setHovered(true)}
-      onBlur={() => setHovered(false)}
+      // Наведения мыши здесь НЕТ намеренно. Баннер занимает половину первого
+      // экрана, и курсор оказывается над ним просто потому, что лежит в
+      // середине окна: пауза «пока курсор сверху» означала, что у человека с
+      // мышью слайды не листались вовсе — ровно так это и выглядело живьём.
+      onFocus={(e) => {
+        if (!(e.target as HTMLElement).closest('[data-hero-controls]')) setFocusHeld(true);
+      }}
+      onBlur={() => setFocusHeld(false)}
       onTouchStart={(e) => {
         touchStartX.current = e.touches[0]?.clientX ?? null;
       }}
@@ -259,7 +273,7 @@ function HeroTabs({
   onTogglePause: () => void;
 }) {
   return (
-    <div className="mt-1 flex items-center gap-2">
+    <div data-hero-controls className="mt-1 flex items-center gap-2">
       <div
         role="tablist"
         aria-label="Слайды рекомендаций"

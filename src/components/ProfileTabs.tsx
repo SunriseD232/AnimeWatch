@@ -243,8 +243,26 @@ function SettingsTabs({
 
   return (
     <div className="flex max-w-2xl flex-col gap-4">
-      <div ref={rootRef} className="relative inline-flex w-fit rounded-full border border-white/10 bg-bg-card p-1">
-        <SlidingPill pill={pill} />
+      {/* НА ТЕЛЕФОНЕ — СЕТКА 2×2, а не одна строка.
+          Строкой четыре подписи («Оформление», «Плеер и навигация»,
+          «Приватность», «Пароль») занимают 442 пикселя при экране в 375: у
+          переключателя не было ни прокрутки, ни ограничения по ширине, и он
+          растягивал ВСЮ СТРАНИЦУ вбок — горизонтальная прокрутка появлялась
+          на каждом экране профиля, а «Пароль» просто уезжал за край
+          (нарушение WCAG 1.4.10). Сетка показывает все четыре раздела
+          сразу, без прокрутки и без обрезки.
+
+          Ползунок на сетке не работает (он меряет одну строку), поэтому на
+          телефоне активный раздел просто залит акцентом — ровно как
+          вкладки профиля выше, они на телефоне выглядят так же. С sm и шире
+          всё по-прежнему: одна строка и переезжающий ползунок. */}
+      <div
+        ref={rootRef}
+        className="relative grid max-w-full grid-cols-2 gap-1 rounded-2xl border border-white/10 bg-bg-card p-1 sm:inline-flex sm:w-fit sm:gap-0 sm:rounded-full"
+      >
+        <span className="hidden sm:contents">
+          <SlidingPill pill={pill} />
+        </span>
         {SETTINGS_TABS.map((s) => (
           <button
             key={s.value}
@@ -253,8 +271,12 @@ function SettingsTabs({
             onClick={() => setSection(s.value)}
             aria-pressed={section === s.value}
             className={[
-              'press relative z-10 rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200',
-              section === s.value ? 'text-accent-fg' : 'text-gray-300 hover:text-white',
+              // py-3 на телефоне — 44 пикселя высоты: рекомендованный размер
+              // цели для пальца, а не минимально допустимые 24.
+              'press relative z-10 rounded-xl px-4 py-3 text-sm font-medium transition-colors duration-200 sm:rounded-full sm:py-2',
+              section === s.value
+                ? 'bg-accent text-accent-fg sm:bg-transparent'
+                : 'text-gray-300 hover:text-white',
             ].join(' ')}
           >
             {s.label}
