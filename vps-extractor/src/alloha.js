@@ -150,13 +150,10 @@ async function fetchBnsiData(browser, rawEmbedUrl) {
           // Referer у самого CDN-запроса — НЕ тот же, что у /bnsi/: плеер
           // шлёт корневой yani.tv, а не origin эмбеда. Берём как есть.
           if (h.referer) cdnAuthHeaders.Referer = h.referer;
-          // ORIGIN — то, что CDN реально проверяет. Замерено 27.09.2026 на
-          // живой ссылке: с Origin плеера — 200, с origin эмбеда
-          // (alloha.yani.tv) — 403, причём Referer на ответ не влияет
-          // вообще, а Authorizations для плейлиста даже не нужен. Плеер
-          // Alloha переехал на свой домен (…thealloha.club), эмбед остался
-          // на старом, и подпись считается под НОВЫЙ origin. Пока мы
-          // подставляли origin эмбеда, всё извлечение упиралось в 403.
+          // Origin — на случай, если плеер его пришлёт: у CDN он участвует
+          // в проверке (на чужой ссылке из браузера пускал именно он), но
+          // в нашем Puppeteer-прогоне плеер его не шлёт, и тогда остаётся
+          // наш origin эмбеда — с ним всё работает.
           if (h.origin) cdnAuthHeaders.Origin = h.origin;
         }
       }

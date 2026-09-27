@@ -399,36 +399,27 @@ async function fetchUpstream(
   upstreamHeaders: Record<string, string>,
 ): Promise<UpstreamResponse> {
   if (needsFingerprintClient(url)) {
-    // СНАЧАЛА туннель, и только если не вышло — клиент с подменой отпечатка.
+    // ТОЛЬКО НАПРЯМУЮ, без туннеля. Подпись, с которой CDN Alloha пускает к
+    // видео, привязана к АДРЕСУ, с которого её выдали: её снимает наш
+    // извлекатель на этой же VPS (см. vps-extractor/src/alloha.js), поэтому
+    // ходить за байтами нужно с того же адреса. Замерено 27.09.2026 на
+    // одной свежей ссылке: напрямую — 200 на плейлист и 206 на сегмент,
+    // через VLESS-туннель — 403 на всё. Промежуточная попытка «сначала
+    // туннель» (была здесь несколько часов) ровно этим Alloha и ломала.
     //
-    // Замерено на проде 27.09.2026 на одной и той же подписанной ссылке
-    // Alloha (kp/shikimori 8425, серия 4): обычный fetch С НУЖНЫМИ
-    // ЗАГОЛОВКАМИ — тишина и обрыв по таймауту (20с), node-wreq — тишина и
-    // «operation timed out» (30с), тот же fetch ЧЕРЕЗ ТУННЕЛЬ — 200 за
-    // 0.3с. Без заголовков хост отвечает 403 мгновенно, то есть он
-    // достижим: блокируется именно настоящий запрос с адреса этой VPS.
-    //
-    // Отпечаток остаётся запасным путём: раньше та же CDN отдавала 403
-    // обычному клиенту (см. FINGERPRINT_CLIENT_HOSTS выше) — если туннель
-    // не поднят или его edge тоже упрётся в 403, пробуем прежним способом.
+    // Клиент с подменой TLS-отпечатка — потому что минимум один edge этой
+    // CDN отбивает обычный fetch по отпечатку (см. FINGERPRINT_CLIENT_HOSTS
+    // выше). Если он не справился (сетевой сбой, зависание), пробуем
+    // обычным fetch с тем же таймаутом: это дешевле, чем отдать 502.
     try {
-      const viaTunnel = await fetchWithHeadersTimeout(url, {
-        headers: upstreamHeaders,
-        redirect: 'follow',
-        dispatcher: vlessDispatcher(),
-      });
-      if (viaTunnel.ok || viaTunnel.status === 206 || viaTunnel.status === 404) return viaTunnel;
-      console.error(
-        `[extract/proxy] туннель ответил ${viaTunnel.status} на ${new URL(url).hostname} — пробуем отпечаток`,
-      );
-      await viaTunnel.body?.cancel().catch(() => {});
+      return await wreqFetch(url, upstreamHeaders);
     } catch (err) {
       console.error(
-        `[extract/proxy] туннель не смог ${new URL(url).hostname}:`,
+        `[extract/proxy] клиент с отпечатком не смог ${new URL(url).hostname}:`,
         err instanceof Error ? err.message : err,
       );
+      return fetchWithHeadersTimeout(url, { headers: upstreamHeaders, redirect: 'follow' });
     }
-    return wreqFetch(url, upstreamHeaders);
   }
 
   if (needsVlessProxy(url)) {
