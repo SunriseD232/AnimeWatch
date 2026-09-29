@@ -1093,6 +1093,13 @@ export default function Player({
         episode: activeEpisode,
         extractSource: 'videoseed',
         animeTitle,
+        // Подпись поверх кадра — по тем же правилам, что у обсуждения под
+        // плеером: у фильма серии нет, у многосезонного — сезон и серия.
+        episodeLabel: multiSeason
+          ? `Сезон ${activeSeason} · серия ${activeEpisode}`
+          : showEpisode
+            ? `Серия ${activeEpisode}${currentSeasonEpisodes > 1 ? ` из ${currentSeasonEpisodes}` : ''}`
+            : null,
         posterUrl,
         isAuthed,
         resumeFrom,

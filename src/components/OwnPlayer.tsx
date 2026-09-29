@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { useProgressSaver } from '@/hooks/useProgressSaver';
 import { logEvent } from '@/lib/clientLog';
@@ -15,6 +15,7 @@ import {
   type SubtitleStyle,
 } from '@/lib/subtitleStyle';
 import { formatTime } from '@/lib/format';
+import { activeCueText, parseVtt, type CueIndex } from '@/lib/subtitles/vtt';
 import {
   AUTO_QUALITY,
   MAX_QUALITY,
@@ -57,6 +58,10 @@ interface Props {
   /** Источник, с которого сервер извлекает прямую ссылку (см. /api/proxy). */
   extractSource: ExtractSource;
   animeTitle: string;
+  /** Подпись серии поверх кадра («Серия 7 из 28», «Сезон 2 · серия 3»).
+   *  Считает родитель — он знает, фильм это или сериал и сколько серий в
+   *  сезоне. null/не задано — у фильма подписи серии нет. */
+  episodeLabel?: string | null;
   posterUrl: string | null;
   isAuthed: boolean;
   /** Стартовая позиция для восстановления (сек) или null. */
@@ -377,6 +382,7 @@ export default function OwnPlayer({
   episode,
   extractSource,
   animeTitle,
+  episodeLabel = null,
   posterUrl,
   isAuthed,
   resumeFrom,
@@ -760,6 +766,16 @@ export default function OwnPlayer({
   const seekingRef = useRef(seeking);
   seekingRef.current = seeking;
   const [controlsVisible, setControlsVisible] = useState(true);
+  // Высота нижней панели — МЕРИМ, а не угадываем. От неё считаются субтитры,
+  // «Пропустить опенинг», «Следующая серия» и кнопка «Смотреть» по центру:
+  // раньше у каждого был свой подобранный вручную отступ (bottom-20,
+  // bottom-24, bottom-16), и при любой смене размеров панели — узкий плеер,
+  // весь экран с вырезом, крупный шрифт — они наезжали на кнопки или
+  // повисали в воздухе. Теперь всё привязано к одной настоящей цифре.
+  const controlsRef = useRef<HTMLDivElement>(null);
+  const [controlsH, setControlsH] = useState(56);
+  // Подсказка со временем над шкалой — см. onSeekHover.
+  const seekTipRef = useRef<HTMLSpanElement>(null);
   const [isEnded, setIsEnded] = useState(false);
   // Уровни качества из hls.js (только для HLS-источников с несколькими
   // вариантами в master.m3u8 — иначе список пуст, и селектор скрыт).
@@ -791,17 +807,11 @@ export default function OwnPlayer({
     });
   }, []);
   const [activeSubtitleIndex, setActiveSubtitleIndex] = useState<number | null>(null); // null = выкл
-  // Дёргаем, когда нужно заново применить mode/cuechange к <track> (см. эффект
-  // ниже, ключ subtitleReattachTick в его deps) — из мест, куда React-стейт
-  // не долетает: обработчик HLS.Events.MANIFEST_PARSED в эффекте подключения
-  // источника. Разбор жалобы «субтитры слетают при перемотке»: recoverMediaError()
-  // при MEDIA_ERROR (сик в непрогруженный участок — частый триггер) пересоздаёт
-  // MediaSource и переприсваивает video.src — по спеке HTML это заново гоняет
-  // алгоритм загрузки медиаресурса, который сбрасывает mode ВСЕХ TextTrack в
-  // 'disabled' и может пересоздать сами объекты TextTrack. Без этого тика
-  // выбор дорожки и слушатель cuechange остаются привязаны к уже неактуальному
-  // состоянию — субтитры гаснут молча и не возвращаются сами.
-  const [subtitleReattachTick, setSubtitleReattachTick] = useState(0);
+  // Разобранные реплики выбранной дорожки — держим сами, а не в <track>
+  // (почему — см. lib/subtitles/vtt.ts). Кэш по URL: переключение туда-обратно
+  // между дорожками одной серии не качает файл заново.
+  const [subtitleCues, setSubtitleCues] = useState<CueIndex | null>(null);
+  const subtitleCueCacheRef = useRef(new Map<string, CueIndex>());
   const { toast } = useToast();
   // Предупреждение о несостоявшемся сочетании показываем ОДИН раз на серию:
   // эффекты озвучки и субтитров срабатывают отдельно и оба могут промахнуться,
@@ -1379,11 +1389,6 @@ export default function OwnPlayer({
           hls.on(Hls.Events.MANIFEST_PARSED, (_evt, data) => {
             if (cancelled) return;
             hlsErrorRecoveryRef.current = 0;
-            // См. объявление subtitleReattachTick — MANIFEST_PARSED также
-            // перевызывается изнутри recoverMediaError() (см. обработчик
-            // ERROR/MEDIA_ERROR ниже), а именно тогда браузер молча сбрасывает
-            // выбор дорожки субтитров.
-            setSubtitleReattachTick((t) => t + 1);
             let chosenLevel: number | null = null;
             const levels = data.levels
               // maxBitrate нужен, чтобы зажать ABR снизу — см.
@@ -1726,54 +1731,73 @@ export default function OwnPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadState, src]);
 
-  // Применяем выбор дорожки к нативным <track> — по индексу, не по языку.
-  // ВАЖНО: дубли lang в рамках одной озвучки бывают (напр. Alloha отдаёт
-  // отдельно "(Russian) Надписи" и "(Russian) Субтитры", обе lang="rus", см.
-  // vps-extractor/src/alloha.js) — поэтому key на <track>/RadioOption ниже
-  // должен быть по индексу, а не по s.lang (иначе React схлопывает элементы
-  // с одинаковым key, и i-й <track> в DOM перестаёт соответствовать i-му
-  // элементу subtitles — эта индексация сломается).
+  // Загружаем и разбираем выбранную дорожку — по индексу, не по языку:
+  // дубли lang в рамках одной озвучки бывают (напр. Alloha отдаёт отдельно
+  // "(Russian) Надписи" и "(Russian) Субтитры", обе lang="rus", см.
+  // vps-extractor/src/alloha.js), поэтому и key у RadioOption по индексу.
+  const activeSubtitleUrl =
+    activeSubtitleIndex != null ? (subtitles[activeSubtitleIndex]?.url ?? null) : null;
+  useEffect(() => {
+    if (!activeSubtitleUrl) {
+      setSubtitleCues(null);
+      return;
+    }
+    const cached = subtitleCueCacheRef.current.get(activeSubtitleUrl);
+    if (cached) {
+      setSubtitleCues(cached);
+      return;
+    }
+    setSubtitleCues(null);
+    let cancelled = false;
+    fetch(activeSubtitleUrl)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.text();
+      })
+      .then((raw) => {
+        const parsed = parseVtt(raw);
+        subtitleCueCacheRef.current.set(activeSubtitleUrl, parsed);
+        if (!cancelled) setSubtitleCues(parsed);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        logEvent('player.subtitles_failed', {
+          source: effectiveSource,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSubtitleUrl]);
+
+  // Активная реплика — по ТЕКУЩЕЙ СЕКУНДЕ видео, а не по событиям дорожки:
+  // после перемотки куда угодно (и после любого переподключения плеера)
+  // субтитры сразу продолжаются с нужного места. Опрос через
+  // requestAnimationFrame, а не timeupdate: тот приходит раз в ~250 мс, и
+  // реплика заметно запаздывала бы за губами. Стейт трогаем только когда
+  // текст реально сменился, так что лишних ререндеров нет.
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
-
-    // Активная дорожка тоже 'hidden', а не 'showing': реплики нужны нам как
-    // данные, рисуем мы их сами. В 'showing' браузер поверх нашего текста
-    // нарисовал бы ещё и свой.
-    for (let i = 0; i < video.textTracks.length; i++) {
-      video.textTracks[i].mode = i === activeSubtitleIndex ? 'hidden' : 'disabled';
-    }
-
-    const track = activeSubtitleIndex != null ? video.textTracks[activeSubtitleIndex] : null;
-    if (!track) {
+    if (!video || !subtitleCues) {
       setCueText('');
       return;
     }
-
-    const onCueChange = () => {
-      const active = track.activeCues;
-      if (!active || active.length === 0) {
-        setCueText('');
-        return;
+    // null, а не '': при смене дорожки старый текст должен погаснуть сразу.
+    let last: string | null = null;
+    let raf = 0;
+    const tick = () => {
+      const text = activeCueText(subtitleCues, video.currentTime, CUE_LINE_BREAK);
+      if (text !== last) {
+        last = text;
+        setCueText(text);
       }
-      const parts: string[] = [];
-      for (let i = 0; i < active.length; i++) {
-        const cue = active[i] as VTTCue;
-        // Разметку WebVTT (<i>, <b>, <v Имя>) выбрасываем: рисуем обычным
-        // текстом, а вставлять чужой HTML в DOM ради курсива не стоит риска.
-        if (cue.text) parts.push(cue.text.replace(/<[^>]*>/g, ''));
-      }
-      setCueText(parts.join(CUE_LINE_BREAK));
+      raf = requestAnimationFrame(tick);
     };
-
-    onCueChange();
-    track.addEventListener('cuechange', onCueChange);
-    return () => track.removeEventListener('cuechange', onCueChange);
-    // subtitleReattachTick — см. её объявление: заставляет этот эффект
-    // перевыполниться после HLS.Events.MANIFEST_PARSED (в т.ч. повторного,
-    // от recoverMediaError()), когда браузер мог сбросить mode/сами объекты
-    // TextTrack без единого изменения этих двух React-стейтов.
-  }, [activeSubtitleIndex, subtitles, subtitleReattachTick]);
+    tick();
+    return () => cancelAnimationFrame(raf);
+  }, [subtitleCues]);
 
   // --- События <video> -------------------------------------------------------
   useEffect(() => {
@@ -2527,34 +2551,76 @@ export default function OwnPlayer({
   const [tapFlash, setTapFlash] = useState<'left' | 'right' | null>(null);
   const tapFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // HTMLElement, не HTMLVideoElement: используется и на самом <video>, и на
-  // кнопке-заглушке поверх него, пока видео на паузе (см. ниже) — нужны
-  // только getBoundingClientRect()/clientX, которые есть у любого элемента.
-  const onVideoDoubleClick = useCallback(
-    (e: MouseEvent<HTMLElement>) => {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const third = rect.width / 3;
+  // Одиночное и двойное касание различаем САМИ, а не через onClick +
+  // onDoubleClick. Браузер перед dblclick присылает два обычных click, и
+  // каждый из них раньше переключал паузу: первое касание ставило видео на
+  // паузу, второе снимало, и только потом приходила перемотка — в жалобе
+  // так и описано: «сначала пауза, потом перемотка». Теперь одиночное
+  // касание ждёт TAP_WINDOW_MS, не будет ли второго, и только тогда
+  // переключает паузу; второе касание в этом окне отменяет паузу и делает
+  // жест двойного касания.
+  const TAP_WINDOW_MS = 280;
+  const pendingTapRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // После двойного касания по краю каждое следующее быстрое касание того же
+  // края добавляет ещё 10 секунд сразу, без ожидания пары, — как в YouTube:
+  // тройное касание = 20 секунд, а не пауза.
+  const SEEK_STREAK_MS = 700;
+  const seekStreakRef = useRef<{ zone: 'left' | 'right'; until: number } | null>(null);
 
-      if (x < third) {
-        seekBy(-10);
-      } else if (x > third * 2) {
-        seekBy(10);
-      } else {
-        toggleFullscreen();
-        return;
-      }
-
-      setTapFlash(x < third ? 'left' : 'right');
+  const tapSeek = useCallback(
+    (zone: 'left' | 'right') => {
+      seekBy(zone === 'left' ? -10 : 10);
+      seekStreakRef.current = { zone, until: Date.now() + SEEK_STREAK_MS };
+      setTapFlash(zone);
       if (tapFlashTimerRef.current) clearTimeout(tapFlashTimerRef.current);
       tapFlashTimerRef.current = setTimeout(() => setTapFlash(null), 500);
     },
-    [seekBy, toggleFullscreen],
+    [seekBy],
+  );
+
+  // HTMLElement, не HTMLVideoElement: используется и на самом <video>, и на
+  // кнопке-заглушке поверх него, пока видео на паузе (см. ниже) — нужны
+  // только getBoundingClientRect()/clientX, которые есть у любого элемента.
+  const onVideoTap = useCallback(
+    (e: MouseEvent<HTMLElement>) => {
+      // detail === 0 — «клик» с клавиатуры (Enter/пробел на кнопке «Смотреть»):
+      // двойного нажатия там не бывает, ждать незачем.
+      if (e.detail === 0) {
+        togglePlay();
+        return;
+      }
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const third = rect.width / 3;
+      const zone = x < third ? 'left' : x > third * 2 ? 'right' : 'center';
+
+      const streak = seekStreakRef.current;
+      if (zone !== 'center' && streak && streak.zone === zone && Date.now() < streak.until) {
+        tapSeek(zone);
+        return;
+      }
+
+      if (pendingTapRef.current) {
+        clearTimeout(pendingTapRef.current);
+        pendingTapRef.current = null;
+        // Двойное касание: края — перемотка на 10 сек, середина — весь экран.
+        if (zone === 'center') toggleFullscreen();
+        else tapSeek(zone);
+        return;
+      }
+
+      pendingTapRef.current = setTimeout(() => {
+        pendingTapRef.current = null;
+        togglePlay();
+      }, TAP_WINDOW_MS);
+    },
+    [tapSeek, togglePlay, toggleFullscreen],
   );
 
   useEffect(() => {
     return () => {
       if (tapFlashTimerRef.current) clearTimeout(tapFlashTimerRef.current);
+      if (pendingTapRef.current) clearTimeout(pendingTapRef.current);
     };
   }, []);
 
@@ -2744,6 +2810,18 @@ export default function OwnPlayer({
     };
   }, [showControls, playing]);
 
+  // Панель есть только в состоянии ready — отсюда loadState в зависимостях:
+  // эффект цепляется к ней, как только она появилась.
+  useEffect(() => {
+    const el = controlsRef.current;
+    if (!el) return;
+    const measure = () => setControlsH(Math.round(el.getBoundingClientRect().height));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [loadState]);
+
   // --- Клавиатура ------------------------------------------------------------
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -2883,17 +2961,82 @@ export default function OwnPlayer({
         ? { type: 'ending', segment: skipEnding }
         : null;
 
-  // Отступ снизу у «Пропустить»/«Следующая серия» — на весь экран у телефона
-  // с вырезом (альбомная ориентация, home-индикатор сбоку) панель
-  // управления растёт на env(safe-area-inset-bottom) (см. её же класс у
-  // блока с прогресс-баром ниже), а эти кнопки стояли на фиксированных 5rem
-  // и заезжали под уже подросшую панель — нажатие «Следующая серия» попадало
-  // на элементы управления под ней. Плюсуем ту же безопасную зону поверх
-  // обычного отступа, только в fullscreen — в обычном режиме браузер сам
-  // рисует свой chrome снизу, вырез там ни при чём.
-  const overlayButtonBottomClass = fullscreen
-    ? 'bottom-[calc(5rem+env(safe-area-inset-bottom))]'
-    : 'bottom-20';
+  // Панель и всё, что над ней, видно одновременно — один признак на всех.
+  const uiVisible = controlsVisible || !playing;
+  // «Пропустить»/«Следующая серия» стоят над панелью на ИЗМЕРЕННОЙ её высоте
+  // (см. controlsH) — всегда на одном месте, видна панель или нет, чтобы
+  // кнопка не прыгала под пальцем в момент нажатия. Высота панели на весь
+  // экран уже включает безопасную зону снизу (её padding), так что вырез у
+  // телефона учтён сам собой. По бокам — та же безопасная зона, что у панели.
+  const overlayButtonStyle = { bottom: controlsH + 8 };
+  // Видна ли сейчас одна из этих кнопок — по тем же условиям, что и их
+  // рендер ниже. Нужно субтитрам, чтобы не встать под кнопку.
+  const overlayButtonShown = !!activeSkip || (nearEnd && !!nextHref);
+  const overlaySideLeft = fullscreen ? 'left-[max(0.75rem,env(safe-area-inset-left))]' : 'left-3';
+  const overlaySideRight = fullscreen ? 'right-[max(0.75rem,env(safe-area-inset-right))]' : 'right-3';
+
+  // Отметки опенинга и эндинга на шкале — из тех же данных, что и кнопка
+  // «Пропустить». Только если длительность уже известна и отрезок в неё
+  // помещается: иначе отметка легла бы за край шкалы.
+  const seekMarks = (
+    [
+      skipOpening ? { key: 'opening', label: 'опенинг', seg: skipOpening } : null,
+      skipEnding ? { key: 'ending', label: 'эндинг', seg: skipEnding } : null,
+    ] as ({ key: string; label: string; seg: SkipSegment } | null)[]
+  )
+    .filter((m): m is { key: string; label: string; seg: SkipSegment } => m !== null)
+    .filter((m) => dur > 0 && m.seg.length > 0 && m.seg.time < dur)
+    .map((m) => ({
+      key: m.key,
+      label: m.label,
+      left: (m.seg.time / dur) * 100,
+      width: (Math.min(m.seg.length, dur - m.seg.time) / dur) * 100,
+    }));
+
+  // Время под курсором над шкалой. Через ref и прямую запись в DOM, а не
+  // через стейт: mousemove приходит десятки раз в секунду, и перерисовывать
+  // ради подсказки весь плеер незачем.
+  const onSeekHover = (e: MouseEvent<HTMLDivElement>) => {
+    const tip = seekTipRef.current;
+    if (!tip || !dur) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = Math.min(Math.max(e.clientX - r.left, 0), r.width);
+    tip.textContent = formatTime((x / r.width) * dur);
+    // Не даём подсказке вылезти за край плеера (его overflow: hidden срезал
+    // бы половину текста у самого начала и конца шкалы).
+    tip.style.left = `${Math.min(Math.max(x, 22), r.width - 22)}px`;
+  };
+
+  /** Переход к следующей серии — тот же путь, что и раньше: onNext
+   *  (бесшовно), иначе обычная ссылка. Один код на кнопку в панели и на
+   *  кнопку в конце серии, чтобы они не разошлись. */
+  const renderNextEpisode = (
+    className: string,
+    children: ReactNode,
+    opts: { ariaLabel?: string; style?: CSSProperties } = {},
+  ) =>
+    !nextHref ? null : onNext ? (
+      <button
+        type="button"
+        onClick={onNext}
+        aria-label={opts.ariaLabel}
+        title={opts.ariaLabel}
+        className={className}
+        style={opts.style}
+      >
+        {children}
+      </button>
+    ) : (
+      <Link
+        href={nextHref}
+        aria-label={opts.ariaLabel}
+        title={opts.ariaLabel}
+        className={className}
+        style={opts.style}
+      >
+        {children}
+      </Link>
+    );
 
   const skipNow = () => {
     const v = videoRef.current;
@@ -2949,20 +3092,15 @@ export default function OwnPlayer({
           playsInline
           preload="metadata"
           poster={posterUrl ?? undefined}
-          onClick={togglePlay}
-          onDoubleClick={onVideoDoubleClick}
+          onClick={onVideoTap}
           className="absolute inset-0 h-full w-full"
         >
-          {/* mode ('showing'/'hidden') выставляется отдельным эффектом по
-              activeSubtitleIndex — default тут не нужен и может конфликтовать
-              с этим эффектом при первом монтировании. */}
-          {subtitles.map((s, i) => (
-            <track key={i} kind="subtitles" src={s.url} srcLang={s.lang} label={s.label} />
-          ))}
+          {/* <track> здесь нет намеренно: субтитры читаем и рисуем сами,
+              см. lib/subtitles/vtt.ts. */}
         </video>
 
         {/* Вспышка «−10 сек»/«+10 сек» — подтверждение жеста двойного тапа
-            (см. onVideoDoubleClick выше): без неё на сенсорном экране не
+            (см. onVideoTap выше): без неё на сенсорном экране не
             видно, сработало ли касание вообще, второй тап в ту же секунду
             легко принять за «не отреагировало» и повторить зря. */}
         {tapFlash && (
@@ -2980,18 +3118,24 @@ export default function OwnPlayer({
         )}
 
         {/* Субтитры рисуем сами (см. lib/subtitleStyle.ts). Положение снизу
-            зависит от панели управления: пока она видна, поднимаем текст над
-            ней, иначе он оказывался бы под кнопками и полосой перемотки.
+            зависит от панели управления: пока она видна, текст стоит над ней
+            на её ИЗМЕРЕННОЙ высоте (см. controlsH), иначе опускается к краю.
             Переход по bottom плавный — панель тоже появляется плавно, и
             рывок субтитров рядом с ней читался бы как дефект. */}
         {cueText && (
           <div
             aria-hidden="true"
-            className={[
-              'pointer-events-none absolute inset-x-0 z-10 flex justify-center px-4 text-center',
-              'transition-[bottom] duration-300 ease-out',
-              controlsVisible || !playing ? 'bottom-[4.5rem] sm:bottom-24' : 'bottom-6',
-            ].join(' ')}
+            className="pointer-events-none absolute inset-x-0 z-10 flex justify-center px-4 text-center transition-[bottom] duration-300 ease-out"
+            // Кнопка «Пропустить»/«Следующая серия» стоит на том же уровне —
+            // пока она есть, субтитры встают над ней (её высота ~28px), а не
+            // под неё: иначе реплику закрывало ровно в опенинге и титрах.
+            style={{
+              bottom: overlayButtonShown
+                ? controlsH + 8 + 28 + 6
+                : uiVisible
+                  ? controlsH + 6
+                  : 24,
+            }}
           >
             <span
               className="whitespace-pre-line rounded-lg px-2 py-0.5 font-semibold leading-snug"
@@ -3038,23 +3182,23 @@ export default function OwnPlayer({
         {!playing && !buffering && !seeking && !isEnded && !(Capacitor.isNativePlatform() && externalScreenConnected) && (
           <button
             type="button"
-            onClick={togglePlay}
-            onDoubleClick={onVideoDoubleClick}
+            onClick={onVideoTap}
             aria-label="Смотреть"
-            // bottom-16, не inset-0: полное покрытие до самого низа перекрывало
-            // кликабельную область панели управления (в частности, кнопку
-            // «Настройки») — первый клик там иногда попадал на эту кнопку
-            // (пауза/повторный play) вместо реального контрола под ней.
+            // Не до самого низа, а до верхнего края панели (её измеренная
+            // высота, см. controlsH): полное покрытие перекрывало кликабельную
+            // область панели управления (в частности, кнопку «Настройки») —
+            // первый клик там иногда попадал на эту кнопку (пауза/повторный
+            // play) вместо реального контрола под ней.
             //
-            // onDoubleClick — эта кнопка перекрывает <video> (у него тоже
-            // есть onDoubleClick={onVideoDoubleClick}, см. ниже) всё время,
-            // пока видео на паузе/ещё не стартовало — без своего обработчика
-            // двойной клик по области просмотра в этом состоянии никуда не
-            // доходил (ни до перемотки, ни до полноэкранного режима).
-            className="absolute inset-x-0 top-0 bottom-16 flex items-center justify-center"
+            // onVideoTap, а не просто togglePlay, — эта кнопка перекрывает
+            // <video> всё время, пока видео на паузе/ещё не стартовало, и
+            // двойное касание по области просмотра в этом состоянии должно
+            // работать так же (перемотка по краям, весь экран в середине).
+            className="absolute inset-x-0 top-0 z-[5] flex items-center justify-center"
+            style={{ bottom: controlsH }}
           >
-            <span className="flex h-16 w-16 items-center justify-center rounded-full bg-black/60 ring-1 ring-white/20 backdrop-blur transition hover:bg-black/80">
-              <svg viewBox="0 0 24 24" className="ml-1 h-8 w-8 fill-white">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-black shadow-lg transition hover:bg-gray-200">
+              <svg viewBox="0 0 24 24" className="ml-0.5 h-5 w-5 fill-current">
                 <path d="M8 5v14l11-7z" />
               </svg>
             </span>
@@ -3066,42 +3210,63 @@ export default function OwnPlayer({
             type="button"
             onClick={skipNow}
             className={[
-              'absolute right-3 z-10 rounded-lg bg-black/80 px-4 py-2 text-sm font-medium text-white ring-1 ring-white/20 backdrop-blur transition hover:bg-black/95',
-              overlayButtonBottomClass,
+              'absolute z-20 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-black shadow-lg transition hover:bg-gray-200',
+              overlaySideLeft,
             ].join(' ')}
+            style={overlayButtonStyle}
           >
-            {activeSkip.type === 'opening' ? 'Пропустить опенинг' : 'Пропустить титры'} →
+            {activeSkip.type === 'opening' ? 'Пропустить опенинг' : 'Пропустить титры'}
           </button>
         )}
 
-        {nearEnd && !activeSkip && nextHref && (
-          onNext ? (
-            <button
-              type="button"
-              onClick={onNext}
-              className={[
-                'absolute right-3 z-10 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-fg ring-1 ring-white/20 backdrop-blur transition hover:bg-accent-hover',
-                overlayButtonBottomClass,
-              ].join(' ')}
-            >
-              {nextLabel ?? 'Следующая серия'} →
-            </button>
-          ) : (
-            <Link
-              href={nextHref}
-              className={[
-                'absolute right-3 z-10 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-fg ring-1 ring-white/20 backdrop-blur transition hover:bg-accent-hover',
-                overlayButtonBottomClass,
-              ].join(' ')}
-            >
-              {nextLabel ?? 'Следующая серия'} →
-            </Link>
-          )
-        )}
+        {/* Конец серии — только кнопка, без миниатюры следующей серии:
+            картинка здесь ничего не добавляла, а закрывала титры. Справа, а
+            «Пропустить» — слева: если обе нужны почти одновременно (эндинг
+            в самом конце), они не встают друг на друга. */}
+        {nearEnd && !activeSkip &&
+          renderNextEpisode(
+            [
+              'absolute z-20 rounded-full bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg shadow-lg transition hover:bg-accent-hover',
+              overlaySideRight,
+            ].join(' '),
+            <>{nextLabel ?? 'Следующая серия'} →</>,
+            { style: overlayButtonStyle },
+          )}
+
+        {/* Верхняя плашка «Кинозала»: что смотрим — название, серия, озвучка
+            — и из какого источника. Появляется и прячется вместе с нижней
+            панелью. pointer-events-none: это подпись, а не кнопки, и клик
+            (двойное касание по краю тоже) должен проходить к видео под ней.
+            Стоит в разметке ДО нижней панели: меню настроек и субтитров
+            раскрываются вверх и на невысоком плеере доходят сюда — они должны
+            лечь поверх подписи, а не под неё. */}
+        <div
+          aria-hidden={!uiVisible}
+          className={[
+            'player-top pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-3 bg-gradient-to-b from-black/75 via-black/30 to-transparent px-3 pb-8 pt-2.5 transition-opacity duration-300 sm:px-4 sm:pt-3',
+            fullscreen
+              ? 'pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-[max(0.625rem,env(safe-area-inset-top))]'
+              : '',
+            uiVisible ? 'opacity-100' : 'opacity-0',
+          ].join(' ')}
+        >
+          <div className="player-title min-w-0">
+            <p className="truncate font-semibold leading-tight text-white">{animeTitle}</p>
+            {(episodeLabel || activeTranslation) && (
+              <p className="player-subtitle truncate leading-tight text-gray-300">
+                {[episodeLabel, activeTranslation?.title].filter(Boolean).join(' · ')}
+              </p>
+            )}
+          </div>
+          <span className="player-source shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-medium text-gray-200 backdrop-blur">
+            Наш плеер · {SOURCE_LABELS[effectiveSource]}
+          </span>
+        </div>
 
         <div
+          ref={controlsRef}
           className={[
-            'absolute inset-x-0 bottom-0 z-10 flex flex-col gap-1 bg-gradient-to-t from-black/90 via-black/50 to-transparent px-3 pb-2 pt-8 transition-opacity duration-300',
+            'absolute inset-x-0 bottom-0 z-10 flex flex-col bg-gradient-to-t from-black/90 via-black/45 to-transparent px-3 pb-1 pt-4 transition-opacity duration-300 sm:px-4 sm:pt-6',
             // На весь экран у телефона с вырезом панель уходила бы под
             // скругления и «чёлку» в горизонтальной ориентации — отступаем на
             // безопасную зону, но не меньше обычного.
@@ -3113,23 +3278,48 @@ export default function OwnPlayer({
             // (воспроизведено вживую: страница вокруг ползунка подсвечивается,
             // как при выделении абзаца).
             'select-none',
-            controlsVisible || !playing ? 'opacity-100' : 'pointer-events-none opacity-0',
+            uiVisible ? 'opacity-100' : 'pointer-events-none opacity-0',
           ].join(' ')}
         >
-          <input
-            type="range"
-            min={0}
-            max={dur || 0}
-            step={0.1}
-            value={Math.min(currentTime, dur || 0)}
-            onChange={(e) => seekTo(Number(e.target.value))}
-            aria-label="Перемотка"
-            disabled={!dur}
-            className="player-range h-1.5 w-full cursor-pointer appearance-none rounded-full outline-none"
-            style={{
-              background: `linear-gradient(to right, rgb(var(--accent)) ${progressPct}%, rgba(255,255,255,0.45) ${progressPct}%, rgba(255,255,255,0.45) ${bufferedPct}%, rgba(255,255,255,0.18) ${bufferedPct}%)`,
-            }}
-          />
+          {/* Шкала: перематывает тот же <input type="range">, что и раньше
+              (мышь, палец, клавиатура — как было), он лишь прозрачный и лежит
+              поверх нарисованной полосы. Устройство и размеры — .cinema-seek
+              в globals.css. */}
+          <div className="cinema-seek" onMouseMove={onSeekHover}>
+            <div className="cs-track" aria-hidden="true">
+              <div className="cs-layer bg-white/30" style={{ width: `${bufferedPct}%` }} />
+              {seekMarks.map((m) => (
+                <div
+                  key={m.key}
+                  className="cs-layer bg-white/25"
+                  style={{ left: `${m.left}%`, width: `${m.width}%` }}
+                />
+              ))}
+              <div className="cs-layer bg-accent" style={{ width: `${progressPct}%` }} />
+            </div>
+            {seekMarks.map((m) => (
+              <span
+                key={m.key}
+                aria-hidden="true"
+                className="cs-mark"
+                style={{ left: `${m.left + m.width / 2}%` }}
+              >
+                {m.label}
+              </span>
+            ))}
+            <span ref={seekTipRef} aria-hidden="true" className="cs-tip" />
+            <input
+              type="range"
+              min={0}
+              max={dur || 0}
+              step={0.1}
+              value={Math.min(currentTime, dur || 0)}
+              onChange={(e) => seekTo(Number(e.target.value))}
+              aria-label="Перемотка"
+              aria-valuetext={dur ? `${formatTime(currentTime)} из ${formatTime(dur)}` : undefined}
+              disabled={!dur}
+            />
+          </div>
 
           {/* Размеры кнопок, отступы и что прятать на узком плеере — в
               globals.css (.player-controls): там они считаются от ширины
@@ -3139,14 +3329,14 @@ export default function OwnPlayer({
               type="button"
               onClick={togglePlay}
               aria-label={playing ? 'Пауза' : 'Смотреть'}
-              className="pc-btn rounded-md transition hover:bg-white/10"
+              className="pc-play"
             >
               {playing ? (
-                <svg viewBox="0 0 24 24" className="pc-icon fill-current">
+                <svg viewBox="0 0 24 24" aria-hidden="true" className="fill-current">
                   <path d="M6 4h4v16H6zM14 4h4v16h-4z" />
                 </svg>
               ) : (
-                <svg viewBox="0 0 24 24" className="pc-icon fill-current">
+                <svg viewBox="0 0 24 24" aria-hidden="true" className="ml-[8%] fill-current">
                   <path d="M8 5v14l11-7z" />
                 </svg>
               )}
@@ -3168,6 +3358,19 @@ export default function OwnPlayer({
             >
               +10
             </button>
+
+            {/* Следующая серия — прямо в панели, не только в конце серии. Тот
+                же переход, что у кнопки в конце (renderNextEpisode). Прошлой
+                серии здесь нет намеренно: список серий под плеером уже умеет
+                это, а новый путь переключения серии — новые риски. */}
+            {renderNextEpisode(
+              'pc-btn pc-next rounded-md transition hover:bg-white/10',
+              <svg viewBox="0 0 24 24" aria-hidden="true" className="pc-icon fill-current">
+                <path d="M5 5.8v12.4a.9.9 0 0 0 1.4.75l8.6-6.2a.9.9 0 0 0 0-1.5L6.4 5.05A.9.9 0 0 0 5 5.8Z" />
+                <rect x="16.5" y="5" width="2.5" height="14" rx="1" />
+              </svg>,
+              { ariaLabel: nextLabel ?? 'Следующая серия' },
+            )}
 
             <span className="pc-time ml-1 tabular-nums text-gray-200">
               {formatTime(currentTime)}
@@ -3599,11 +3802,6 @@ export default function OwnPlayer({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="rounded-md bg-sky-500/15 px-2.5 py-1 text-xs font-medium text-sky-300">
-          Наш плеер · {SOURCE_LABELS[effectiveSource]}
-        </span>
-      </div>
     </div>
   );
 }

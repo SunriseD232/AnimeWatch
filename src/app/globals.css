@@ -553,18 +553,22 @@ body {
   background: rgba(255, 255, 255, 0.4);
 }
 
-/* Строка кнопок OwnPlayer. Размеры считаются от ШИРИНЫ ПЛЕЕРА (cqw — его
-   контейнер объявлен с container-type: inline-size), а не окна: плеер бывает
-   узким и при широком окне (крупный масштаб страницы, мини-плеер, колонка
-   на странице). Раньше размеры были фиксированными, строка не помещалась,
-   а контейнер плеера с overflow: hidden молча срезал её хвост — последние
-   кнопки просто пропадали. Теперь кнопки ужимаются вместе с плеером и все
-   остаются на месте; нижняя граница 16px + 4px отступа держит цель нажатия
-   не меньше 24×24 (WCAG 2.5.8), и только в совсем крошечном плеере ниже. */
+/* Строка кнопок OwnPlayer (облик «Кинозал»). Размеры считаются от ШИРИНЫ
+   ПЛЕЕРА (cqw — его контейнер объявлен с container-type: inline-size), а не
+   окна: плеер бывает узким и при широком окне (крупный масштаб страницы,
+   мини-плеер, колонка на странице). Раньше размеры были фиксированными,
+   строка не помещалась, а контейнер плеера с overflow: hidden молча срезал
+   её хвост — последние кнопки просто пропадали. Теперь кнопки ужимаются
+   вместе с плеером и все остаются на месте.
+
+   Интерфейс на четверть мельче прежнего (значок 15px вместо 20px): кадр
+   важнее кнопок. Но цель нажатия не меньше 24×24 (WCAG 2.5.8): значок 13px
+   плюс отступ 5.5px с каждой стороны — ровно 24. Меньше — только в совсем
+   крошечном плеере (см. max-width: 279px ниже). */
 .player-controls {
-  --pc-icon: clamp(16px, 4.8cqw, 20px);
-  --pc-pad: clamp(4px, 1.4cqw, 6px);
-  gap: clamp(2px, 1cqw, 8px);
+  --pc-icon: clamp(13px, 3.6cqw, 15px);
+  --pc-pad: clamp(5.5px, 1cqw, 6px);
+  gap: clamp(1px, 0.8cqw, 6px);
 }
 .player-controls .pc-btn {
   flex-shrink: 0;
@@ -575,9 +579,35 @@ body {
   height: var(--pc-icon);
 }
 .player-controls .pc-text {
-  font-size: clamp(10px, 2.2cqw, 12px);
+  display: inline-grid;
+  place-items: center;
+  font-size: clamp(10px, 1.7cqw, 11px);
   line-height: 1;
-  min-width: var(--pc-icon);
+  min-width: calc(var(--pc-icon) + 2 * var(--pc-pad));
+  /* Высота как у кнопок-значков: у текста строка ниже значка, и «−10» с
+     «+10» выходили 21px в высоту — меньше минимальной цели нажатия. */
+  height: calc(var(--pc-icon) + 2 * var(--pc-pad));
+  padding-block: 0;
+}
+/* Пауза — главная кнопка панели: белый круг, остальные — просто значки. */
+.player-controls .pc-play {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: clamp(26px, 4.6cqw, 33px);
+  height: clamp(26px, 4.6cqw, 33px);
+  margin-right: 2px;
+  border-radius: 9999px;
+  background: #fff;
+  color: #0b0b0f;
+  transition: background-color 0.15s ease;
+}
+.player-controls .pc-play:hover {
+  background: #e4e4e7;
+}
+.player-controls .pc-play svg {
+  width: 46%;
+  height: 46%;
 }
 /* Время — единственное, что может уступить место кнопкам: ужимается и
    обрезается, а не выталкивает кнопки за край. */
@@ -585,7 +615,7 @@ body {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  font-size: clamp(10px, 2.2cqw, 12px);
+  font-size: clamp(10px, 1.7cqw, 11px);
 }
 /* Длительность и ползунок громкости — первое, чем жертвуем на узком плеере:
    громкость остаётся доступной кнопкой звука и стрелками клавиатуры. */
@@ -594,12 +624,20 @@ body {
   display: none;
 }
 .player-controls .pc-volume {
-  width: clamp(56px, 12cqw, 80px);
+  width: clamp(42px, 9cqw, 60px);
   flex-shrink: 0;
 }
 @container (min-width: 360px) {
   .player-controls .pc-duration {
     display: inline;
+  }
+}
+/* Следующая серия в панели — на совсем узком плеере лишняя: в конце серии
+   та же кнопка всё равно появится над панелью, а строке здесь не хватает
+   места на все значки. */
+@container (max-width: 339px) {
+  .player-controls .pc-next {
+    display: none;
   }
 }
 @container (min-width: 480px) {
@@ -609,10 +647,200 @@ body {
 }
 @container (max-width: 279px) {
   .player-controls {
-    --pc-icon: 14px;
+    --pc-icon: 12px;
     --pc-pad: 3px;
     gap: 1px;
   }
+  .player-controls .pc-play {
+    width: 22px;
+    height: 22px;
+  }
+}
+
+/* Верхняя плашка «Кинозала» (название, серия, источник). Кегль тоже от
+   ширины плеера: в маленьком окне заголовок не должен съедать кадр, на весь
+   экран — теряться. На узком плеере источник прячем первым (он есть и в
+   выборе плеера над ним), на самом узком — всю плашку (см. ниже). */
+.player-title > p:first-child {
+  font-size: clamp(12px, 0.9cqw + 7px, 15px);
+}
+.player-title .player-subtitle {
+  margin-top: 1px;
+  font-size: clamp(10px, 0.4cqw + 8px, 11px);
+}
+@container (max-width: 419px) {
+  .player-source {
+    display: none;
+  }
+}
+/* Уже 360px (небольшой телефон в портретной ориентации) кадр ниже 200px,
+   и плашка сверху вместе с панелью снизу, кнопкой «Пропустить» и двумя
+   строками субтитров не помещаются — субтитры наезжали на название
+   (проверено на стенде: 280 и 340px). Название и серия и так написаны над
+   плеером на странице, поэтому здесь плашку убираем целиком. */
+@container (max-width: 359px) {
+  .player-top {
+    display: none;
+  }
+}
+
+/* Шкала перемотки «Кинозала».
+   ------------------------------------------------------------------
+   Перематывает по-прежнему НАСТОЯЩИЙ <input type="range"> — тот же, что и
+   раньше, со всеми его свойствами: перетаскивание мышью и пальцем, клик в
+   любое место, стрелки с клавиатуры, чтение скринридером. Мы меняем только
+   внешний вид: сам input прозрачный и лежит поверх, а тонкая полоса с
+   буфером, отметками опенинга/эндинга и заливкой нарисована под ним
+   обычными div'ами.
+
+   Высота input — 16px, хотя видимая полоса 3px: попадать по ней пальцем и
+   мышью так же легко, как раньше. Под курсором полоса утолщается до 5px и
+   появляется бегунок; на сенсорных экранах (hover: none) бегунок виден
+   всегда — наводить там нечем, а тянуть за что-то надо. */
+.cinema-seek {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 16px;
+}
+.cinema-seek .cs-track {
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 3px;
+  transform: translateY(-50%);
+  overflow: hidden;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.2);
+  transition: height 0.15s ease;
+}
+.cinema-seek:hover .cs-track,
+.cinema-seek:focus-within .cs-track {
+  height: 5px;
+}
+.cinema-seek .cs-layer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+}
+.cinema-seek input {
+  position: relative;
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.cinema-seek input:focus {
+  outline: none;
+}
+.cinema-seek input::-webkit-slider-runnable-track {
+  background: transparent;
+}
+.cinema-seek input::-moz-range-track {
+  background: transparent;
+}
+.cinema-seek input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border: none;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.cinema-seek input::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: none;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.cinema-seek:hover input::-webkit-slider-thumb,
+.cinema-seek input:focus-visible::-webkit-slider-thumb,
+.cinema-seek input:active::-webkit-slider-thumb {
+  opacity: 1;
+}
+.cinema-seek:hover input::-moz-range-thumb,
+.cinema-seek input:focus-visible::-moz-range-thumb,
+.cinema-seek input:active::-moz-range-thumb {
+  opacity: 1;
+}
+/* Фокус с клавиатуры — кольцо вокруг бегунка, иначе его не видно вовсе. */
+.cinema-seek input:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px rgb(var(--accent) / 0.6);
+}
+.cinema-seek input:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 3px rgb(var(--accent) / 0.6);
+}
+/* Подсказка со временем под курсором и подписи отметок — только там, где
+   есть наведение: на телефоне их некому показать. */
+.cinema-seek .cs-tip,
+.cinema-seek .cs-mark {
+  pointer-events: none;
+  position: absolute;
+  bottom: 14px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.cinema-seek .cs-tip {
+  /* Выше подписей отметок: наведение на опенинг показывает обе сразу. */
+  bottom: 28px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.85);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+.cinema-seek .cs-mark {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.75);
+}
+@media (hover: hover) {
+  .cinema-seek:hover .cs-tip {
+    opacity: 1;
+  }
+  .cinema-seek:hover .cs-mark {
+    opacity: 1;
+  }
+}
+@media (hover: none) {
+  .cinema-seek input::-webkit-slider-thumb {
+    width: 12px;
+    height: 12px;
+    opacity: 1;
+  }
+  .cinema-seek input::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    opacity: 1;
+  }
+}
+.cinema-seek input:disabled {
+  cursor: default;
+}
+.cinema-seek input:disabled::-webkit-slider-thumb {
+  opacity: 0;
+}
+.cinema-seek input:disabled::-moz-range-thumb {
+  opacity: 0;
 }
 
 /* Уважение к «уменьшить движение» в системе.

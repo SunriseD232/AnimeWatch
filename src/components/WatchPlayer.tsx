@@ -722,6 +722,8 @@ export default function WatchPlayer({
         episode: activeEpisode,
         extractSource: 'alloha',
         animeTitle,
+        // Та же подпись, что над плеером на странице («Серия 7 из 28»).
+        episodeLabel: `Серия ${activeEpisode}${total > 1 ? ` из ${total}` : ''}`,
         posterUrl,
         isAuthed,
         resumeFrom:
