@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import HeroBackdrop from '@/components/HeroBackdrop';
 import PosterImage from '@/components/PosterImage';
 import QuickListButton from '@/components/QuickListButton';
 import { PauseIcon, PlayIcon } from '@/components/social/icons';
@@ -17,8 +18,8 @@ import type { HeroData } from '@/lib/recommendations';
  * живёт здесь: слайды переключаются сами раз в 10 секунд и вручную — по
  * полоскам под кнопками, стрелками с клавиатуры и свайпом на телефоне.
  *
- * children — слот под ModeSwitch: тот же компонент, что и раньше, просто
- * рендерится оверлеем поверх картинки.
+ * Переключателя раздела поверх картинки больше нет — он переехал в шапку
+ * (см. HeaderNav.tsx), и баннер отдаёт под текст всю свою высоту.
  *
  * Высота фиксирована (не аспект-рейшо): на десктопе она же — высота соседней
  * колонки «Продолжить просмотр» (grid items-stretch). На мобильном подобрана
@@ -32,13 +33,7 @@ import type { HeroData } from '@/lib/recommendations';
  *  полоска и есть индикатор этого таймера, поэтому число одно на оба. */
 const SLIDE_MS = 10_000;
 
-export default function HeroBanner({
-  heroes,
-  children,
-}: {
-  heroes: HeroData[];
-  children?: ReactNode;
-}) {
+export default function HeroBanner({ heroes }: { heroes: HeroData[] }) {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   // Фокус внутри баннера держит слайд на месте, но ТОЛЬКО когда он стоит на
@@ -161,6 +156,10 @@ export default function HeroBanner({
         go(delta < 0 ? index + 1 : index - 1);
       }}
     >
+      {/* Живой фон страницы из профиля («Фон главной»): рисуется порталом за
+          всем содержимым, а цвета свечения берёт из картинки этого слайда. */}
+      <HeroBackdrop imageUrl={hero.backdropUrl} />
+
       {/* Backdrop'ы лежат слоями, видимый — с opacity 1: так смена слайда это
           плавное растворение, а не мигание пустым местом на время загрузки
           следующего файла.
@@ -213,12 +212,7 @@ export default function HeroBanner({
       {/* Снизу сплошной — текст читается независимо от того, что на картинке. */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
 
-      {children && <div className="absolute left-3 top-3 z-20 sm:left-4 sm:top-4">{children}</div>}
-
-      {/* top-14/sm:top-16 — забронированная полоса под ModeSwitch сверху: без
-          неё длинное название с описанием на невысоком баннере разрастались
-          вверх и перекрывали переключатель раздела. */}
-      <div className="absolute inset-x-0 bottom-0 top-14 z-10 flex flex-col justify-end gap-3 overflow-hidden p-4 sm:top-16 sm:p-6">
+      <div className="absolute inset-0 z-10 flex flex-col justify-end gap-3 overflow-hidden p-4 sm:p-6">
         {/* key — чтобы текст нового слайда не подменялся мгновенно, а
             всплывал: смена картинки идёт 500 мс, и резкая подмена подписи
             посреди неё читалась как сбой. */}

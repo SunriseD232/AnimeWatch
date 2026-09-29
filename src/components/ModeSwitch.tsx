@@ -18,9 +18,9 @@ import { SlidingPill, useSlidingPill } from '@/components/useSlidingPill';
 // Адрес у вкладки не фиксированный: он зависит от того, где мы сейчас —
 // из каталога переключатель ведёт в каталог соседнего раздела, а не на
 // главную (см. sectionHref в lib/mode.ts).
-const TABS: { value: ContentType; label: string }[] = [
-  { value: 'anime', label: 'Аниме' },
-  { value: 'cinema', label: 'Фильмы и сериалы' },
+const TABS: { value: ContentType; label: string; short: string }[] = [
+  { value: 'anime', label: 'Аниме', short: 'Аниме' },
+  { value: 'cinema', label: 'Фильмы и сериалы', short: 'Кино' },
 ];
 
 function setModeCookie(mode: ContentType) {
@@ -28,10 +28,21 @@ function setModeCookie(mode: ContentType) {
 }
 
 /**
- * Переключатель разделов вверху главной: «Аниме» ↔ «Фильмы и сериалы».
+ * Переключатель разделов «Аниме» ↔ «Фильмы и сериалы». Живёт в шапке рядом
+ * с логотипом (см. HeaderNav.tsx), раньше стоял поверх баннера главной и над
+ * каталогом — оттуда убран, чтобы не было двух одинаковых контролов.
  * Сегментированный контрол на ссылках (route-based), активный подсвечен.
+ *
+ * compact — вариант для шапки: до lg «Кино» вместо «Фильмы и сериалы» и
+ * отступы плотнее, иначе на телефоне поиску рядом не оставалось места.
  */
-export default function ModeSwitch({ active }: { active: ContentType }) {
+export default function ModeSwitch({
+  active,
+  compact = false,
+}: {
+  active: ContentType;
+  compact?: boolean;
+}) {
   // Запоминаем открытый раздел (в т.ч. при прямом заходе по URL).
   useEffect(() => {
     setModeCookie(active);
@@ -59,7 +70,10 @@ export default function ModeSwitch({ active }: { active: ContentType }) {
       // в них элемент по умолчанию растягивается на всю ширину (inline-flex
       // у flex-элемента браузер приводит к flex). Контрол шириной в две
       // вкладки уезжал рамкой на 1120px, с пустым хвостом на весь экран.
-      className="relative inline-flex self-start rounded-full border border-white/10 bg-bg-card p-1"
+      className={[
+        'relative inline-flex shrink-0 rounded-full border border-white/10 p-1',
+        compact ? 'self-center bg-white/[0.04]' : 'self-start bg-bg-card',
+      ].join(' ')}
     >
       <SlidingPill pill={pill} />
       {TABS.map((tab) => {
@@ -94,11 +108,19 @@ export default function ModeSwitch({ active }: { active: ContentType }) {
               // мобильном) — пилюля вместо аккуратной формы превращается в
               // кривой прямоугольник. Ширина у rounded-full и так по
               // содержимому, переносить нечего.
-              'press relative z-10 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200',
+              'press relative z-10 whitespace-nowrap rounded-full text-sm font-medium transition-colors duration-200',
+              compact ? 'px-3 py-1.5 sm:px-4' : 'px-4 py-2',
               isActive ? 'text-accent-fg' : 'text-gray-300 hover:text-white',
             ].join(' ')}
           >
-            {tab.label}
+            {compact ? (
+              <>
+                <span className="lg:hidden">{tab.short}</span>
+                <span className="hidden lg:inline">{tab.label}</span>
+              </>
+            ) : (
+              tab.label
+            )}
           </Link>
         );
       })}

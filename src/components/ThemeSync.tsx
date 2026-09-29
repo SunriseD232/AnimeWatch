@@ -1,7 +1,15 @@
 'use client';
 
 import { useEffect } from 'react';
-import { applyTheme, readStoredTheme, storeTheme, type Theme } from '@/lib/theme';
+import {
+  applyTheme,
+  mergeServerTheme,
+  normalizeTheme,
+  readStoredTheme,
+  sameTheme,
+  storeTheme,
+  type Theme,
+} from '@/lib/theme';
 
 /**
  * Подтягивает тему из БД и обновляет ею зеркало в localStorage — это и есть
@@ -23,13 +31,15 @@ export default function ThemeSync() {
 
         // theme === null — гость: сервер про его тему ничего не знает, и
         // затирать локальный выбор дефолтом нельзя (см. route.ts).
-        const { theme } = (await res.json()) as { theme: Theme | null };
-        if (!theme || cancelled) return;
+        const { theme: raw, backdropKnown = false } = (await res.json()) as {
+          theme: Theme | null;
+          backdropKnown?: boolean;
+        };
+        if (!raw || cancelled) return;
 
         const current = readStoredTheme();
-        if (current && current.accent === theme.accent && current.palette === theme.palette) {
-          return;
-        }
+        const theme = mergeServerTheme(normalizeTheme(raw), backdropKnown, current);
+        if (current && sameTheme(current, theme)) return;
 
         storeTheme(theme);
         applyTheme(theme);

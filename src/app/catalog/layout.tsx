@@ -1,5 +1,4 @@
 import { Suspense } from 'react';
-import ModeSwitch from '@/components/ModeSwitch';
 import CatalogFilterProvider from '@/components/catalog/CatalogFilterProvider';
 import CatalogArea from '@/components/catalog/CatalogArea';
 import CatalogToolbar from '@/components/catalog/CatalogToolbar';
@@ -64,10 +63,6 @@ export default function CatalogLayout({
 }) {
   return (
     <div className="flex flex-col gap-6">
-      {/* ModeSwitch снаружи Suspense: он ни от каких данных не зависит и
-          должен появляться сразу, не дожидаясь списка жанров. */}
-      <ModeSwitch active="anime" />
-
       {/* Suspense — из-за useSearchParams внутри провайдера: без него сборка
           падает на пререндере. Заодно закрывает и await за жанрами. */}
       <Suspense fallback={<div className="h-32 animate-pulse rounded-2xl bg-bg-card" />}>

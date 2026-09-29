@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import SignupCodeCard from '@/components/SignupCodeCard';
 import UserListView from '@/components/UserListView';
 import HistoryView from '@/components/HistoryView';
@@ -37,6 +37,8 @@ interface Props {
   localPosters: Record<string, string>;
   /** Тема из БД, прочитанная на сервере (см. ThemeSettings). */
   initialTheme: Theme;
+  /** Знает ли сервер фон (см. mergeServerTheme в lib/theme.ts). */
+  initialBackdropKnown?: boolean;
   isAdmin: boolean;
   /** Живые рубильники — только имеют смысл при isAdmin, см. profile/page.tsx. */
   relayEnabled: boolean;
@@ -89,6 +91,7 @@ export default function ProfileTabs({
   initialTab,
   localPosters,
   initialTheme,
+  initialBackdropKnown = true,
   isAdmin,
   relayEnabled,
   kodikPlayerEnabled,
@@ -100,6 +103,12 @@ export default function ProfileTabs({
   // приходят по точке на иконке профиля, и искать вкладку глазами незачем.
   const requested: Tab | undefined = requestedSection ? 'settings' : TAB_VALUES.find((t) => t === initialTab);
   const [tab, setTab] = useState<Tab>(requested ?? (incoming > 0 ? 'friends' : 'list'));
+  // Переход по ссылке на другую вкладку, когда профиль уже открыт (например,
+  // «Мой список» в шапке из «Настроек»): Next не пересоздаёт компонент, а
+  // useState выше свой начальный выбор второй раз не читает.
+  useEffect(() => {
+    if (requested) setTab(requested);
+  }, [requested]);
 
   const tabs: { value: Tab; label: string; badge?: number }[] = [
     { value: 'list', label: 'Список' },
@@ -181,6 +190,7 @@ export default function ProfileTabs({
           privacy={privacy}
           playerPrefs={playerPrefs}
           initialTheme={initialTheme}
+          initialBackdropKnown={initialBackdropKnown}
         />
       )}
       {tab === 'admin' && isAdmin && (
@@ -232,11 +242,14 @@ function SettingsTabs({
   privacy,
   playerPrefs,
   initialTheme,
+  initialBackdropKnown = true,
 }: {
   initialSection: SettingsSection;
   privacy: Privacy;
   playerPrefs: PlayerPrefs;
   initialTheme: Theme;
+  /** Знает ли сервер фон (см. mergeServerTheme в lib/theme.ts). */
+  initialBackdropKnown?: boolean;
 }) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const { rootRef, setTabRef, pill } = useSlidingPill(section);
@@ -284,7 +297,9 @@ function SettingsTabs({
         ))}
       </div>
 
-      {section === 'ui' && <ThemeSettings initialTheme={initialTheme} />}
+      {section === 'ui' && (
+        <ThemeSettings initialTheme={initialTheme} initialBackdropKnown={initialBackdropKnown} />
+      )}
       {section === 'player' && <PlayerSettings initial={playerPrefs} />}
       {section === 'privacy' && <PrivacySettings initial={privacy} />}
       {section === 'password' && <ChangePasswordForm />}

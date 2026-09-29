@@ -20,7 +20,19 @@ import { logEvent } from '@/lib/clientLog';
  * (Navbar читает профиль) — в самом инпуте похода за настройкой нет, иначе
  * шапка на каждой странице делала бы лишний запрос.
  */
-export default function SearchBox({ unified = false }: { unified?: boolean }) {
+export default function SearchBox({
+  unified = false,
+  autoFocus = false,
+  onEscape,
+}: {
+  unified?: boolean;
+  /** Сразу поставить курсор в поле — поле появилось по нажатию на лупу в
+   *  шапке (HeaderSearch), и второе нажатие уже по самому полю лишнее. */
+  autoFocus?: boolean;
+  /** Esc, когда подсказок нет: шапка сворачивает поле обратно в лупу. Пока
+   *  подсказки открыты, первый Esc закрывает только их. */
+  onEscape?: () => void;
+}) {
   const router = useRouter();
   const params = useSearchParams();
   const pathname = usePathname();
@@ -113,6 +125,10 @@ export default function SearchBox({ unified = false }: { unified?: boolean }) {
 
   const showDropdown = open && value.trim().length >= 2 && suggestions.length > 0;
 
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus({ preventScroll: true });
+  }, [autoFocus]);
+
   // Геометрия поля: список выносится порталом в body и позиционируется по
   // ней. Иначе он лежал бы внутри шапки, а у элемента с backdrop-filter
   // потомки размывают ЕГО, а не страницу под ним — размытия не было видно
@@ -172,7 +188,10 @@ export default function SearchBox({ unified = false }: { unified?: boolean }) {
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={(e) => {
-          if (!showDropdown) return;
+          if (!showDropdown) {
+            if (e.key === 'Escape') onEscape?.();
+            return;
+          }
           if (e.key === 'ArrowDown') {
             e.preventDefault();
             setActiveIndex((i) => Math.min(i + 1, suggestions.length - 1));

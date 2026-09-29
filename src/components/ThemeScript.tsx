@@ -1,4 +1,4 @@
-import { DEFAULT_THEME, THEME_STORAGE_KEY, BG_PRESETS } from '@/lib/theme';
+import { DEFAULT_THEME, THEME_STORAGE_KEY, BG_PRESETS, BACKDROP_PRESETS } from '@/lib/theme';
 
 /**
  * Синхронный скрипт в <head> — применяет сохранённую тему ДО первой
@@ -86,6 +86,10 @@ export default function ThemeScript() {
     s.setProperty('--bg', ch(pal[0]));
     s.setProperty('--bg-soft', ch(pal[1]));
     s.setProperty('--bg-card', ch(pal[2]));
+    // Фон — до первой отрисовки, как и цвета: иначе HeroBackdrop успел бы
+    // смонтироваться с «обычным» и перерисоваться через мгновение.
+    var BD = ${JSON.stringify(BACKDROP_PRESETS.map((p) => p.id))};
+    document.documentElement.dataset.backdrop = BD.indexOf(t && t.backdrop) >= 0 ? t.backdrop : ${JSON.stringify(DEFAULT_THEME.backdrop)};
   } catch (e) {}
 })();
 `;

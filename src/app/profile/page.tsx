@@ -5,7 +5,7 @@ import { isAdminEmail } from '@/lib/admin';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import { getTodaysSignupCode } from '@/lib/signupCode';
 import { getVpsRelayEnabled, getKodikPlayerEnabled } from '@/lib/settings';
-import { normalizeTheme } from '@/lib/theme';
+import { normalizeTheme, rowHasBackdrop } from '@/lib/theme';
 import { normalizeQuality } from '@/lib/playerQuality';
 import type { UserListItem, WatchedEpisode } from '@/lib/types';
 import { getLocalPosterMap } from '@/lib/posterCacheServer';
@@ -42,7 +42,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: { ta
       .limit(200),
     // Тема пользователя — рендерим настройки сразу с сохранёнными
     // значениями, без промежуточного запроса с клиента (см. lib/theme.ts).
-    supabase.from('user_theme').select('accent, palette').eq('user_id', user.id).maybeSingle(),
+    supabase.from('user_theme').select('*').eq('user_id', user.id).maybeSingle(),
     supabase
       .from('profiles')
       .select('user_id, display_name, avatar_path, preferred_quality, sync_player_quality, unified_search')
@@ -108,6 +108,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: { ta
         initialTab={searchParams.tab ?? null}
         localPosters={Object.fromEntries(localPosters)}
         initialTheme={normalizeTheme(themeRow)}
+        initialBackdropKnown={rowHasBackdrop(themeRow)}
         isAdmin={isAdmin}
         relayEnabled={relayEnabled}
         kodikPlayerEnabled={kodikPlayerEnabled}

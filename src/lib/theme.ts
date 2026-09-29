@@ -28,17 +28,40 @@
 
 export type PaletteId = 'black' | 'graphite' | 'midnight';
 
+/** Живой фон страниц с баннером (главная аниме и кино), см.
+ *  components/HeroBackdrop.tsx. */
+export type BackdropId = 'plain' | 'stars' | 'topo';
+
 export interface Theme {
   /** #rrggbb */
   accent: string;
   palette: PaletteId;
+  backdrop: BackdropId;
 }
 
 /** Синий Apple для тёмного режима — исходная палитра сайта. */
 export const DEFAULT_THEME: Theme = {
   accent: '#2997ff',
   palette: 'black',
+  backdrop: 'plain',
 };
+
+/** Варианты фона. Оба живых — со «эхом баннера»: свечение за баннером в
+ *  цветах текущего слайда. Отдельно от эха их не даём — без него узор на
+ *  чёрном выглядит оторванным от того, что на экране. */
+export const BACKDROP_PRESETS: { id: BackdropId; label: string; hint: string }[] = [
+  { id: 'plain', label: 'Обычный', hint: 'Спокойный тёмный фон без анимации' },
+  {
+    id: 'stars',
+    label: 'Созвездие',
+    hint: 'Плывущие звёзды и свечение в цветах баннера',
+  },
+  {
+    id: 'topo',
+    label: 'Топография',
+    hint: 'Текучие линии рельефа и свечение в цветах баннера',
+  },
+];
 
 /** Готовые акценты — системные цвета Apple для dark mode. Произвольный
  *  оттенок тоже можно (color-picker в ThemeSettings), это просто быстрый
@@ -100,6 +123,29 @@ export function isPaletteId(value: unknown): value is PaletteId {
   return BG_PRESETS.some((p) => p.id === value);
 }
 
+export function isBackdropId(value: unknown): value is BackdropId {
+  return BACKDROP_PRESETS.some((p) => p.id === value);
+}
+
+/**
+ * Колонка backdrop появилась миграцией 0046. Пока её нет, сервер про фон
+ * ничего не знает и отдаёт «обычный» по умолчанию — этим нельзя затирать
+ * выбор, сделанный на устройстве. Такой ответ сервера берём целиком, кроме
+ * фона: его оставляем локальный.
+ */
+export function mergeServerTheme(server: Theme, backdropKnown: boolean, local: Theme | null): Theme {
+  return !backdropKnown && local ? { ...server, backdrop: local.backdrop } : server;
+}
+
+/** Есть ли в строке user_theme колонка backdrop (см. mergeServerTheme). */
+export function rowHasBackdrop(row: unknown): boolean {
+  return !!row && typeof row === 'object' && 'backdrop' in row;
+}
+
+export function sameTheme(a: Theme, b: Theme): boolean {
+  return a.accent === b.accent && a.palette === b.palette && a.backdrop === b.backdrop;
+}
+
 /** Приводит что угодно (тело запроса, строку из localStorage, строку из БД)
  *  к валидной теме — молча заменяя мусор дефолтом. Тема не тот случай, где
  *  стоит падать с ошибкой: сломанное значение должно просто дать сайт с
@@ -109,6 +155,7 @@ export function normalizeTheme(raw: unknown): Theme {
   return {
     accent: isHexColor(source.accent) ? source.accent.toLowerCase() : DEFAULT_THEME.accent,
     palette: isPaletteId(source.palette) ? source.palette : DEFAULT_THEME.palette,
+    backdrop: isBackdropId(source.backdrop) ? source.backdrop : DEFAULT_THEME.backdrop,
   };
 }
 
@@ -244,6 +291,9 @@ export function themeToCssVars(theme: Theme): Record<string, string> {
 export function applyTheme(theme: Theme): void {
   const vars = themeToCssVars(theme);
   const root = document.documentElement;
+  // Фон — не CSS-переменная, а атрибут: его читает HeroBackdrop (следит за
+  // ним через MutationObserver, чтобы подхватить смену без перезагрузки).
+  root.dataset.backdrop = normalizeTheme(theme).backdrop;
 
   const killer = document.createElement('style');
   killer.textContent = '*,*::before,*::after{transition:none !important}';

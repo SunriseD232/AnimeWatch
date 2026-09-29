@@ -5,7 +5,6 @@ import ContinueWatchingPanel from '@/components/ContinueWatchingPanel';
 import ContinueWatchingFull from '@/components/ContinueWatchingFull';
 import type { ContinueEntry } from '@/components/ContinueCarousel';
 import HeroBanner from '@/components/HeroBanner';
-import ModeSwitch from '@/components/ModeSwitch';
 import PlannedCard from '@/components/PlannedCard';
 import RecommendedCarousel from '@/components/RecommendedCarousel';
 import ScrollCarousel from '@/components/ScrollCarousel';
@@ -94,9 +93,7 @@ async function HeroAndContinueRow() {
   if (heroes.length > 0) {
     return (
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px] lg:items-stretch">
-        <HeroBanner heroes={heroes}>
-          <ModeSwitch active="anime" />
-        </HeroBanner>
+        <HeroBanner heroes={heroes} />
         <ContinueWatchingPanel entries={entries} loggedIn={loggedIn} />
       </div>
     );
@@ -107,7 +104,6 @@ async function HeroAndContinueRow() {
   // прежней каруселью карточек: без неё они бы не показались нигде.
   return (
     <div className="flex flex-col gap-4">
-      <ModeSwitch active="anime" />
       <ContinueWatchingFull entries={entries} loggedIn={loggedIn} />
       <RecommendedFallback />
     </div>
