@@ -218,11 +218,11 @@ export default function ThemeSettings({ initialTheme: serverTheme, initialBackdr
         </div>
       </div>
 
-      {/* ——— Фон главной ——— */}
+      {/* ——— Фон ——— */}
       <div className="mt-6">
-        <p className="font-medium text-gray-200">Фон главной</p>
+        <p className="font-medium text-gray-200">Фон</p>
         <p className="mt-0.5 text-xs text-gray-400">
-          Живой фон на главной аниме и кино. В профиле его не видно: здесь нет баннера.
+          Живой фон на всех страницах. На главных свечение сверху окрашено в цвета баннера.
         </p>
 
         <div className="mt-3 grid gap-2 sm:grid-cols-3">

@@ -11,6 +11,7 @@ import OfflineSyncTrigger from '@/components/OfflineSyncTrigger';
 import { PipPlayerHost } from '@/components/pip/PipPlayerHost';
 import ThemeScript from '@/components/ThemeScript';
 import ThemeSync from '@/components/ThemeSync';
+import SiteBackdrop from '@/components/SiteBackdrop';
 import WebviewInstallHint from '@/components/WebviewInstallHint';
 
 // Inter — ближайшее веб-приближение SF Pro (см. tailwind.config.ts).
@@ -77,6 +78,8 @@ export default function RootLayout({
       <body className="min-h-screen font-sans pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
         <PwaRegister />
         <ThemeSync />
+        {/* Живой фон из профиля («Оформление» → «Фон») — на всех страницах. */}
+        <SiteBackdrop />
         <PresenceHeartbeat />
         <NativeAuthBridge />
         <OfflineSyncTrigger />

@@ -28,8 +28,7 @@
 
 export type PaletteId = 'black' | 'graphite' | 'midnight';
 
-/** Живой фон страниц с баннером (главная аниме и кино), см.
- *  components/HeroBackdrop.tsx. */
+/** Живой фон всех страниц сайта, см. components/SiteBackdrop.tsx. */
 export type BackdropId = 'plain' | 'stars' | 'topo';
 
 export interface Theme {
@@ -46,20 +45,21 @@ export const DEFAULT_THEME: Theme = {
   backdrop: 'plain',
 };
 
-/** Варианты фона. Оба живых — со «эхом баннера»: свечение за баннером в
- *  цветах текущего слайда. Отдельно от эха их не даём — без него узор на
- *  чёрном выглядит оторванным от того, что на экране. */
+/** Варианты фона. Оба живых — со свечением вверху страницы: на главных в
+ *  цветах текущего слайда баннера, на остальных страницах — в цвете акцента.
+ *  Отдельно от свечения узор не даём — на голом чёрном он выглядит
+ *  оторванным от того, что на экране. */
 export const BACKDROP_PRESETS: { id: BackdropId; label: string; hint: string }[] = [
   { id: 'plain', label: 'Обычный', hint: 'Спокойный тёмный фон без анимации' },
   {
     id: 'stars',
     label: 'Созвездие',
-    hint: 'Плывущие звёзды и свечение в цветах баннера',
+    hint: 'Плывущие звёзды и мягкое свечение сверху',
   },
   {
     id: 'topo',
     label: 'Топография',
-    hint: 'Текучие линии рельефа и свечение в цветах баннера',
+    hint: 'Текучие линии рельефа и мягкое свечение сверху',
   },
 ];
 
@@ -291,7 +291,7 @@ export function themeToCssVars(theme: Theme): Record<string, string> {
 export function applyTheme(theme: Theme): void {
   const vars = themeToCssVars(theme);
   const root = document.documentElement;
-  // Фон — не CSS-переменная, а атрибут: его читает HeroBackdrop (следит за
+  // Фон — не CSS-переменная, а атрибут: его читает SiteBackdrop (следит за
   // ним через MutationObserver, чтобы подхватить смену без перезагрузки).
   root.dataset.backdrop = normalizeTheme(theme).backdrop;
 

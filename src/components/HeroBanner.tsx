@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import HeroBackdrop from '@/components/HeroBackdrop';
 import PosterImage from '@/components/PosterImage';
 import QuickListButton from '@/components/QuickListButton';
 import { PauseIcon, PlayIcon } from '@/components/social/icons';
@@ -114,6 +113,19 @@ export default function HeroBanner({ heroes }: { heroes: HeroData[] }) {
     return () => document.removeEventListener('visibilitychange', sync);
   }, []);
 
+  // Живой фон сайта (SiteBackdrop в layout) красит свечение в цвета
+  // картинки ТЕКУЩЕГО слайда — сообщаем её атрибутом на <html>. Уходим со
+  // страницы — убираем, и фон возвращается к цвету акцента.
+  const heroImage = hero?.backdropUrl;
+  useEffect(() => {
+    if (!heroImage) return;
+    const root = document.documentElement;
+    root.dataset.heroImage = heroImage;
+    return () => {
+      if (root.dataset.heroImage === heroImage) delete root.dataset.heroImage;
+    };
+  }, [heroImage]);
+
   if (!hero) return null;
 
   const titleHref = hero.contentType === 'anime' ? `/anime/${hero.id}` : `/cinema/${hero.id}`;
@@ -156,10 +168,6 @@ export default function HeroBanner({ heroes }: { heroes: HeroData[] }) {
         go(delta < 0 ? index + 1 : index - 1);
       }}
     >
-      {/* Живой фон страницы из профиля («Фон главной»): рисуется порталом за
-          всем содержимым, а цвета свечения берёт из картинки этого слайда. */}
-      <HeroBackdrop imageUrl={hero.backdropUrl} />
-
       {/* Backdrop'ы лежат слоями, видимый — с opacity 1: так смена слайда это
           плавное растворение, а не мигание пустым местом на время загрузки
           следующего файла.

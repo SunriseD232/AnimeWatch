@@ -5,26 +5,32 @@ import { createPortal } from 'react-dom';
 import type { BackdropId } from '@/lib/theme';
 
 /**
- * Живой фон страниц с баннером (главная аниме и кино) — выбирается в профиле
- * → «Оформление» → «Фон главной» (см. BACKDROP_PRESETS в lib/theme.ts).
+ * Живой фон сайта — выбирается в профиле → «Оформление» → «Фон» (см.
+ * BACKDROP_PRESETS в lib/theme.ts). Рисуется на ВСЕХ страницах: компонент
+ * стоит в корневом layout, а не в баннере главной, как было сначала.
  *
  * Оба живых варианта состоят из двух слоёв:
- *  - «эхо баннера» — свечение за баннером в цветах ТЕКУЩЕГО слайда, плавно
- *    перетекающее при смене тайтла. Цвета считаются здесь же, из самой
- *    картинки: backdrop лежит на нашем домене (/backdrops/...), так что её
- *    можно прочитать через canvas без CORS и без доработок на сервере;
+ *  - свечение вверху страницы. На главных, где есть баннер, — в цветах
+ *    ТЕКУЩЕГО слайда («эхо баннера»), плавно перетекает при смене тайтла.
+ *    Баннер сообщает свою картинку атрибутом data-hero-image на <html> (см.
+ *    HeroBanner.tsx), цвета считаются здесь же, из самой картинки: backdrop
+ *    лежит на нашем домене (/backdrops/...), так что её можно прочитать
+ *    через canvas без CORS. На остальных страницах — в цвете акцента профиля;
  *  - узор: «Созвездие» (плывущие точки с нитями) или «Топография»
  *    (изолинии по гладкому полю), тонированный акцентом профиля.
  *
- * Рисуется в фиксированный канвас за всем содержимым (портал в <body>,
- * z-index −1): так фон один на экран и не зависит от раскладки страницы.
- * Свечение гаснет по мере прокрутки — ниже баннера оно уже ни к чему, а
- * узор остаётся приглушённым.
+ * Рисуется в фиксированный канвас за всем содержимым (z-index −1): фон один
+ * на экран и не зависит от раскладки страницы. Свечение гаснет по мере
+ * прокрутки, узор остаётся приглушённым.
  *
- * Бережём батарею: во вкладке в фоне не рисуем, изолинии пересчитываются раз
- * в ~100 мс, а не каждый кадр, канвас не выше 1.5× плотности экрана, на
- * узком экране звёзд вдвое меньше. При «уменьшить движение» — один
- * статичный кадр, перерисовка только при смене цветов или размера.
+ * Движение считается от ВРЕМЕНИ, а не от числа кадров: на мониторе 120 Гц
+ * звёзды иначе летели бы вдвое быстрее, а при подтормаживании — замирали.
+ * Изолинии рисуются каждый кадр, но не чаще 30 раз в секунду: раньше они
+ * пересчитывались раз в 100 мс, и течение шло рывками — выглядело как
+ * зависание. Бережём батарею: во вкладке в фоне не рисуем, канвас не выше
+ * 1.5× плотности экрана, на узком экране звёзд вдвое меньше. При «уменьшить
+ * движение» — один статичный кадр, перерисовка только при смене цветов или
+ * размера.
  */
 
 type Rgb = [number, number, number];
@@ -119,25 +125,49 @@ const field = (x: number, y: number, s: number) =>
 
 const TOPO_LEVELS = [-2.4, -1.6, -0.8, 0, 0.8, 1.6, 2.4];
 
-function useBackdropSetting(): BackdropId {
-  const [value, setValue] = useState<BackdropId>('plain');
+/** Цвета свечения без баннера: акцент и соседний оттенок — тот же приём,
+ *  что у картинки (два цвета), чтобы свечение не было плоским пятном. */
+function accentPalette(accent: Rgb): [Rgb, Rgb] {
+  const [h, s] = rgbToHsl(accent);
+  return [accent, hslToRgb((h + 40) % 360, Math.max(0.5, s), 0.55)];
+}
+
+interface RootState {
+  mode: BackdropId;
+  heroImage: string | null;
+  /** Растёт на любое изменение style у <html> — там живёт акцент. */
+  styleTick: number;
+}
+
+/** Всё, что фон читает с <html>: выбранный вариант, картинка баннера и
+ *  «что-то в стиле поменялось» (акцент — CSS-переменная в style). Тема может
+ *  приехать с сервера уже после монтирования (ThemeSync), а в профиле
+ *  меняется живым предпросмотром — поэтому следим, а не читаем один раз. */
+function useRootState(): RootState {
+  const [state, setState] = useState<RootState>({ mode: 'plain', heroImage: null, styleTick: 0 });
   useEffect(() => {
     const root = document.documentElement;
     const read = () => {
       const v = root.dataset.backdrop;
-      setValue(v === 'stars' || v === 'topo' ? v : 'plain');
+      setState((prev) => ({
+        mode: v === 'stars' || v === 'topo' ? v : 'plain',
+        heroImage: root.dataset.heroImage || null,
+        styleTick: prev.styleTick + 1,
+      }));
     };
     read();
-    // Тема может приехать с сервера уже после монтирования (ThemeSync).
     const mo = new MutationObserver(read);
-    mo.observe(root, { attributes: true, attributeFilter: ['data-backdrop', 'style'] });
+    mo.observe(root, {
+      attributes: true,
+      attributeFilter: ['data-backdrop', 'data-hero-image', 'style'],
+    });
     return () => mo.disconnect();
   }, []);
-  return value;
+  return state;
 }
 
-export default function HeroBackdrop({ imageUrl }: { imageUrl: string }) {
-  const mode = useBackdropSetting();
+export default function SiteBackdrop() {
+  const { mode, heroImage, styleTick } = useRootState();
   const [mounted, setMounted] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Цвета эха: откуда и куда идёт переход и когда он начался.
@@ -146,7 +176,7 @@ export default function HeroBackdrop({ imageUrl }: { imageUrl: string }) {
 
   useEffect(() => setMounted(true), []);
 
-  // Цвета текущего слайда.
+  // Цвета свечения: из картинки текущего слайда, а без баннера — из акцента.
   useEffect(() => {
     if (mode === 'plain') return;
     let cancelled = false;
@@ -165,6 +195,13 @@ export default function HeroBackdrop({ imageUrl }: { imageUrl: string }) {
       echoRef.current = { from: current, to: pal, at: now };
       redrawRef.current();
     };
+    if (!heroImage) {
+      apply(accentPalette(readAccent()));
+      return () => {
+        cancelled = true;
+      };
+    }
+    const imageUrl = heroImage;
     const cached = paletteCache.get(imageUrl);
     if (cached) {
       apply(cached);
@@ -183,7 +220,9 @@ export default function HeroBackdrop({ imageUrl }: { imageUrl: string }) {
     return () => {
       cancelled = true;
     };
-  }, [imageUrl, mode]);
+    // styleTick — без баннера цвет берётся из акцента, и его смена (живой
+    // предпросмотр в профиле) должна перекрашивать свечение сразу.
+  }, [heroImage, mode, styleTick]);
 
   // Отрисовка.
   useEffect(() => {
@@ -196,8 +235,10 @@ export default function HeroBackdrop({ imageUrl }: { imageUrl: string }) {
     let W = 0, H = 0, dpr = 1;
     let accent = readAccent();
     let stars: { x: number; y: number; vx: number; vy: number; r: number; tw: number }[] = [];
-    const topo = document.createElement('canvas');
+    // Изолинии — не чаще 30 кадров в секунду: глазу этого хватает для
+    // плавного течения, а пересчёт поля каждый кадр на 120 Гц — лишняя работа.
     let topoAt = -Infinity;
+    let lastT = performance.now();
 
     const resize = () => {
       dpr = Math.min(window.devicePixelRatio || 1, 1.5);
@@ -205,15 +246,15 @@ export default function HeroBackdrop({ imageUrl }: { imageUrl: string }) {
       H = window.innerHeight;
       canvas.width = Math.round(W * dpr);
       canvas.height = Math.round(H * dpr);
-      topo.width = canvas.width;
-      topo.height = canvas.height;
       topoAt = -Infinity;
       const n = W < 640 ? 32 : 64;
       stars = Array.from({ length: n }, () => ({
         x: Math.random() * W,
         y: Math.random() * H,
-        vx: (Math.random() - 0.5) * 0.12,
-        vy: (Math.random() - 0.5) * 0.12,
+        // Пиксели в СЕКУНДУ: до 18 px/с, в среднем около 9. Прежние
+        // 0.06 px за кадр давали пару пикселей в секунду — стояли на месте.
+        vx: (Math.random() - 0.5) * 36,
+        vy: (Math.random() - 0.5) * 36,
         r: Math.random() * 1.2 + 0.4,
         tw: Math.random() * Math.PI * 2,
       }));
@@ -241,12 +282,12 @@ export default function HeroBackdrop({ imageUrl }: { imageUrl: string }) {
       ctx.fillRect(0, 0, W, H);
     };
 
-    const drawStars = (t: number, animate: boolean) => {
+    const drawStars = (t: number, dt: number) => {
       const link = Math.min(W, 1400) * 0.1;
-      if (animate) {
+      if (dt > 0) {
         for (const p of stars) {
-          p.x += p.vx;
-          p.y += p.vy;
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
           if (p.x < 0 || p.x > W) p.vx *= -1;
           if (p.y < 0 || p.y > H) p.vy *= -1;
         }
@@ -266,7 +307,7 @@ export default function HeroBackdrop({ imageUrl }: { imageUrl: string }) {
         }
       }
       for (const p of stars) {
-        const tw = 0.55 + 0.45 * Math.sin(t / 900 + p.tw);
+        const tw = 0.55 + 0.45 * Math.sin(t / 650 + p.tw);
         ctx.fillStyle = `rgba(255,255,255,${0.3 + 0.4 * tw})`;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
@@ -275,61 +316,52 @@ export default function HeroBackdrop({ imageUrl }: { imageUrl: string }) {
     };
 
     const drawTopo = (t: number) => {
-      if (t - topoAt > 100) {
-        topoAt = t;
-        const o = topo.getContext('2d');
-        if (!o) return;
-        o.setTransform(dpr, 0, 0, dpr, 0, 0);
-        o.clearRect(0, 0, W, H);
-        const cell = Math.max(12, W / 110);
-        const cols = Math.ceil(W / cell) + 1, rows = Math.ceil(H / cell) + 1;
-        const sc = 8.8 / Math.max(W, 800);
-        const s = (t / 1000) * 0.12;
-        const v = new Float32Array(cols * rows);
-        for (let j = 0; j < rows; j++)
-          for (let i = 0; i < cols; i++) v[j * cols + i] = field(i * cell * sc, j * cell * sc, s);
-        TOPO_LEVELS.forEach((L, li) => {
-          o.beginPath();
-          for (let j = 0; j < rows - 1; j++) {
-            for (let i = 0; i < cols - 1; i++) {
-              const a = v[j * cols + i], b = v[j * cols + i + 1];
-              const c = v[(j + 1) * cols + i + 1], d = v[(j + 1) * cols + i];
-              const x = i * cell, y = j * cell;
-              const pts: number[] = [];
-              const edge = (p: number, q: number, x1: number, y1: number, x2: number, y2: number) => {
-                if (p > L !== q > L) {
-                  const k = (L - p) / (q - p);
-                  pts.push(x1 + (x2 - x1) * k, y1 + (y2 - y1) * k);
-                }
-              };
-              edge(a, b, x, y, x + cell, y);
-              edge(b, c, x + cell, y, x + cell, y + cell);
-              edge(c, d, x + cell, y + cell, x, y + cell);
-              edge(d, a, x, y + cell, x, y);
-              for (let p = 0; p + 3 < pts.length; p += 4) {
-                o.moveTo(pts[p], pts[p + 1]);
-                o.lineTo(pts[p + 2], pts[p + 3]);
+      const cell = Math.max(14, W / 100);
+      const cols = Math.ceil(W / cell) + 1, rows = Math.ceil(H / cell) + 1;
+      const sc = 8.8 / Math.max(W, 800);
+      // Втрое медленнее прежнего: рельеф едва заметно течёт, а не бежит.
+      const s = (t / 1000) * 0.04;
+      const v = new Float32Array(cols * rows);
+      for (let j = 0; j < rows; j++)
+        for (let i = 0; i < cols; i++) v[j * cols + i] = field(i * cell * sc, j * cell * sc, s);
+      TOPO_LEVELS.forEach((L, li) => {
+        ctx.beginPath();
+        for (let j = 0; j < rows - 1; j++) {
+          for (let i = 0; i < cols - 1; i++) {
+            const a = v[j * cols + i], b = v[j * cols + i + 1];
+            const c = v[(j + 1) * cols + i + 1], d = v[(j + 1) * cols + i];
+            const x = i * cell, y = j * cell;
+            const pts: number[] = [];
+            const edge = (p: number, q: number, x1: number, y1: number, x2: number, y2: number) => {
+              if (p > L !== q > L) {
+                const k = (L - p) / (q - p);
+                pts.push(x1 + (x2 - x1) * k, y1 + (y2 - y1) * k);
               }
+            };
+            edge(a, b, x, y, x + cell, y);
+            edge(b, c, x + cell, y, x + cell, y + cell);
+            edge(c, d, x + cell, y + cell, x, y + cell);
+            edge(d, a, x, y + cell, x, y);
+            for (let p = 0; p + 3 < pts.length; p += 4) {
+              ctx.moveTo(pts[p], pts[p + 1]);
+              ctx.lineTo(pts[p + 2], pts[p + 3]);
             }
           }
-          o.strokeStyle = rgba(accent, li === 3 ? 0.38 : 0.13 + (li % 2) * 0.05);
-          o.lineWidth = li === 3 ? 1.1 : 0.8;
-          o.stroke();
-        });
-      }
-      ctx.save();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.drawImage(topo, 0, 0);
-      ctx.restore();
+        }
+        ctx.strokeStyle = rgba(accent, li === 3 ? 0.38 : 0.13 + (li % 2) * 0.05);
+        ctx.lineWidth = li === 3 ? 1.1 : 0.8;
+        ctx.stroke();
+      });
     };
 
-    const draw = (t: number, animate: boolean) => {
+    /** dt — сколько секунд прошло с прошлого кадра (0 — статичный кадр). */
+    const draw = (t: number, dt: number) => {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
       const fade = Math.max(0, 1 - window.scrollY / 700);
       drawEcho(t, fade);
-      if (mode === 'stars') drawStars(t, animate);
-      else drawTopo(animate ? t : 0);
+      if (mode === 'stars') drawStars(t, dt);
+      else drawTopo(dt > 0 ? t : 0);
       // Низ экрана приглушаем: узор не должен спорить с лентами постеров.
       const g = ctx.createLinearGradient(0, H * 0.45, 0, H);
       g.addColorStop(0, 'rgba(0,0,0,0)');
@@ -342,14 +374,23 @@ export default function HeroBackdrop({ imageUrl }: { imageUrl: string }) {
     const loop = (t: number) => {
       raf = 0;
       if (document.hidden) return;
-      draw(t, true);
       raf = requestAnimationFrame(loop);
+      if (mode === 'topo') {
+        if (t - topoAt < 33) return;
+        topoAt = t;
+      }
+      // Не больше 50 мс за шаг: после паузы вкладки или долгого кадра звёзды
+      // не должны перепрыгнуть через полэкрана.
+      const dt = Math.min(0.05, Math.max(0, (t - lastT) / 1000));
+      lastT = t;
+      draw(t, dt);
     };
     const start = () => {
       if (reduce) {
         // Статичный кадр: переход цветов сразу в конечное состояние.
-        draw(performance.now() + 10_000, false);
+        draw(performance.now() + 10_000, 0);
       } else if (!raf) {
+        lastT = performance.now();
         raf = requestAnimationFrame(loop);
       }
     };
