@@ -9,6 +9,7 @@ import HeaderSearch from './HeaderSearch';
 import NotificationBell from './NotificationBell';
 import MobileDock from './MobileDock';
 import PlayerPrefsSync from './PlayerPrefsSync';
+import ProfileHint from './ProfileHint';
 import { normalizeQuality, type PlayerPrefs } from '@/lib/playerQuality';
 import SearchBox from './SearchBox';
 import SiteLogoLink from './SiteLogoLink';
@@ -39,6 +40,7 @@ export default async function Navbar() {
   let me: PublicUser | null = null;
   let incomingRequests = 0;
   let playerPrefs: PlayerPrefs = { quality: null, sync: false, unifiedSearch: false };
+  let showProfileHint = false;
   if (user) {
     // Системные уведомления (например, Vibix trial) видят только админы —
     // но это уже гарантирует RLS на стороне system_notifications, здесь
@@ -58,7 +60,10 @@ export default async function Navbar() {
       // индексу и на одного пользователя, шапку они не замедляют.
       supabase
         .from('profiles')
-        .select('user_id, display_name, avatar_path, preferred_quality, sync_player_quality, unified_search')
+        // '*' — и флаг подсказки profile_hint_seen (миграция 0047). Список
+        // колонок упал бы целиком, выкати код раньше миграции, и шапка
+        // осталась бы без аватара; со звёздочкой просто нет флага.
+        .select('*')
         .eq('user_id', user.id)
         .maybeSingle(),
       countIncomingRequests(supabase, user.id),
@@ -70,6 +75,10 @@ export default async function Navbar() {
         .limit(30),
     ]);
     me = toPublicUser(user.id, profileRow);
+    // Строки профиля ещё нет — новый пользователь, подсказку показываем. Есть,
+    // но без колонки (до миграции 0047) — не показываем: закрытие некуда было
+    // бы записать, и она всплывала бы на каждом устройстве заново.
+    showProfileHint = !profileRow || profileRow.profile_hint_seen === false;
     incomingRequests = incoming;
     playerPrefs = {
       quality: normalizeQuality(profileRow?.preferred_quality),
@@ -153,6 +162,7 @@ export default async function Navbar() {
                     вовсе — профиль переехал в нижний док (MobileDock). */}
                 <Link
                   href="/profile"
+                  data-profile-anchor
                   aria-label={incomingRequests > 0 ? `Профиль, заявок в друзья: ${incomingRequests}` : 'Профиль'}
                   title="Профиль"
                   className="press relative hidden h-9 w-9 place-items-center rounded-full text-gray-300 transition hover:bg-white/5 hover:text-white md:grid"
@@ -207,6 +217,9 @@ export default async function Navbar() {
       {/* Нижний док — только вошедшим и только на телефоне: гостю на форме
         входа некуда по нему ходить. */}
       {user && <MobileDock cookieMode={cookieMode} hasFriendRequests={incomingRequests > 0} />}
+
+      {/* Разовая подсказка «загляните в профиль» — один раз на аккаунт. */}
+      {user && <ProfileHint show={showProfileHint} />}
     </>
   );
 }

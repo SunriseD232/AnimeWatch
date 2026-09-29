@@ -64,6 +64,11 @@ export async function PATCH(request: NextRequest) {
   if (body?.unifiedSearch !== undefined) {
     patch.unified_search = !!body.unifiedSearch;
   }
+  // Только в одну сторону: подсказку «загляните в профиль» закрывают, а
+  // вернуть её обратно пользователю незачем (миграция 0047).
+  if (body?.profileHintSeen === true) {
+    patch.profile_hint_seen = true;
+  }
 
   const service = createServiceClient();
   const { data, error } = await service

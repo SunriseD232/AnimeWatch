@@ -87,7 +87,7 @@ export default function MobileDock({
           </span>
         </Link>
 
-        <DockLink href="/profile" label="Профиль" active={isProfile}>
+        <DockLink href="/profile" label="Профиль" active={isProfile} profileAnchor>
           <span className="relative">
             <svg viewBox="0 0 24 24" aria-hidden="true" className="h-6 w-6 fill-none stroke-current" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="8" r="3.5" />
@@ -110,16 +110,20 @@ function DockLink({
   href,
   label,
   active,
+  profileAnchor = false,
   children,
 }: {
   href: string;
   label: string;
   active: boolean;
+  /** К этой ссылке цепляется подсказка «загляните в профиль» (ProfileHint). */
+  profileAnchor?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <Link
       href={href}
+      data-profile-anchor={profileAnchor || undefined}
       aria-current={active ? 'page' : undefined}
       className={[
         'press flex h-full flex-1 flex-col items-center justify-center gap-1 px-2 text-[11px] font-medium leading-none transition',

@@ -230,6 +230,18 @@ body {
   animation: quick-add-in 200ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
+/* Подсказка «загляните в профиль» (components/ProfileHint.tsx) — мягко
+   проявляется, без прыжка: это предложение, а не тревога. */
+@keyframes hint-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+.animate-hint-in {
+  animation: hint-in 220ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
 /* Hero-карусель главной (см. components/HeroBanner.tsx).
 
    Обложка медленно наезжает — 16 секунд на проход при слайде в 10 секунд.
