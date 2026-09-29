@@ -3131,19 +3131,22 @@ export default function OwnPlayer({
             }}
           />
 
-          <div className="flex items-center gap-1 text-white sm:gap-2">
+          {/* Размеры кнопок, отступы и что прятать на узком плеере — в
+              globals.css (.player-controls): там они считаются от ширины
+              плеера через container queries. */}
+          <div className="player-controls flex min-w-0 items-center text-white">
             <button
               type="button"
               onClick={togglePlay}
               aria-label={playing ? 'Пауза' : 'Смотреть'}
-              className="rounded-md p-1.5 transition hover:bg-white/10"
+              className="pc-btn rounded-md transition hover:bg-white/10"
             >
               {playing ? (
-                <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
+                <svg viewBox="0 0 24 24" className="pc-icon fill-current">
                   <path d="M6 4h4v16H6zM14 4h4v16h-4z" />
                 </svg>
               ) : (
-                <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
+                <svg viewBox="0 0 24 24" className="pc-icon fill-current">
                   <path d="M8 5v14l11-7z" />
                 </svg>
               )}
@@ -3153,7 +3156,7 @@ export default function OwnPlayer({
               type="button"
               onClick={() => seekBy(-10)}
               aria-label="Назад 10 секунд"
-              className="rounded-md p-1.5 text-xs font-semibold transition hover:bg-white/10"
+              className="pc-btn pc-text rounded-md font-semibold transition hover:bg-white/10"
             >
               −10
             </button>
@@ -3161,14 +3164,14 @@ export default function OwnPlayer({
               type="button"
               onClick={() => seekBy(10)}
               aria-label="Вперёд 10 секунд"
-              className="rounded-md p-1.5 text-xs font-semibold transition hover:bg-white/10"
+              className="pc-btn pc-text rounded-md font-semibold transition hover:bg-white/10"
             >
               +10
             </button>
 
-            <span className="ml-1 text-xs tabular-nums text-gray-200">
+            <span className="pc-time ml-1 tabular-nums text-gray-200">
               {formatTime(currentTime)}
-              {dur > 0 && ` / ${formatTime(dur)}`}
+              {dur > 0 && <span className="pc-duration">{` / ${formatTime(dur)}`}</span>}
             </span>
 
             <div className="flex-1" />
@@ -3177,14 +3180,14 @@ export default function OwnPlayer({
               type="button"
               onClick={() => applyVolume(muted || volume === 0 ? 0.5 : 0)}
               aria-label={muted ? 'Включить звук' : 'Выключить звук'}
-              className="rounded-md p-1.5 transition hover:bg-white/10"
+              className="pc-btn rounded-md transition hover:bg-white/10"
             >
               {muted || volume === 0 ? (
-                <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
+                <svg viewBox="0 0 24 24" className="pc-icon fill-current">
                   <path d="M16.5 12a4.5 4.5 0 0 0-2.5-4v2.2l2.45 2.45c.03-.21.05-.43.05-.65zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0 0 21 12c0-4.28-3-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3 3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4 9.91 6.09 12 8.18V4z" />
                 </svg>
               ) : (
-                <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
+                <svg viewBox="0 0 24 24" className="pc-icon fill-current">
                   <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4-.91 7-4.49 7-8.77s-3-7.86-7-8.77z" />
                 </svg>
               )}
@@ -3197,36 +3200,11 @@ export default function OwnPlayer({
               value={muted ? 0 : volume}
               onChange={(e) => applyVolume(Number(e.target.value))}
               aria-label="Громкость"
-              className="player-range hidden h-1 w-20 cursor-pointer appearance-none rounded-full sm:block"
+              className="player-range pc-volume h-1 cursor-pointer appearance-none rounded-full"
               style={{
                 background: `linear-gradient(to right, #fff ${(muted ? 0 : volume) * 100}%, rgba(255,255,255,0.25) ${(muted ? 0 : volume) * 100}%)`,
               }}
             />
-
-            {/* Полноэкранный режим — сразу после громкости, а не последней
-                кнопкой в строке: на узком экране в портретной ориентации
-                строка не помещается целиком и обрезается с конца (нет ни
-                переноса, ни горизонтального скролла), а именно эта кнопка
-                нужнее всего. Раньше она стояла последней, после субтитров/
-                настроек/PiP, и первой пропадала — пользователь был вынужден
-                поворачивать телефон в альбомную ориентацию только чтобы
-                до неё дотянуться. */}
-            <button
-              type="button"
-              onClick={toggleFullscreen}
-              aria-label={fullscreen ? 'Выйти из полноэкранного режима' : 'На весь экран'}
-              className="shrink-0 rounded-md p-1.5 transition hover:bg-white/10"
-            >
-              {fullscreen ? (
-                <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
-                  <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z" />
-                </svg>
-              ) : (
-                <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
-                  <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" />
-                </svg>
-              )}
-            </button>
 
             {subtitles.length > 0 && (
               <div className="relative">
@@ -3246,7 +3224,7 @@ export default function OwnPlayer({
                       : `Субтитры: ${subtitles[activeSubtitleIndex]?.label ?? ''}`
                   }
                   className={[
-                    'rounded-md p-1.5 transition hover:bg-white/10',
+                    'pc-btn rounded-md transition hover:bg-white/10',
                     subsOpen ? 'bg-white/10' : '',
                     activeSubtitleIndex !== null ? 'text-white' : 'text-white/70',
                   ].join(' ')}
@@ -3254,7 +3232,7 @@ export default function OwnPlayer({
                   {/* Буквы «CC» текстом, а не рисунком: две вырезанные из
                       плашки закорючки на 20 пикселях читались как что угодно,
                       только не как субтитры. Здесь надпись видно сразу. */}
-                  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" className="pc-icon">
                     <rect
                       x="2.6"
                       y="5.6"
@@ -3414,11 +3392,11 @@ export default function OwnPlayer({
                 }}
                 aria-label="Настройки"
                 className={[
-                  'rounded-md p-1.5 transition hover:bg-white/10',
+                  'pc-btn rounded-md transition hover:bg-white/10',
                   settingsOpen ? 'bg-white/10' : '',
                 ].join(' ')}
               >
-                <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
+                <svg viewBox="0 0 24 24" className="pc-icon fill-current">
                   <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.61l-1.92-3.32a.5.5 0 0 0-.58-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.5.5 0 0 0-.58.22L2.74 8.87a.5.5 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.5.5 0 0 0-.12.61l1.92 3.32c.14.24.44.34.68.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.28.27.42.5.42h3.84c.24 0 .46-.14.5-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.24.09.54 0 .68-.22l1.92-3.32a.5.5 0 0 0-.12-.61l-2.01-1.58zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z" />
                 </svg>
               </button>
@@ -3576,11 +3554,11 @@ export default function OwnPlayer({
                   pip ? 'Выйти из режима «Картинка в картинке»' : 'Картинка в картинке'
                 }
                 className={[
-                  'rounded-md p-1.5 transition hover:bg-white/10',
+                  'pc-btn rounded-md transition hover:bg-white/10',
                   pip ? 'bg-white/10' : '',
                 ].join(' ')}
               >
-                <svg viewBox="0 0 24 24" className="h-5 w-5">
+                <svg viewBox="0 0 24 24" className="pc-icon">
                   <rect
                     x="3"
                     y="5"
@@ -3594,6 +3572,29 @@ export default function OwnPlayer({
                 </svg>
               </button>
             )}
+
+            {/* Полноэкранный режим — последней кнопкой, как в привычных
+                плеерах. Раньше её держали сразу после громкости, потому что
+                на узком плеере строка обрезалась с конца и последняя кнопка
+                пропадала первой. Теперь строка ужимается под ширину плеера
+                (см. .player-controls в globals.css) и не обрезается, так что
+                кнопке можно вернуться на своё место. */}
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              aria-label={fullscreen ? 'Выйти из полноэкранного режима' : 'На весь экран'}
+              className="pc-btn rounded-md transition hover:bg-white/10"
+            >
+              {fullscreen ? (
+                <svg viewBox="0 0 24 24" className="pc-icon fill-current">
+                  <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" className="pc-icon fill-current">
+                  <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" />
+                </svg>
+              )}
+            </button>
           </div>
         </div>
       </div>

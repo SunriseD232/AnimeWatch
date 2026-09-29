@@ -553,6 +553,68 @@ body {
   background: rgba(255, 255, 255, 0.4);
 }
 
+/* Строка кнопок OwnPlayer. Размеры считаются от ШИРИНЫ ПЛЕЕРА (cqw — его
+   контейнер объявлен с container-type: inline-size), а не окна: плеер бывает
+   узким и при широком окне (крупный масштаб страницы, мини-плеер, колонка
+   на странице). Раньше размеры были фиксированными, строка не помещалась,
+   а контейнер плеера с overflow: hidden молча срезал её хвост — последние
+   кнопки просто пропадали. Теперь кнопки ужимаются вместе с плеером и все
+   остаются на месте; нижняя граница 16px + 4px отступа держит цель нажатия
+   не меньше 24×24 (WCAG 2.5.8), и только в совсем крошечном плеере ниже. */
+.player-controls {
+  --pc-icon: clamp(16px, 4.8cqw, 20px);
+  --pc-pad: clamp(4px, 1.4cqw, 6px);
+  gap: clamp(2px, 1cqw, 8px);
+}
+.player-controls .pc-btn {
+  flex-shrink: 0;
+  padding: var(--pc-pad);
+}
+.player-controls .pc-icon {
+  width: var(--pc-icon);
+  height: var(--pc-icon);
+}
+.player-controls .pc-text {
+  font-size: clamp(10px, 2.2cqw, 12px);
+  line-height: 1;
+  min-width: var(--pc-icon);
+}
+/* Время — единственное, что может уступить место кнопкам: ужимается и
+   обрезается, а не выталкивает кнопки за край. */
+.player-controls .pc-time {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: clamp(10px, 2.2cqw, 12px);
+}
+/* Длительность и ползунок громкости — первое, чем жертвуем на узком плеере:
+   громкость остаётся доступной кнопкой звука и стрелками клавиатуры. */
+.player-controls .pc-duration,
+.player-controls .pc-volume {
+  display: none;
+}
+.player-controls .pc-volume {
+  width: clamp(56px, 12cqw, 80px);
+  flex-shrink: 0;
+}
+@container (min-width: 360px) {
+  .player-controls .pc-duration {
+    display: inline;
+  }
+}
+@container (min-width: 480px) {
+  .player-controls .pc-volume {
+    display: block;
+  }
+}
+@container (max-width: 279px) {
+  .player-controls {
+    --pc-icon: 14px;
+    --pc-pad: 3px;
+    gap: 1px;
+  }
+}
+
 /* Уважение к «уменьшить движение» в системе.
    ------------------------------------------------------------------
    На сайте движется многое: подъём секций при появлении, лифт карточек
