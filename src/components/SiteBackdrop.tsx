@@ -435,7 +435,10 @@ export default function SiteBackdrop() {
     <canvas
       ref={canvasRef}
       aria-hidden="true"
-      className="pointer-events-none fixed inset-0 -z-10 h-full w-full"
+      // -z-20, а не -z-10: у страниц есть свои подложки на -z-10 (размытый
+      // постер в шапке тайтла). На одном уровне канвас, стоящий в разметке
+      // позже, рисовался ПОВЕРХ них — звёзды и линии шли прямо по подложке.
+      className="pointer-events-none fixed inset-0 -z-20 h-full w-full"
     />,
     document.body,
   );

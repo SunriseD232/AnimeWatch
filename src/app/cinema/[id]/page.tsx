@@ -191,11 +191,18 @@ export default async function CinemaPage({
       {/* Шапка — постер как размытая подложка на весь блок (см. ту же
           обёртку на странице аниме). */}
       <div className="relative">
+        {/* Затемнённая подложка — всегда, даже без постера: за страницей
+            может двигаться живой фон из профиля, и текст шапки должен лежать
+            на спокойном тёмном поле. Затемнение именно в этом слое на -z-10,
+            а не фоном у обёртки: так не нужен isolate, и выпадающие меню
+            кнопок («В список», «Скачать», оценка) по-прежнему выходят поверх
+            всей страницы. */}
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 -z-10 overflow-hidden rounded-3xl bg-bg/75 ring-1 ring-white/[0.06]"
+        >
         {item.poster && (
-          <div
-            aria-hidden="true"
-            className="absolute inset-0 -z-10 overflow-hidden rounded-3xl"
-          >
+          <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={item.poster}
@@ -203,8 +210,9 @@ export default async function CinemaPage({
               className="h-full w-full scale-110 object-cover object-top opacity-40 blur-3xl"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/70 to-bg/30" />
-          </div>
+          </>
         )}
+        </div>
         <div className="flex flex-col gap-5 p-5 sm:flex-row sm:p-8">
         <div className="relative mx-auto aspect-[2/3] w-40 shrink-0 self-start overflow-hidden rounded-2xl bg-bg-card ring-1 ring-white/5 sm:mx-0 sm:w-48">
           {item.poster ? (
@@ -333,6 +341,13 @@ export default async function CinemaPage({
       </div>
       </div>
 
+      {/* Описание и серии — на затемнённой подложке, как и шапка выше: за
+          страницей может двигаться живой фон из профиля (SiteBackdrop), и
+          читать текст поверх плывущих звёзд или линий мешало. Подложка не
+          positioned и без isolate — выпадающие меню кнопок шапки должны
+          по-прежнему ложиться поверх неё. */}
+      {(item.description || (item.isSerial && total > 1 && item.seasons.length > 0)) && (
+        <div className="flex flex-col gap-8 rounded-3xl bg-bg/75 p-5 ring-1 ring-white/[0.06] sm:p-8">
       {/* Описание */}
       {item.description && (
         <section className="flex flex-col gap-2">
@@ -358,6 +373,8 @@ export default async function CinemaPage({
             posterUrl={item.poster}
           />
         </section>
+      )}
+        </div>
       )}
 
       {/* Похожее — отдельный стрим, см. SimilarCinemaTitles/комментарий вверху файла. */}
