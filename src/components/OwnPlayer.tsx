@@ -44,6 +44,35 @@ interface WebkitPipVideoElement extends HTMLVideoElement {
   webkitPresentationMode?: 'picture-in-picture' | 'inline' | 'fullscreen';
 }
 
+/**
+ * iPhone/iPad (в том числе iPadOS, который представляется маком: MacIntel +
+ * сенсорный экран) и наше iOS-приложение (WKWebView, тот же UA). Нужен
+ * только для выбора движка videoseed — см. ветку нативного HLS ниже.
+ */
+function isAppleTouchDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  if (/iPad|iPhone|iPod/.test(navigator.userAgent)) return true;
+  return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+}
+
+/**
+ * Варианты из мастер-плейлиста: высота из RESOLUTION и ссылка следующей
+ * строкой. Ссылки там уже наши (/api/proxy/raw, см. rewriteM3U8), так что
+ * их можно отдавать в <video> как есть. Пустой список — это не мастер, а
+ * сразу медиа-плейлист.
+ */
+function parseMasterVariants(text: string): { height: number; url: string }[] {
+  const lines = text.split(/\r?\n/);
+  const variants: { height: number; url: string }[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].startsWith('#EXT-X-STREAM-INF')) continue;
+    const height = Number(/RESOLUTION=\d+x(\d+)/.exec(lines[i])?.[1]);
+    const url = lines.slice(i + 1).find((l) => l.trim() && !l.startsWith('#'))?.trim();
+    if (url && Number.isFinite(height) && height > 0) variants.push({ height, url });
+  }
+  return variants.sort((a, b) => b.height - a.height);
+}
+
 interface QualityLevel {
   /** Индекс уровня в hls.levels — то, что подставляется в hls.currentLevel. */
   index: number;
@@ -562,6 +591,9 @@ export default function OwnPlayer({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<HlsType | null>(null);
+  /** Videoseed на iOS играет через нативный HLS одним вариантом качества
+   *  (см. эффект подключения источника) — качество там меняется заменой src. */
+  const nativeVariantModeRef = useRef(false);
   const dashRef = useRef<MediaPlayerClass | null>(null);
   // Счётчик подряд идущих фатальных network-ошибок hls.js в рамках ТЕКУЩЕГО
   // подключения — см. Hls.Events.ERROR ниже. Сбрасывается на каждый новый
@@ -1268,6 +1300,60 @@ export default function OwnPlayer({
       }
       setQualityLevels([]);
       setCurrentLevel(-1);
+
+      // Videoseed на iPhone/iPad — нативный HLS Safari вместо hls.js. Разбор
+      // жалобы «Фонари, s1e1, не смотрится на iPhone» (2026-10-02, iOS
+      // 17.6.1): через hls.js (на iOS 17.1+ он идёт поверх
+      // ManagedMediaSource) серия встала посреди обычного просмотра на
+      // 1600.39с при буфере до 1632с, без единой ошибки сети или hls.js, а
+      // каждая следующая попытка висела уже на ресюм-сике. Сам поток в этом
+      // месте чистый (проверено по сегментам: непрерывные PTS/DTS, тот же
+      // SPS, регулярные ключевые кадры), а та же перемотка в hls.js на
+      // десктопном Chrome проходит на всех позициях — значит, ломается
+      // именно связка hls.js + MSE в Safari на iOS. seek_watchdog_fired у
+      // videoseed на iOS в логах был и у других людей (iOS 18.7).
+      //
+      // Мастер Safari целиком не отдаём: у videoseed переключение качества
+      // на лету тоже вешает воспроизведение (см. pinWhenAuto ниже), а
+      // нативный плеер переключает его сам и запретить не даёт. Поэтому
+      // читаем мастер, выбираем ОДИН вариант по настройке профиля (или
+      // выбранный в меню — dashQualityHeight) и отдаём <video> только его.
+      // Смена качества — перезагрузка src, как у Alloha (см. changeQuality).
+      if (isHls && effectiveSource === 'videoseed' && isAppleTouchDevice() && video.canPlayType('application/vnd.apple.mpegurl')) {
+        nativeVariantModeRef.current = true;
+        const masterUrl = requestUrl();
+        let variants: { height: number; url: string }[] = [];
+        try {
+          const res = await fetch(masterUrl, { signal: AbortSignal.timeout(20_000) });
+          if (res.ok) variants = parseMasterVariants(await res.text());
+        } catch {
+          // Не прочитали мастер — ниже отдаём его Safari как есть: пусть
+          // лучше с переключением качества, чем вовсе без видео.
+        }
+        if (cancelled) return;
+        if (variants.length === 0) {
+          video.src = masterUrl;
+          return;
+        }
+        const levels = variants.map((v, index) => ({ index, height: v.height }));
+        const heights = variants.map((v) => v.height);
+        // «Авто» у videoseed — «максимум и зафиксировать», как и в hls.js-ветке.
+        const activeHeight =
+          dashQualityHeight ?? pickQualityHeight(heights, readPreferredQuality()) ?? heights[0];
+        const activeIndex = Math.max(0, heights.indexOf(activeHeight));
+        setQualityLevels(levels);
+        setCurrentLevel(activeIndex);
+        logEvent('player.native_hls', {
+          source: effectiveSource,
+          shikimoriId,
+          season,
+          episode,
+          height: heights[activeIndex],
+        });
+        video.src = new URL(variants[activeIndex].url, window.location.origin + masterUrl).toString();
+        return;
+      }
+      nativeVariantModeRef.current = false;
 
       if (isHls) {
         const { default: Hls } = await import('hls.js');
@@ -2752,11 +2838,14 @@ export default function OwnPlayer({
       // качество — другой источник целиком (?q=<height>), а не ABR-уровень
       // внутри одного. Меняем src через dashQualityHeight, что перезапускает
       // резолв (как смена озвучки), сохраняя позицию через seekTargetRef.
-      const lvl = qualityLevels[index];
+      // Так же и videoseed на iOS (нативный HLS одним вариантом): там ?q=
+      // сервер не читает, вариант по dashQualityHeight выбирает сам плеер.
+      // «Авто» у него — самое высокое качество, как и в hls.js-ветке.
+      const lvl = qualityLevels[index === -1 && nativeVariantModeRef.current ? 0 : index];
       if (!lvl) return;
       seekTargetRef.current = currentTime > 1 ? currentTime : resumeFrom;
       setDashQualityHeight(lvl.height);
-      setCurrentLevel(index);
+      setCurrentLevel(lvl.index);
     },
     [
       qualityLevels,
