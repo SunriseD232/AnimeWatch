@@ -686,6 +686,15 @@ export default function OwnPlayer({
    */
   const PLAYBACK_STALL_TICKS_AFTER_SEEK = 4;
   const SEEK_GRACE_MS = 30_000;
+  /** Пауза не от пользователя в пределах этого окна после того, как мы сами
+   *  вернули звук, — ответ Safari на возврат звука без жеста (см.
+   *  autoUnmutedAtRef). На iPad пауза приходит в пределах десятков мс. */
+  const AUTO_UNMUTE_PAUSE_WINDOW_MS = 1_500;
+  /** Столько пауз не от пользователя за STRAY_PAUSE_WINDOW_MS — это уже цикл,
+   *  а не случайность (см. strayPausesRef в onPause). Живой человек
+   *  столько раз сам не ставит на паузу, а такие паузы тут не считаются. */
+  const STRAY_PAUSE_LIMIT = 6;
+  const STRAY_PAUSE_WINDOW_MS = 10_000;
   /**
    * Прежде чем пересоздавать плеер, пробуем перепрыгнуть ДЫРУ В БУФЕРЕ.
    *
@@ -739,6 +748,26 @@ export default function OwnPlayer({
   // возвращаем звук обратно, но только если заглушили ЭТО МЫ, а не если
   // пользователь сам нажал «выкл. звук».
   const autoplayMutedRef = useRef(false);
+  // Safari (WebKit) ставит видео на паузу, если ему вернуть звук без жеста
+  // пользователя — а автозапуск следующей серии или открытие страницы без
+  // касания как раз такой случай. Раньше onPlay возвращал звук сразу же,
+  // Safari тут же ставил паузу, canplay снова звал attemptPlay — и так по
+  // кругу десятки раз в секунду: каждая пауза ещё и сохраняла прогресс, и
+  // страница захлёбывалась запросами до полной глухоты (iPad, 2026-10-05:
+  // до 38 POST /api/progress в секунду, «зависает намертво» после конца
+  // серии, «пауза-play бесконечно» при открытии вкладки).
+  //
+  // autoUnmutedAtRef — когда МЫ последний раз вернули звук (не пользователь
+  // кнопкой): пауза, пришедшая вскоре после этого не от пользователя, —
+  // ответ браузера на этот возврат. autoUnmuteBlockedRef — браузер так уже
+  // ответил в этом плеере: больше сами звук не возвращаем, ждём жеста (см.
+  // эффект «звук по первому касанию»). Живут весь срок жизни плеера, а не
+  // одного подключения: политика браузера между сериями не меняется.
+  const autoUnmutedAtRef = useRef(0);
+  const autoUnmuteBlockedRef = useRef(false);
+  // Моменты недавних пауз не от пользователя — предохранитель от любого
+  // цикла play/pause, не только описанного выше (см. onPause).
+  const strayPausesRef = useRef<number[]>([]);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onTimeUpdateRef = useRef(onTimeUpdate);
   onTimeUpdateRef.current = onTimeUpdate;
@@ -1058,6 +1087,11 @@ export default function OwnPlayer({
 
   const applyVolume = useCallback((next: number) => {
     const clamped = Math.min(1, Math.max(0, next));
+    // Громкость выбрал человек сам (кнопка, ползунок, клавиши — всё это
+    // жесты) — автоматический мьют больше не наш, возвращать звук
+    // самостоятельно не нужно (см. autoUnmuteBlockedRef).
+    autoplayMutedRef.current = false;
+    autoUnmutedAtRef.current = 0;
     setVolume(clamped);
     setMuted(clamped === 0);
     const v = videoRef.current;
@@ -1066,6 +1100,37 @@ export default function OwnPlayer({
       v.muted = clamped === 0;
     }
     window.localStorage.setItem(VOLUME_KEY, String(clamped));
+  }, []);
+
+  // --- Звук по первому касанию ------------------------------------------------
+  // Если Safari не дал вернуть звук сам (см. autoUnmuteBlockedRef), видео
+  // играет беззвучно — возвращаем звук на первом же клике/клавише где угодно
+  // на странице: внутри обработчика жеста браузер это разрешает. Слушаем
+  // click и keydown, а не touchend/pointerdown: касание, ставшее прокруткой,
+  // жестом для браузера не считается, и Safari снова поставил бы паузу.
+  // Клики по самим регуляторам звука пропускаем — они вызывают applyVolume и
+  // сами решают, что делать (иначе кнопка «включить звук» включала бы его
+  // здесь и тут же выключала своим onClick).
+  useEffect(() => {
+    const onGesture = (e: Event) => {
+      if (!autoUnmuteBlockedRef.current || !autoplayMutedRef.current) return;
+      if (e.target instanceof Element && e.target.closest('[data-volume-control]')) return;
+      // «m» — горячая клавиша звука, её обработчик сам вызовет applyVolume.
+      if (e instanceof KeyboardEvent && e.key === 'm') return;
+      const v = videoRef.current;
+      if (!v || v.paused) return;
+      autoplayMutedRef.current = false;
+      autoUnmuteBlockedRef.current = false;
+      autoUnmutedAtRef.current = Date.now();
+      v.muted = false;
+      setMuted(false);
+    };
+    document.addEventListener('click', onGesture, true);
+    document.addEventListener('keydown', onGesture, true);
+    return () => {
+      document.removeEventListener('click', onGesture, true);
+      document.removeEventListener('keydown', onGesture, true);
+    };
   }, []);
 
   // seekTargetRef сбрасываем к серверному resumeFrom ТОЛЬКО при смене
@@ -1167,7 +1232,11 @@ export default function OwnPlayer({
     setCurrentTime(0);
     setDuration(null);
     userPausedRef.current = false;
-    autoplayMutedRef.current = false;
+    // Если звук не дал вернуть Safari (autoUnmuteBlockedRef), мьют остаётся
+    // нашим и на следующей серии — иначе первое же касание его не вернёт
+    // (см. эффект «звук по первому касанию»).
+    autoplayMutedRef.current = autoUnmuteBlockedRef.current;
+    strayPausesRef.current = [];
     // playingRef/playing тоже сбрасываем здесь — иначе при переключении
     // серии/озвучки, начатом ПОКА предыдущее видео ещё играло, они остаются
     // залипшими в true: <video> размонтируется целиком, пока loadState —
@@ -2078,13 +2147,13 @@ export default function OwnPlayer({
       playingRef.current = true;
       setPlaying(true);
       setIsEnded(false);
-      if (autoplayMutedRef.current) {
-        // Мьют был нужен только чтобы обойти политику браузера на старте —
-        // как только воспроизведение реально пошло, браузеры не блокируют
-        // возврат звука у УЖЕ играющего видео (в отличие от запуска сразу
-        // со звуком), поэтому сразу возвращаем сохранённую громкость, а не
-        // оставляем висеть на «выкл. звук» в ожидании ручного клика.
+      if (autoplayMutedRef.current && !autoUnmuteBlockedRef.current) {
+        // Мьют был нужен только чтобы обойти политику браузера на старте.
+        // Chrome и Firefox дают вернуть звук УЖЕ играющему видео — пробуем
+        // сразу, чтобы не висеть на «выкл. звук» до ручного клика. Safari
+        // вместо этого ставит паузу — это ловит onPause ниже и откатывает.
         autoplayMutedRef.current = false;
+        autoUnmutedAtRef.current = Date.now();
         video.muted = false;
         setMuted(false);
       }
@@ -2092,6 +2161,37 @@ export default function OwnPlayer({
     const onPause = () => {
       playingRef.current = false;
       setPlaying(false);
+      if (userPausedRef.current || video.ended) {
+        save();
+        return;
+      }
+      const now = Date.now();
+      if (autoUnmutedAtRef.current > 0 && now - autoUnmutedAtRef.current < AUTO_UNMUTE_PAUSE_WINDOW_MS) {
+        // Браузер ответил паузой на возврат звука без жеста (Safari) —
+        // возвращаемся к беззвучному воспроизведению и больше сами звук не
+        // трогаем: вернётся по первому касанию (см. эффект ниже). Прогресс
+        // не сохраняем — позиция та же, что секунду назад.
+        autoUnmutedAtRef.current = 0;
+        autoUnmuteBlockedRef.current = true;
+        autoplayMutedRef.current = true;
+        video.muted = true;
+        setMuted(true);
+        logEvent('player.autounmute_blocked', { source: effectiveSource, shikimoriId, season, episode });
+        video.play().catch(() => {});
+        return;
+      }
+      // Предохранитель: пауз не от пользователя слишком много за короткое
+      // время — значит, что-то снова гоняет play/pause по кругу. Останавливаем
+      // автозапуск (как будто пауза ручная) и ждём нажатия play, вместо того
+      // чтобы молотить сохранения прогресса и вешать страницу.
+      const recent = strayPausesRef.current.filter((t) => now - t < STRAY_PAUSE_WINDOW_MS);
+      recent.push(now);
+      strayPausesRef.current = recent;
+      if (recent.length >= STRAY_PAUSE_LIMIT) {
+        strayPausesRef.current = [];
+        userPausedRef.current = true;
+        logEvent('player.pause_loop_stopped', { source: effectiveSource, shikimoriId, season, episode });
+      }
       save();
     };
     const onEndedEvt = () => {
@@ -3471,6 +3571,7 @@ export default function OwnPlayer({
             <button
               type="button"
               onClick={() => applyVolume(muted || volume === 0 ? 0.5 : 0)}
+              data-volume-control
               aria-label={muted ? 'Включить звук' : 'Выключить звук'}
               className="pc-btn rounded-md transition hover:bg-white/10"
             >
@@ -3491,6 +3592,7 @@ export default function OwnPlayer({
               step={0.05}
               value={muted ? 0 : volume}
               onChange={(e) => applyVolume(Number(e.target.value))}
+              data-volume-control
               aria-label="Громкость"
               className="player-range pc-volume h-1 cursor-pointer appearance-none rounded-full"
               style={{
