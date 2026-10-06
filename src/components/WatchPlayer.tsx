@@ -24,6 +24,8 @@ import type { ContentType, WatchProgress } from '@/lib/types';
 import { formatTime } from '@/lib/format';
 import { logEvent } from '@/lib/clientLog';
 import { usePipPlayerHost } from '@/components/pip/PipPlayerHost';
+import { useWatchParty } from '@/components/party/WatchPartyProvider';
+import WatchPartyPanel from '@/components/party/WatchPartyPanel';
 import EpisodeComments from '@/components/social/EpisodeComments';
 import { XIcon } from '@/components/social/icons';
 
@@ -701,6 +703,49 @@ export default function WatchPlayer({
     return () => clearInterval(id);
   }, [source, hasOwnPlayer, shikimoriId, total, kodikInitialTranslationId]);
 
+  // --- Совместный просмотр ------------------------------------------------
+  // Как в Player.tsx: комната работает только с «Нашим плеером» — держим
+  // вкладку на нём, сообщаем комнате, что открыто, и идём за остальными.
+  // Сезон у аниме один (1), id озвучки Yummy свои у каждой серии — комната
+  // сверяет их только в пределах одной серии.
+  const watchParty = useWatchParty();
+  const inParty = watchParty.isPartyTitle(contentType, shikimoriId) && hasOwnPlayer;
+  useEffect(() => {
+    if (inParty && source !== 'own') setSource('own');
+  }, [inParty, source]);
+  const { reportContext } = watchParty;
+  useEffect(() => {
+    reportContext(
+      inParty && source === 'own'
+        ? { contentType, shikimoriId, season: 1, episode: activeEpisode, translationId: ownPlayerTranslationId }
+        : null,
+    );
+  }, [reportContext, inParty, source, contentType, shikimoriId, activeEpisode, ownPlayerTranslationId]);
+  useEffect(() => () => reportContext(null), [reportContext]);
+  const remoteTarget = watchParty.remoteTarget;
+  // Каждое указание комнаты (key) применяем один раз — см. Player.tsx.
+  const partyEpisodeKeyRef = useRef(0);
+  const partyTranslationKeyRef = useRef(0);
+  useEffect(() => {
+    if (!remoteTarget || !inParty) return;
+    if (remoteTarget.episode !== activeEpisodeRef.current) {
+      if (partyEpisodeKeyRef.current === remoteTarget.key) return;
+      partyEpisodeKeyRef.current = remoteTarget.key;
+      void switchEpisodeRef.current(remoteTarget.episode);
+      return;
+    }
+    partyEpisodeKeyRef.current = remoteTarget.key;
+    if (
+      partyTranslationKeyRef.current !== remoteTarget.key &&
+      remoteTarget.translationId != null &&
+      ownPlayerTranslations.some((t) => t.id === remoteTarget.translationId)
+    ) {
+      partyTranslationKeyRef.current = remoteTarget.key;
+      if (remoteTarget.translationId !== ownPlayerTranslationId) setOwnPlayerTranslationId(remoteTarget.translationId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remoteTarget?.key, inParty, activeEpisode, ownPlayerTranslations]);
+
   // --- Держим OwnPlayer в PipPlayerHost в курсе актуальных пропсов -------
   // Реальный <video>/hls.js живёт не здесь (см. PipPlayerHost) — чтобы
   // пережить уход со страницы при активном Picture-in-Picture. Пока вкладка
@@ -750,6 +795,8 @@ export default function WatchPlayer({
           activeOwnPlayerTranslationTitleRef.current = translation?.title ?? null;
           setOwnPlayerTranslationId(translation?.id ?? null);
         },
+        partyControl: inParty ? watchParty.playerControlRef : undefined,
+        onPartyUserAction: inParty ? watchParty.reportUserAction : undefined,
       },
       ownPlayerDockRef.current,
       `${watchBase}/${shikimoriId}/${activeEpisode}`,
@@ -1103,6 +1150,16 @@ export default function WatchPlayer({
             </button>
           </div>
         </div>
+      )}
+
+      {isAuthed && hasOwnPlayer && (
+        <WatchPartyPanel
+          contentType={contentType}
+          shikimoriId={shikimoriId}
+          title={animeTitle}
+          season={1}
+          episode={activeEpisode}
+        />
       )}
 
       {!isAuthed && (

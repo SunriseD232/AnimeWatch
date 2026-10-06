@@ -1,7 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+  type MutableRefObject,
+  type ReactNode,
+} from 'react';
 import { Capacitor } from '@capacitor/core';
 import { useProgressSaver } from '@/hooks/useProgressSaver';
 import { logEvent } from '@/lib/clientLog';
@@ -25,6 +34,7 @@ import {
 } from '@/lib/playerQuality';
 import type { ContentType } from '@/lib/types';
 import type { ExtractSource, Subtitle } from '@/lib/extract/types';
+import type { PartyPlayerControl, PartyUserAction } from '@/lib/party/types';
 import type { YummyTranslation } from '@/lib/video/yummy';
 import type HlsType from 'hls.js';
 import type { MediaPlayerClass } from 'dashjs';
@@ -171,6 +181,14 @@ interface Props {
    * ошибки, а продолжаем ждать: новый проп вот-вот приедет.
    */
   onTranslationUnavailable?: (id: number, silent?: boolean) => boolean;
+  /** Совместный просмотр: сюда плеер кладёт объект управления своим видео
+   *  (см. PartyPlayerControl), пока смонтирован. Задаётся, только когда этот
+   *  тайтл смотрят в комнате (см. WatchPartyProvider). */
+  partyControl?: MutableRefObject<PartyPlayerControl | null>;
+  /** Человек сам нажал play/pause, перемотал или сменил скорость — комната
+   *  разошлёт это остальным. Команды, пришедшие ИЗ комнаты через
+   *  partyControl, сюда не попадают — иначе они возвращались бы эхом. */
+  onPartyUserAction?: (action: PartyUserAction) => void;
 }
 
 const VOLUME_KEY = 'aw:ownPlayerVolume';
@@ -430,7 +448,18 @@ export default function OwnPlayer({
   onPipChange,
   onTranslationChange,
   onTranslationUnavailable,
+  partyControl,
+  onPartyUserAction,
 }: Props) {
+  const onPartyUserActionRef = useRef(onPartyUserAction);
+  onPartyUserActionRef.current = onPartyUserAction;
+  /** Объект управления для комнаты — создаётся эффектом событий <video> (там
+   *  живут attemptPlay и seekPending), отдаётся наружу эффектом ниже. */
+  const partyControlObjRef = useRef<PartyPlayerControl | null>(null);
+  /** Пауза пришла не от наших кнопок (системные контролы iOS в полноэкранном
+   *  режиме, кнопки наушников, окно PiP) — следующий play тоже человеческий,
+   *  о нём надо сообщить комнате (см. onPause/onPlay). */
+  const externalPauseRef = useRef(false);
   const onPipChangeRef = useRef(onPipChange);
   onPipChangeRef.current = onPipChange;
   const onTranslationChangeRef = useRef(onTranslationChange);
@@ -2145,6 +2174,10 @@ export default function OwnPlayer({
     };
     const onPlay = () => {
       playingRef.current = true;
+      if (externalPauseRef.current) {
+        externalPauseRef.current = false;
+        onPartyUserActionRef.current?.('play');
+      }
       setPlaying(true);
       setIsEnded(false);
       if (autoplayMutedRef.current && !autoUnmuteBlockedRef.current) {
@@ -2192,6 +2225,11 @@ export default function OwnPlayer({
         userPausedRef.current = true;
         logEvent('player.pause_loop_stopped', { source: effectiveSource, shikimoriId, season, episode });
       }
+      // Остальные паузы мимо наших кнопок — почти всегда человек (системные
+      // контролы, наушники, PiP). Комната должна о ней узнать, иначе её
+      // сверка тут же запустила бы видео обратно.
+      externalPauseRef.current = true;
+      onPartyUserActionRef.current?.('pause');
       save();
     };
     const onEndedEvt = () => {
@@ -2427,6 +2465,47 @@ export default function OwnPlayer({
       setLoadState('failed');
     };
 
+    // Управление для совместного просмотра (см. PartyPlayerControl). Живёт
+    // здесь, а не отдельным колбэком: ему нужны attemptPlay и seekPending
+    // этого подключения. Команды из комнаты не сообщаются наружу через
+    // onPartyUserAction — это не действие человека, а эхо чужого.
+    const control: PartyPlayerControl = {
+      snapshot: () => ({
+        time: video.currentTime,
+        playing: !video.paused && !video.ended,
+        rate: video.playbackRate,
+        duration: Number.isFinite(video.duration) ? video.duration : null,
+        ready: video.readyState >= 2 && !video.seeking && !seekPending,
+      }),
+      play: () => {
+        // Как явный play: снимаем «пауза от пользователя», иначе
+        // attemptPlay промолчал бы. Беззвучный запуск, если Safari не даёт со
+        // звуком, — та же логика, что у автозапуска (см. attemptPlay).
+        userPausedRef.current = false;
+        strayPausesRef.current = [];
+        externalPauseRef.current = false;
+        attemptPlay();
+      },
+      pause: () => {
+        // Пауза комнаты — «как от пользователя»: иначе ближайший canplay
+        // запустил бы видео обратно, а предохранитель посчитал бы её сбоем.
+        userPausedRef.current = true;
+        externalPauseRef.current = false;
+        video.pause();
+      },
+      seek: (time: number) => {
+        const dur = video.duration;
+        const target = Number.isFinite(dur) && dur > 0 ? Math.min(Math.max(0, time), dur - 0.5) : Math.max(0, time);
+        video.currentTime = target;
+        setCurrentTime(target);
+      },
+      setRate: (rate: number) => {
+        video.playbackRate = rate;
+        setPlaybackRate(rate);
+      },
+    };
+    partyControlObjRef.current = control;
+
     video.addEventListener('loadedmetadata', onLoadedMetadata);
     video.addEventListener('play', onPlay);
     video.addEventListener('pause', onPause);
@@ -2452,6 +2531,7 @@ export default function OwnPlayer({
       video.removeEventListener('seeking', onSeeking);
       video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('error', onError);
+      if (partyControlObjRef.current === control) partyControlObjRef.current = null;
       clearGapWatchdog();
       clearSeekWatchdog();
       clearInterval(stallWatchdogInterval);
@@ -2464,6 +2544,48 @@ export default function OwnPlayer({
     // <video> при каждом чихе, а не только при реальной смене источника.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [save, onEnded, loadState]);
+
+  // --- Совместный просмотр: управление наружу ---------------------------------
+  // Наружу отдаём один постоянный объект, который переадресует команды
+  // управлению ТЕКУЩЕГО подключения: <video> и его обработчики пересоздаются
+  // на каждой смене серии/озвучки, а комната держит ссылку весь сеанс. Пока
+  // видео нет (идёт проба нового источника) — snapshot null, команды пустые.
+  const partyControlProxyRef = useRef<PartyPlayerControl>({
+    snapshot: () => partyControlObjRef.current?.snapshot() ?? null,
+    play: () => partyControlObjRef.current?.play(),
+    pause: () => partyControlObjRef.current?.pause(),
+    seek: (t) => partyControlObjRef.current?.seek(t),
+    setRate: (r) => partyControlObjRef.current?.setRate(r),
+  });
+  useEffect(() => {
+    if (!partyControl) return;
+    const proxy = partyControlProxyRef.current;
+    partyControl.current = proxy;
+    return () => {
+      if (partyControl.current === proxy) partyControl.current = null;
+    };
+  }, [partyControl]);
+  const reportPartyAction = useCallback((action: PartyUserAction) => {
+    onPartyUserActionRef.current?.(action);
+  }, []);
+  // Ползунок перемотки шлёт onChange на каждый сдвиг пальца — комнате нужны
+  // начало (сразу, иначе её сверка успела бы вернуть видео на старое место,
+  // пока человек ещё тянет) и итог после паузы в движении, а не каждый шаг.
+  const partySeekReportTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reportPartySeekDebounced = useCallback(() => {
+    if (partySeekReportTimerRef.current) clearTimeout(partySeekReportTimerRef.current);
+    else reportPartyAction('seek');
+    partySeekReportTimerRef.current = setTimeout(() => {
+      partySeekReportTimerRef.current = null;
+      reportPartyAction('seek');
+    }, 400);
+  }, [reportPartyAction]);
+  useEffect(
+    () => () => {
+      if (partySeekReportTimerRef.current) clearTimeout(partySeekReportTimerRef.current);
+    },
+    [],
+  );
 
   // --- Клавиатура: фокус на контейнер -----------------------------------------
   // onKeyDown ниже висит на containerRef (tabIndex=0) — сработает только пока
@@ -2687,11 +2809,13 @@ export default function OwnPlayer({
       // перестал бы реагировать на canplay/playing/seeked этого подключения.
       userPausedRef.current = false;
       v.play().catch(() => {});
+      reportPartyAction('play');
     } else {
       userPausedRef.current = true;
       v.pause();
+      reportPartyAction('pause');
     }
-  }, []);
+  }, [reportPartyAction]);
 
   // Копим дельту нескольких быстрых кликов по -10/+10 и применяем ОДНИМ
   // присвоением currentTime, а не по одному на каждый клик. При частых
@@ -2714,8 +2838,9 @@ export default function OwnPlayer({
       const v = videoRef.current;
       if (!v || d === 0) return;
       v.currentTime = Math.max(0, Math.min(v.currentTime + d, v.duration || Infinity));
+      reportPartyAction('seek');
     }, 250);
-  }, []);
+  }, [reportPartyAction]);
 
   // Не даём отложенному сику (см. seekBy выше) сработать на уже другой серии/
   // озвучке/сброшенном видео после переключения.
@@ -2814,7 +2939,8 @@ export default function OwnPlayer({
     const v = videoRef.current;
     if (v) v.currentTime = t;
     setCurrentTime(t);
-  }, []);
+    reportPartySeekDebounced();
+  }, [reportPartySeekDebounced]);
 
   const retry = useCallback((opts?: { fresh?: boolean }) => {
     logEvent('player.retry', {
@@ -2981,7 +3107,8 @@ export default function OwnPlayer({
     const v = videoRef.current;
     if (v) v.playbackRate = rate;
     window.localStorage.setItem(SPEED_KEY, String(rate));
-  }, []);
+    reportPartyAction('rate');
+  }, [reportPartyAction]);
 
   // --- Автоскрытие контролов ----------------------------------------------------
   const showControls = useCallback(() => {
@@ -3231,6 +3358,7 @@ export default function OwnPlayer({
     const v = videoRef.current;
     if (!v || !activeSkip) return;
     v.currentTime = activeSkip.segment.time + activeSkip.segment.length;
+    reportPartyAction('seek');
   };
 
   return (

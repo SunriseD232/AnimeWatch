@@ -21,6 +21,8 @@ import { logEvent } from '@/lib/clientLog';
 import { useVideoseedEstimator } from '@/hooks/useVideoseedEstimator';
 import VibixPlayer from '@/components/VibixPlayer';
 import { usePipPlayerHost } from '@/components/pip/PipPlayerHost';
+import { useWatchParty } from '@/components/party/WatchPartyProvider';
+import WatchPartyPanel from '@/components/party/WatchPartyPanel';
 import EpisodeComments from '@/components/social/EpisodeComments';
 import { XIcon } from '@/components/social/icons';
 import { FilmIcon, IconBadge } from '@/components/social/icons';
@@ -1072,6 +1074,57 @@ export default function Player({
     return () => clearInterval(id);
   }, [player, hasOwnPlayer, seasonsList, shikimoriId, isSerial]);
 
+  // --- Совместный просмотр ------------------------------------------------
+  // Комната работает только с «Нашим плеером» (см. WatchPartyProvider):
+  // пока в ней этот тайтл — держим вкладку на нём, сообщаем комнате, что у
+  // нас открыто, и переключаемся на серию/озвучку вслед за остальными.
+  const watchParty = useWatchParty();
+  const inParty = watchParty.isPartyTitle(contentType, shikimoriId) && hasOwnPlayer;
+  useEffect(() => {
+    if (inParty && player !== 'own') setPlayer('own');
+  }, [inParty, player]);
+  const { reportContext } = watchParty;
+  useEffect(() => {
+    reportContext(
+      inParty && player === 'own'
+        ? {
+            contentType,
+            shikimoriId,
+            season: activeSeason,
+            episode: activeEpisode,
+            translationId: ownPlayerTranslationId,
+          }
+        : null,
+    );
+  }, [reportContext, inParty, player, contentType, shikimoriId, activeSeason, activeEpisode, ownPlayerTranslationId]);
+  useEffect(() => () => reportContext(null), [reportContext]);
+  const remoteTarget = watchParty.remoteTarget;
+  // Каждое указание комнаты (key) применяем один раз: если потом человек сам
+  // переключит серию, старое указание не должно утащить его обратно.
+  const partyEpisodeKeyRef = useRef(0);
+  const partyTranslationKeyRef = useRef(0);
+  useEffect(() => {
+    if (!remoteTarget || !inParty) return;
+    if (remoteTarget.season !== activeSeasonRef.current || remoteTarget.episode !== activeEpisodeRef.current) {
+      if (partyEpisodeKeyRef.current === remoteTarget.key) return;
+      partyEpisodeKeyRef.current = remoteTarget.key;
+      void switchEpisodeRef.current({ season: remoteTarget.season, episode: remoteTarget.episode });
+      return;
+    }
+    partyEpisodeKeyRef.current = remoteTarget.key;
+    // Озвучку меняем, когда серия уже та же и её список приехал: у новой
+    // серии он грузится отдельно, и до этого нужной озвучки в нём может не быть.
+    if (
+      partyTranslationKeyRef.current !== remoteTarget.key &&
+      remoteTarget.translationId != null &&
+      ownPlayerTranslations.some((t) => t.id === remoteTarget.translationId)
+    ) {
+      partyTranslationKeyRef.current = remoteTarget.key;
+      if (remoteTarget.translationId !== ownPlayerTranslationId) setOwnPlayerTranslationId(remoteTarget.translationId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remoteTarget?.key, inParty, activeSeason, activeEpisode, ownPlayerTranslations]);
+
   // --- Держим OwnPlayer в PipPlayerHost в курсе актуальных пропсов -------
   // Реальный <video>/hls.js живёт не здесь (см. PipPlayerHost) — чтобы
   // пережить уход со страницы при активном Picture-in-Picture. Пока вкладка
@@ -1123,6 +1176,8 @@ export default function Player({
           activeOwnPlayerTranslationRef.current = translation;
           setOwnPlayerTranslationId(translation?.id ?? null);
         },
+        partyControl: inParty ? watchParty.playerControlRef : undefined,
+        onPartyUserAction: inParty ? watchParty.reportUserAction : undefined,
       },
       ownPlayerDockRef.current,
       `${watchBase}/${shikimoriId}/${activeSeason}/${activeEpisode}`,
@@ -1523,6 +1578,16 @@ export default function Player({
             </button>
           </div>
         </div>
+      )}
+
+      {isAuthed && hasOwnPlayer && (
+        <WatchPartyPanel
+          contentType={contentType}
+          shikimoriId={shikimoriId}
+          title={animeTitle}
+          season={activeSeason}
+          episode={activeEpisode}
+        />
       )}
 
       {!isAuthed && (

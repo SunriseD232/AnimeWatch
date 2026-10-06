@@ -9,6 +9,7 @@ import PresenceHeartbeat from '@/components/PresenceHeartbeat';
 import NativeAuthBridge from '@/components/NativeAuthBridge';
 import OfflineSyncTrigger from '@/components/OfflineSyncTrigger';
 import { PipPlayerHost } from '@/components/pip/PipPlayerHost';
+import { WatchPartyProvider } from '@/components/party/WatchPartyProvider';
 import ThemeScript from '@/components/ThemeScript';
 import ThemeSync from '@/components/ThemeSync';
 import SiteBackdrop from '@/components/SiteBackdrop';
@@ -85,6 +86,9 @@ export default function RootLayout({
         <OfflineSyncTrigger />
         <WebviewInstallHint />
         <ToastProvider>
+          {/* Комната совместного просмотра переживает переходы между
+              страницами так же, как плеер, — поэтому снаружи PipPlayerHost. */}
+          <WatchPartyProvider>
           <PipPlayerHost>
             {/* Заглушка повторяет геометрию шапки вместе с безопасной зоной —
                 иначе контент прыгает вверх в момент, когда шапка доезжает. */}
@@ -107,6 +111,7 @@ export default function RootLayout({
               {children}
             </main>
           </PipPlayerHost>
+          </WatchPartyProvider>
         </ToastProvider>
       </body>
     </html>
