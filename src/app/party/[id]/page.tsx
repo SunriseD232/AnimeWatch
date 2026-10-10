@@ -6,11 +6,20 @@ export const dynamic = 'force-dynamic';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Тексты для кодов из join_watch_party (миграция 0048). */
-const REASONS: Record<string, string> = {
-  party_not_found: 'Такой комнаты нет: её закрыли или ссылка с ошибкой.',
-  party_expired: 'Комната закрылась: ссылки на совместный просмотр живут сутки.',
-  party_full: 'В комнате уже пять человек — больше не помещается.',
+/** Заголовок и текст для кодов из join_watch_party (миграция 0048). */
+const REASONS: Record<string, { title: string; text: string }> = {
+  party_not_found: {
+    title: 'Совместный просмотр закончился',
+    text: 'Все вышли из комнаты, и она закрылась. Попросите друга создать новую.',
+  },
+  party_expired: {
+    title: 'Совместный просмотр закончился',
+    text: 'Ссылки-приглашения действуют сутки. Попросите друга создать новую комнату.',
+  },
+  party_full: {
+    title: 'Комната заполнена',
+    text: 'В комнате уже пять человек — больше не помещается.',
+  },
 };
 
 /**
@@ -38,8 +47,8 @@ export default async function PartyInvitePage({ params }: { params: { id: string
 
   return (
     <div className="mx-auto flex min-h-[50vh] max-w-md flex-col items-center justify-center gap-4 text-center">
-      <h1 className="text-2xl font-semibold text-white">Не получилось войти в комнату</h1>
-      <p className="text-gray-300">{REASONS[reason]}</p>
+      <h1 className="text-2xl font-semibold text-white">{REASONS[reason].title}</h1>
+      <p className="text-gray-300">{REASONS[reason].text}</p>
       <Link
         href="/"
         className="rounded-xl bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/15"

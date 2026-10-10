@@ -13,6 +13,7 @@ import {
 } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { useProgressSaver } from '@/hooks/useProgressSaver';
+import { useCast } from '@/hooks/useCast';
 import { logEvent } from '@/lib/clientLog';
 import { useToast } from '@/components/ToastProvider';
 import {
@@ -181,9 +182,10 @@ interface Props {
    * ошибки, а продолжаем ждать: новый проп вот-вот приедет.
    */
   onTranslationUnavailable?: (id: number, silent?: boolean) => boolean;
-  /** Совместный просмотр: сюда плеер кладёт объект управления своим видео
-   *  (см. PartyPlayerControl), пока смонтирован. Задаётся, только когда этот
-   *  тайтл смотрят в комнате (см. WatchPartyProvider). */
+  /** Сюда плеер кладёт объект управления своим видео (см.
+   *  PartyPlayerControl), пока смонтирован. Им пользуются совместный
+   *  просмотр (WatchPartyProvider) и продолжение с другого устройства
+   *  (useCrossDeviceResume). */
   partyControl?: MutableRefObject<PartyPlayerControl | null>;
   /** Человек сам нажал play/pause, перемотал или сменил скорость — комната
    *  разошлёт это остальным. Команды, пришедшие ИЗ комнаты через
@@ -1114,6 +1116,21 @@ export default function OwnPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadState]);
 
+  // Подпись с процентами рядом с ползунком громкости — см. разметку панели.
+  const [volumeHint, setVolumeHint] = useState(false);
+  const volumeHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashVolumeHint = useCallback(() => {
+    setVolumeHint(true);
+    if (volumeHintTimerRef.current) clearTimeout(volumeHintTimerRef.current);
+    volumeHintTimerRef.current = setTimeout(() => setVolumeHint(false), 1_200);
+  }, []);
+  useEffect(
+    () => () => {
+      if (volumeHintTimerRef.current) clearTimeout(volumeHintTimerRef.current);
+    },
+    [],
+  );
+
   const applyVolume = useCallback((next: number) => {
     const clamped = Math.min(1, Math.max(0, next));
     // Громкость выбрал человек сам (кнопка, ползунок, клавиши — всё это
@@ -1983,6 +2000,51 @@ export default function OwnPlayer({
     return () => cancelAnimationFrame(raf);
   }, [subtitleCues]);
 
+  // --- Субтитры в системном полноэкранном режиме iPhone -----------------------
+  // Наши субтитры — свой слой поверх <video>. На iPhone в браузере нет
+  // полноэкранного режима для элемента, только системный у самого видео
+  // (webkitEnterFullscreen, см. enterFullscreen) — а туда чужие слои не
+  // попадают. Отсюда «субтитры не работают» на телефоне: включаются в
+  // окне и пропадают на весь экран, в том числе при простом повороте
+  // телефона (жалоба 2026-10-10). Дублируем те же реплики системной
+  // дорожкой <video> и показываем её ТОЛЬКО в этом режиме — в окне остаётся
+  // наш слой со своими настройками вида, двойного текста нет.
+  const nativeSubTrackRef = useRef<{ video: HTMLVideoElement; track: TextTrack } | null>(null);
+  useEffect(() => {
+    const video = videoRef.current as (HTMLVideoElement & { webkitDisplayingFullscreen?: boolean }) | null;
+    if (!video || typeof window === 'undefined' || typeof window.VTTCue === 'undefined') return;
+    let holder = nativeSubTrackRef.current;
+    if (!subtitleCues) {
+      if (holder?.video === video) holder.track.mode = 'disabled';
+      return;
+    }
+    if (!holder || holder.video !== video) {
+      // Удалить дорожку, добавленную addTextTrack, нельзя — поэтому одна на
+      // элемент <video>, содержимое меняем. Новый элемент (смена серии) —
+      // новая дорожка.
+      holder = { video, track: video.addTextTrack('subtitles', 'Субтитры', 'ru') };
+      nativeSubTrackRef.current = holder;
+    }
+    const { track } = holder;
+    // cues у выключенной дорожки недоступны (null) — сперва 'hidden'.
+    track.mode = 'hidden';
+    while (track.cues && track.cues.length > 0) track.removeCue(track.cues[0]);
+    for (const cue of subtitleCues.cues) track.addCue(new VTTCue(cue.start, cue.end, cue.text));
+    const sync = (fullscreen: boolean) => {
+      track.mode = fullscreen ? 'showing' : 'hidden';
+    };
+    sync(!!video.webkitDisplayingFullscreen);
+    const onBegin = () => sync(true);
+    const onEnd = () => sync(false);
+    video.addEventListener('webkitbeginfullscreen', onBegin);
+    video.addEventListener('webkitendfullscreen', onEnd);
+    return () => {
+      video.removeEventListener('webkitbeginfullscreen', onBegin);
+      video.removeEventListener('webkitendfullscreen', onEnd);
+    };
+    // loadState — <video> пересоздаётся на каждом probing→ready.
+  }, [subtitleCues, loadState]);
+
   // --- События <video> -------------------------------------------------------
   useEffect(() => {
     const video = videoRef.current;
@@ -2151,7 +2213,15 @@ export default function OwnPlayer({
     // заиграло или пользователь сам поставил на паузу, дальнейшие вызовы
     // выходят сразу же.
     const attemptPlay = () => {
-      if (playingRef.current || userPausedRef.current || seekPending) return;
+      if (playingRef.current || userPausedRef.current) return;
+      // Ждать конца перемотки к сохранённой позиции нельзя у нативного HLS на
+      // iPhone/iPad: Safari не грузит видео, пока оно на паузе, и перемотка
+      // не доезжает до 'seeked', пока не нажать play. Ждали друг друга
+      // насмерть — пауза с крутящимся колёсиком, а ручное нажатие сразу всё
+      // запускало (2026-10-10: у 29 из 44 запусков videoseed на iPhone
+      // срабатывал seek_watchdog_fired). Цель перемотки браузер уже помнит —
+      // play() начнёт с неё, а не с нуля.
+      if (seekPending && !nativeVariantModeRef.current) return;
       video.play().catch(() => {
         if (video.muted) return; // уже приглушили и это тоже не взлетело — ждём следующего события
         video.muted = true;
@@ -2171,6 +2241,9 @@ export default function OwnPlayer({
       if (Number.isFinite(video.duration)) setDuration(video.duration);
       video.playbackRate = playbackRateRef.current;
       applyResumeSeek();
+      // Нативный HLS на iPhone на паузе может не дойти и до canplay — данных
+      // он не грузит, пока не нажат play (см. attemptPlay). Запускаем сразу.
+      if (nativeVariantModeRef.current) attemptPlay();
     };
     const onPlay = () => {
       playingRef.current = true;
@@ -2716,6 +2789,42 @@ export default function OwnPlayer({
     };
   }, [loadState]);
 
+  // --- Трансляция на телевизор (см. hooks/useCast.ts) -----------------------
+  const getCastMedia = useCallback(() => {
+    if (typeof window === 'undefined') return null;
+    const upstream = upstreamContentTypeRef.current ?? '';
+    const contentType = upstream.includes('mpegurl')
+      ? 'application/x-mpegURL'
+      : upstream.includes('dash+xml')
+        ? 'application/dash+xml'
+        : upstream || 'video/mp4';
+    return {
+      url: new URL(requestUrl(), window.location.origin).toString(),
+      contentType,
+      title: animeTitle,
+      subtitle: episodeLabel ?? undefined,
+      posterUrl: posterUrl ? new URL(posterUrl, window.location.origin).toString() : null,
+    };
+  }, [requestUrl, animeTitle, episodeLabel, posterUrl]);
+  const onCastEnded = useCallback((time: number) => {
+    // Телевизор отпустил — продолжаем у себя с его места, но не запускаем
+    // сами: человек мог закрыть трансляцию, потому что уходит.
+    const v = videoRef.current;
+    if (v && time > 1) {
+      v.currentTime = time;
+      setCurrentTime(time);
+    }
+  }, []);
+  const cast = useCast(videoRef, getCastMedia, onCastEnded, loadState);
+  // Пока играет телевизор, своё видео должно молчать: обычный автозапуск на
+  // canplay/seeked иначе запустил бы его параллельно. Пауза «как от
+  // пользователя» — ровно то, что его выключает (см. attemptPlay).
+  useEffect(() => {
+    if (!cast.casting) return;
+    userPausedRef.current = true;
+    videoRef.current?.pause();
+  }, [cast.casting]);
+
   const togglePip = useCallback(() => {
     const video = videoRef.current as WebkitPipVideoElement | null;
     if (!video) return;
@@ -2802,7 +2911,8 @@ export default function OwnPlayer({
     // доехал (проверено вживую: именно так клик по видео "расклеивал"
     // зависшую загрузку раньше времени). attemptPlay сам продолжит, как
     // только придёт событие seeked — тут просто ничего не делаем.
-    if (seekingRef.current) return;
+    // У нативного HLS Safari перемотка как раз и ждёт play — см. attemptPlay.
+    if (seekingRef.current && !nativeVariantModeRef.current) return;
     if (v.paused) {
       // Явный клик пользователя — снимаем «сам поставил на паузу», иначе
       // после ручной паузы attemptPlay (см. эффект событий видео) навсегда
@@ -3159,11 +3269,16 @@ export default function OwnPlayer({
           break;
         case 'ArrowUp':
           e.preventDefault();
-          applyVolume(volume + 0.1);
+          // Шаг 1% (просьба пользователя, 2026-10-10): 10% за нажатие было
+          // слишком грубо для наушников. Округляем — 0.01 в двоичной дроби
+          // неточен, и без этого громкость копила бы хвосты вроде 0.570000001.
+          applyVolume(Math.round((volume + 0.01) * 100) / 100);
+          flashVolumeHint();
           break;
         case 'ArrowDown':
           e.preventDefault();
-          applyVolume(volume - 0.1);
+          applyVolume(Math.round((volume - 0.01) * 100) / 100);
+          flashVolumeHint();
           break;
         case 'f':
           e.preventDefault();
@@ -3176,7 +3291,7 @@ export default function OwnPlayer({
       }
       showControls();
     },
-    [togglePlay, seekBy, applyVolume, toggleFullscreen, showControls, volume, muted],
+    [togglePlay, seekBy, applyVolume, flashVolumeHint, toggleFullscreen, showControls, volume, muted],
   );
 
   // Селектор озвучки — виден в любом loadState (в т.ч. до/после ошибки), чтобы
@@ -3411,10 +3526,40 @@ export default function OwnPlayer({
           poster={posterUrl ?? undefined}
           onClick={onVideoTap}
           className="absolute inset-0 h-full w-full"
+          // AirPlay в Safari — см. hooks/useCast.ts.
+          x-webkit-airplay="allow"
         >
-          {/* <track> здесь нет намеренно: субтитры читаем и рисуем сами,
-              см. lib/subtitles/vtt.ts. */}
+          {/* <track> в разметке нет намеренно: субтитры читаем и рисуем сами
+              (lib/subtitles/vtt.ts), а для системного полноэкранного режима
+              iPhone дорожку добавляем из кода — см. nativeSubTrackRef. */}
         </video>
+
+        {/* Идёт трансляция на телевизор: своё видео стоит, управление —
+            здесь же, плюс пульт телевизора. */}
+        {cast.casting && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-black/80 px-4 text-center">
+            <p className="text-base font-medium text-white">
+              Идёт трансляция{cast.deviceName ? ` на «${cast.deviceName}»` : ''}
+            </p>
+            <p className="text-sm tabular-nums text-gray-300">{formatTime(cast.remoteTime)}</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              <button
+                type="button"
+                onClick={cast.toggleRemotePause}
+                className="press min-h-10 rounded-full bg-white/15 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/25"
+              >
+                {cast.remotePaused ? 'Продолжить' : 'Пауза'}
+              </button>
+              <button
+                type="button"
+                onClick={cast.stopChromecast}
+                className="press min-h-10 rounded-full border border-white/20 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10"
+              >
+                Смотреть здесь
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Вспышка «−10 сек»/«+10 сек» — подтверждение жеста двойного тапа
             (см. onVideoTap выше): без неё на сенсорном экране не
@@ -3717,16 +3862,27 @@ export default function OwnPlayer({
               type="range"
               min={0}
               max={1}
-              step={0.05}
+              step={0.01}
               value={muted ? 0 : volume}
-              onChange={(e) => applyVolume(Number(e.target.value))}
+              onChange={(e) => {
+                applyVolume(Number(e.target.value));
+                flashVolumeHint();
+              }}
               data-volume-control
               aria-label="Громкость"
+              aria-valuetext={`${Math.round((muted ? 0 : volume) * 100)}%`}
               className="player-range pc-volume h-1 cursor-pointer appearance-none rounded-full"
               style={{
                 background: `linear-gradient(to right, #fff ${(muted ? 0 : volume) * 100}%, rgba(255,255,255,0.25) ${(muted ? 0 : volume) * 100}%)`,
               }}
             />
+            {/* Проценты — пока громкость меняют (ползунком или клавишами) и
+                ещё секунду после: по одной полоске не видно, 40 это или 45. */}
+            {volumeHint && (
+              <span aria-hidden="true" className="pc-volume-pct w-9 shrink-0 text-right text-xs tabular-nums text-gray-200">
+                {Math.round((muted ? 0 : volume) * 100)}%
+              </span>
+            )}
 
             {subtitles.length > 0 && (
               <div className="relative">
@@ -4067,6 +4223,41 @@ export default function OwnPlayer({
                 </div>
               )}
             </div>
+
+            {cast.chromecastAvailable && !cast.casting && (
+              <button
+                type="button"
+                onClick={() => void cast.startChromecast()}
+                aria-label="Транслировать на телевизор"
+                title="Транслировать на телевизор"
+                className="pc-btn rounded-md transition hover:bg-white/10"
+              >
+                {/* Значок трансляции (lucide «cast»). */}
+                <svg viewBox="0 0 24 24" className="pc-icon fill-none stroke-current" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6" />
+                  <path d="M2 12a9 9 0 0 1 8 8" />
+                  <path d="M2 16a5 5 0 0 1 4 4" />
+                  <line x1="2" x2="2.01" y1="20" y2="20" />
+                </svg>
+              </button>
+            )}
+            {/* AirPlay — только когда поток играет сам Safari: из MSE (hls.js,
+                dash.js) Apple TV видео не примет. */}
+            {cast.airplayAvailable && !hlsRef.current && !dashRef.current && (
+              <button
+                type="button"
+                onClick={cast.showAirplayPicker}
+                aria-label="Транслировать через AirPlay"
+                title="AirPlay"
+                className="pc-btn rounded-md transition hover:bg-white/10"
+              >
+                {/* Значок AirPlay (lucide «airplay»). */}
+                <svg viewBox="0 0 24 24" className="pc-icon fill-none stroke-current" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1" />
+                  <path d="m12 15 5 6H7Z" />
+                </svg>
+              </button>
+            )}
 
             {pipSupported && (
               <button

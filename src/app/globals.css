@@ -632,7 +632,8 @@ body {
 /* Длительность и ползунок громкости — первое, чем жертвуем на узком плеере:
    громкость остаётся доступной кнопкой звука и стрелками клавиатуры. */
 .player-controls .pc-duration,
-.player-controls .pc-volume {
+.player-controls .pc-volume,
+.player-controls .pc-volume-pct {
   display: none;
 }
 .player-controls .pc-volume {
@@ -653,7 +654,8 @@ body {
   }
 }
 @container (min-width: 480px) {
-  .player-controls .pc-volume {
+  .player-controls .pc-volume,
+  .player-controls .pc-volume-pct {
     display: block;
   }
 }

@@ -35,10 +35,12 @@ interface IndexRow {
   rating: number | null;
   poster_local: boolean | null;
   description: string | null;
+  kp_rating: number | null;
+  imdb_rating: number | null;
 }
 
 const SELECT_COLUMNS =
-  'kp_id, title, original_title, kind, is_serial, year, poster, rating, poster_local, description';
+  'kp_id, title, original_title, kind, is_serial, year, poster, rating, poster_local, description, kp_rating, imdb_rating';
 
 /** `{a,b}` — литерал массива Postgres, его ждут операторы `cs`/`ov`. */
 function pgArray(values: (number | string)[]): string {
@@ -84,6 +86,8 @@ function toShort(row: IndexRow): CinemaShort {
     kind: cinemaKindLabel(row.kind),
     isSerial: row.is_serial,
     rating: row.rating !== null ? Number(row.rating) : null,
+    kpRating: row.kp_rating !== null ? Number(row.kp_rating) : null,
+    imdbRating: row.imdb_rating !== null ? Number(row.imdb_rating) : null,
     description: row.description,
   };
 }

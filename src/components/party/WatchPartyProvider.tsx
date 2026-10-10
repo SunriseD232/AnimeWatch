@@ -115,6 +115,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /** Как часто сверяться с комнатой, пока видео играет. */
 const SYNC_INTERVAL_MS = 1_500;
 const CHAT_KEEP = 100;
+/** Срок жизни комнаты — как в join_watch_party (миграция 0048). */
+const PARTY_TTL_MS = 24 * 60 * 60 * 1000;
 /** Озвучка, сменившаяся вскоре после смены серии, — подбор плеером под новую
  *  серию (у аниме id озвучек свои на каждую серию), а не выбор человека. */
 const TRANSLATION_SETTLE_MS = 8_000;
@@ -217,11 +219,15 @@ export function WatchPartyProvider({ children }: { children: ReactNode }) {
       if (partyRef.current?.id === id) return;
       const { data } = await getSupabase()
         .from('watch_parties')
-        .select('id, content_type, shikimori_id, title')
+        .select('id, content_type, shikimori_id, title, created_at')
         .eq('id', id)
         .maybeSingle();
-      if (!data) {
-        // Не участник (вышел на другом устройстве) или комнату закрыли.
+      // Сутки — тот же срок, что у входа по ссылке (join_watch_party): иначе
+      // вкладка, помнящая вчерашнюю комнату, открывала бы её снова.
+      const expired = !!data && Date.now() - new Date(data.created_at).getTime() > PARTY_TTL_MS;
+      if (!data || expired) {
+        // Не участник (вышел на другом устройстве), комнату закрыли или она
+        // отжила свои сутки.
         try {
           window.sessionStorage.removeItem(STORAGE_KEY);
         } catch {

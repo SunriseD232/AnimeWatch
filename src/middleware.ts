@@ -2,7 +2,52 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { updateSession } from '@/lib/supabase/middleware';
 import { absoluteUrl } from '@/lib/site-url';
 
+/**
+ * Трансляция на телевизор (Chromecast, см. hooks/useCast.ts): поток играет
+ * сам ресивер на телевизоре и забирает его с нашего прокси по сети, а
+ * ресивер — это веб-страница Google, которой браузерные правила CORS не
+ * дают читать чужой домен без разрешающего заголовка.
+ *
+ * Разрешаем ТОЛЬКО доменам Google, а не всем: с `*` любой сторонний сайт мог
+ * бы проигрывать наши потоки своим hls.js за наш трафик. Незнакомые
+ * источники пишем в лог (по разу на источник), чтобы, если Google сменит
+ * домен ресивера, это было видно сразу.
+ */
+const CAST_ORIGIN_RE = /^https:\/\/([a-z0-9-]+\.)*(gstatic|google|googleapis|googleusercontent)\.com$/;
+const loggedOrigins = new Set<string>();
+
+function castCorsHeaders(origin: string): Record<string, string> {
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+    'Access-Control-Allow-Headers': 'Range, Content-Type',
+    'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
+    'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
+  };
+}
+
 export async function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname.startsWith('/api/proxy/')) {
+    const origin = request.headers.get('origin');
+    if (origin && CAST_ORIGIN_RE.test(origin)) {
+      if (request.method === 'OPTIONS') {
+        return new NextResponse(null, { status: 204, headers: castCorsHeaders(origin) });
+      }
+      const res = NextResponse.next();
+      for (const [k, v] of Object.entries(castCorsHeaders(origin))) res.headers.set(k, v);
+      return res;
+    }
+    if (origin && !loggedOrigins.has(origin) && loggedOrigins.size < 50) {
+      loggedOrigins.add(origin);
+      const own = request.nextUrl.origin;
+      if (origin !== own && !origin.endsWith('media-watch.ru')) {
+        console.log(`[cors] запрос к прокси с чужого источника без разрешения: ${origin}`);
+      }
+    }
+  }
+
+
   // Открываем последний использованный раздел: если заходят на главную,
   // а прошлый раз были в кино — переносим туда. Куку aw_mode пишет ModeSwitch.
   //

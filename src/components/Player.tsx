@@ -23,6 +23,8 @@ import VibixPlayer from '@/components/VibixPlayer';
 import { usePipPlayerHost } from '@/components/pip/PipPlayerHost';
 import { useWatchParty } from '@/components/party/WatchPartyProvider';
 import WatchPartyPanel from '@/components/party/WatchPartyPanel';
+import { useCrossDeviceResume } from '@/hooks/useCrossDeviceResume';
+import type { PartyPlayerControl } from '@/lib/party/types';
 import EpisodeComments from '@/components/social/EpisodeComments';
 import { XIcon } from '@/components/social/icons';
 import { FilmIcon, IconBadge } from '@/components/social/icons';
@@ -1125,6 +1127,21 @@ export default function Player({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remoteTarget?.key, inParty, activeSeason, activeEpisode, ownPlayerTranslations]);
 
+  // --- Продолжение с другого устройства -----------------------------------
+  // Вкладка не перезагружалась (свернули браузер, вкладку усыпили), а на
+  // телефоне тем временем смотрели дальше — см. useCrossDeviceResume. В
+  // комнате не нужно: там позицию задаёт сама комната.
+  const ownPlayerControlRef = useRef<PartyPlayerControl | null>(null);
+  useCrossDeviceResume({
+    enabled: isAuthed && player === 'own' && hasOwnPlayer && !inParty,
+    contentType,
+    shikimoriId,
+    season: activeSeason,
+    episode: activeEpisode,
+    controlRef: ownPlayerControlRef,
+    onOtherEpisode: (s, e) => void switchEpisodeRef.current({ season: s, episode: e }),
+  });
+
   // --- Держим OwnPlayer в PipPlayerHost в курсе актуальных пропсов -------
   // Реальный <video>/hls.js живёт не здесь (см. PipPlayerHost) — чтобы
   // пережить уход со страницы при активном Picture-in-Picture. Пока вкладка
@@ -1176,7 +1193,7 @@ export default function Player({
           activeOwnPlayerTranslationRef.current = translation;
           setOwnPlayerTranslationId(translation?.id ?? null);
         },
-        partyControl: inParty ? watchParty.playerControlRef : undefined,
+        partyControl: inParty ? watchParty.playerControlRef : ownPlayerControlRef,
         onPartyUserAction: inParty ? watchParty.reportUserAction : undefined,
       },
       ownPlayerDockRef.current,

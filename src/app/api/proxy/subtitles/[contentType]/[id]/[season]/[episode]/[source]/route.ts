@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { resolveStream, findCrossSourceSubtitles, warmSubtitleSources } from '@/lib/extract/resolve';
-import { signRawUrl } from '@/lib/extract/proxy';
+import { fetchAndProxy, signRawUrl } from '@/lib/extract/proxy';
 import { getCachedSubtitle } from '@/lib/subtitles/opensubtitles';
 import { getCinemaById } from '@/lib/videoseed-catalog';
 import { getAnime } from '@/lib/shikimori';
@@ -88,6 +88,73 @@ const NATIVE_LANG_TO_ISO2: Record<string, 'ru' | 'en'> = {
   en: 'en',
 };
 
+/**
+ * Дорожка «только надписи» (forced): переводятся лишь вывески и титры, а не
+ * речь. Videoseed отдаёт такие под обычной подписью «Русский» — проверено на
+ * «Фонарях» (kp=5253825): 13 реплик на 57-минутную серию против 840 у
+ * английской. Человек включал «Русский» и видел текст пару раз за серию —
+ * отсюда жалоба «субтитры не работают» (2026-10-10). Хуже того, такая дорожка
+ * засчитывалась как русский язык, и полноценные русские субтитры с
+ * OpenSubtitles для серии даже не искали.
+ *
+ * Полные субтитры даже у 20-минутной серии — это сотни реплик, надписи —
+ * единицы или пара десятков. Порог с запасом в обе стороны.
+ */
+const FORCED_MAX_CUES = 60;
+/** Проверка дорожки — то же содержимое на ту же ссылку, поэтому помним
+ *  ответ в памяти процесса: плеер спрашивает субтитры на каждую смену src. */
+const forcedCache = new Map<string, boolean>();
+const FORCED_CACHE_MAX = 2000;
+
+async function isForcedOnly(url: string, headers: Record<string, string>): Promise<boolean> {
+  const cached = forcedCache.get(url);
+  if (cached !== undefined) return cached;
+  let forced = false;
+  try {
+    const res = await Promise.race([
+      fetchAndProxy(null, url, headers),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 6_000)),
+    ]);
+    if (res.ok) {
+      const text = await res.text();
+      forced = (text.match(/-->/g)?.length ?? 0) < FORCED_MAX_CUES;
+    } else {
+      await res.body?.cancel().catch(() => {});
+      // Не скачалась — не знаем; считаем полной, как раньше, и не запоминаем.
+      return false;
+    }
+  } catch {
+    return false;
+  }
+  if (forcedCache.size >= FORCED_CACHE_MAX) forcedCache.clear();
+  forcedCache.set(url, forced);
+  return forced;
+}
+
+/** Помечает дорожки «только надписи» в подписи и возвращает, какие из них
+ *  такие, — их язык не считается закрытым (см. FORCED_MAX_CUES). */
+async function markForced<T extends { lang: string; label: string; url: string }>(
+  subs: T[],
+  headersFor: (sub: T) => Record<string, string>,
+): Promise<{ subs: T[]; forced: Set<T> }> {
+  const forced = new Set<T>();
+  const checked = await Promise.all(
+    subs.map(async (sub) => {
+      // Подпись уже говорит сама за себя (Alloha: «(Russian) Надписи»).
+      if (/надпис|forced|signs/i.test(sub.label)) {
+        forced.add(sub);
+        return sub;
+      }
+      if (!NATIVE_LANG_TO_ISO2[sub.lang.toLowerCase()]) return sub;
+      if (!(await isForcedOnly(sub.url, headersFor(sub)))) return sub;
+      const marked = { ...sub, label: `${sub.label} (надписи)` };
+      forced.add(marked);
+      return marked;
+    }),
+  );
+  return { subs: checked, forced };
+}
+
 const TARGET_LANGS: { lang: 'ru' | 'en'; label: string }[] = [
   { lang: 'ru', label: 'Русский' },
   { lang: 'en', label: 'English' },
@@ -123,13 +190,15 @@ export async function GET(request: NextRequest, { params }: { params: RouteParam
     // /api/proxy/raw ссылки, что и для сегментов (см. lib/extract/proxy.ts).
     // Оставляем ВСЕ языки, что дал Videoseed (не только ru/en) — украинский,
     // например, лишним не будет.
-    const nativeSubs = (resolved?.subtitles ?? []).map((s) => ({
+    const nativeChecked = await markForced(resolved?.subtitles ?? [], () => resolved!.headers);
+    const nativeSubs = nativeChecked.subs.map((s) => ({
       lang: s.lang,
       label: s.label,
       url: signRawUrl(s.url, resolved!.headers),
     }));
     const coveredIso2 = new Set(
-      nativeSubs
+      nativeChecked.subs
+        .filter((s) => !nativeChecked.forced.has(s))
         .map((s) => NATIVE_LANG_TO_ISO2[s.lang.toLowerCase()])
         .filter((l): l is 'ru' | 'en' => l != null),
     );
@@ -141,13 +210,16 @@ export async function GET(request: NextRequest, { params }: { params: RouteParam
     // excludeSource=source тут просто не с чем совпасть, т.к. 'realdebrid' и
     // так не входит в SUBTITLE_CAPABLE_SOURCES. Синхронизация не
     // гарантирована — сознательно принятый риск, см. комментарий там же.
-    const crossSourceSubs = await findCrossSourceSubtitles(
+    const crossSourceRaw = await findCrossSourceSubtitles(
       { contentType, shikimoriId, season, episode },
       source,
       new Set(missingLangs.map((l) => l.lang)),
     ).catch(() => []);
+    const crossChecked = await markForced(crossSourceRaw, (s) => s.headers);
+    const crossSourceSubs = crossChecked.subs;
     const crossSourceIso2 = new Set(
       crossSourceSubs
+        .filter((s) => !crossChecked.forced.has(s))
         .map((s) => NATIVE_LANG_TO_ISO2[s.lang.toLowerCase()])
         .filter((l): l is 'ru' | 'en' => l != null),
     );

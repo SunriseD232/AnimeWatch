@@ -315,7 +315,12 @@ interface IndexRow {
   popularity: number | null;
   backdrop_path: string | null;
   poster_local: boolean;
+  kp_rating: number | null;
+  imdb_rating: number | null;
 }
+
+/** Оценки Кинопоиска и IMDb по kp_id — из cinema_ext_ratings (миграция 0049). */
+type ExtRatings = Map<number, { kp: number | null; imdb: number | null }>;
 
 function toRow(
   item: VsRawItem,
@@ -326,6 +331,7 @@ function toRow(
   >,
   imdbGenres: Map<string, number[]>,
   storedPosters: Set<number>,
+  extRatings: ExtRatings,
 ): IndexRow | null {
   const kpId = Number(item.id_kp);
   // Без kinopoisk_id тайтл бесполезен: по нему открывается плеер и пишется
@@ -380,7 +386,41 @@ function toRow(
     // Флаг наследуется от долгоживущего кэша обложек (миграция 0029): файлы
     // перестройку переживают, и терять их на сутки незачем.
     poster_local: storedPosters.has(kpId),
+    kp_rating: extRatings.get(kpId)?.kp ?? null,
+    imdb_rating: extRatings.get(kpId)?.imdb ?? null,
   };
+}
+
+/** Оценки КП и IMDb — долгоживущая таблица, перестройку переживает (см.
+ *  lib/cinemaExtRatings.ts). Постранично, с обязательным order() и выходом
+ *  только на пустой странице — те же правила, что у loadRatings. Сбой не
+ *  роняет перестройку: без этих оценок каталог работает, на карточке просто
+ *  останется рейтинг TMDB. */
+async function loadExtRatings(supabase: ReturnType<typeof createServiceClient>): Promise<ExtRatings> {
+  const out: ExtRatings = new Map();
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('cinema_ext_ratings')
+      .select('kp_id, kp_rating, imdb_rating')
+      .or('kp_rating.not.is.null,imdb_rating.not.is.null')
+      .order('kp_id', { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) {
+      console.error('[cinemaIndex] оценки КП/IMDb прочитать не удалось:', error.message);
+      break;
+    }
+    if (!data || data.length === 0) break;
+    for (const r of data as { kp_id: number; kp_rating: number | null; imdb_rating: number | null }[]) {
+      const kp = Number(r.kp_rating);
+      const imdb = Number(r.imdb_rating);
+      out.set(r.kp_id, {
+        kp: r.kp_rating != null && Number.isFinite(kp) ? kp : null,
+        imdb: r.imdb_rating != null && Number.isFinite(imdb) ? imdb : null,
+      });
+    }
+  }
+  return out;
 }
 
 /** Рейтинг и популярность из долгоживущей таблицы — проставляем прямо при
@@ -545,6 +585,7 @@ export async function rebuildCinemaIndex(): Promise<CinemaReindexResult> {
   const ratings = await loadRatings(supabase);
   const imdbGenres = await loadImdbGenres(supabase);
   const storedPosters = await loadStoredPosterIds(supabase, 'cinema');
+  const extRatings = await loadExtRatings(supabase);
 
   // ── Обход ──
   const seen = new Set<number>();
@@ -589,7 +630,7 @@ export async function rebuildCinemaIndex(): Promise<CinemaReindexResult> {
 
       const rows: IndexRow[] = [];
       for (const item of batch) {
-        const row = toRow(item, batchId, ratings, imdbGenres, storedPosters);
+        const row = toRow(item, batchId, ratings, imdbGenres, storedPosters, extRatings);
         // Дубли: один и тот же kinopoisk_id встречается и у нескольких
         // записей апстрима, и между страницами, если он что-то переставил
         // прямо во время обхода. Первичный ключ бы на них упал.

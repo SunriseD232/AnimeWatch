@@ -85,6 +85,10 @@ export interface CinemaShort {
   kind: string | null;
   isSerial: boolean;
   rating: number | null;
+  /** Оценки Кинопоиска и IMDb — только из индекса (миграция 0049), у
+   *  живого ответа Videoseed их нет. */
+  kpRating?: number | null;
+  imdbRating?: number | null;
 }
 
 /** Сезон сериала: номер и число серий (нумерация 1..episodes внутри сезона). */

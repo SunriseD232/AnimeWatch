@@ -26,6 +26,8 @@ import { logEvent } from '@/lib/clientLog';
 import { usePipPlayerHost } from '@/components/pip/PipPlayerHost';
 import { useWatchParty } from '@/components/party/WatchPartyProvider';
 import WatchPartyPanel from '@/components/party/WatchPartyPanel';
+import { useCrossDeviceResume } from '@/hooks/useCrossDeviceResume';
+import type { PartyPlayerControl } from '@/lib/party/types';
 import EpisodeComments from '@/components/social/EpisodeComments';
 import { XIcon } from '@/components/social/icons';
 
@@ -746,6 +748,19 @@ export default function WatchPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remoteTarget?.key, inParty, activeEpisode, ownPlayerTranslations]);
 
+  // --- Продолжение с другого устройства -----------------------------------
+  // См. useCrossDeviceResume и тот же блок в Player.tsx.
+  const ownPlayerControlRef = useRef<PartyPlayerControl | null>(null);
+  useCrossDeviceResume({
+    enabled: isAuthed && source === 'own' && hasOwnPlayer && !inParty,
+    contentType,
+    shikimoriId,
+    season: 1,
+    episode: activeEpisode,
+    controlRef: ownPlayerControlRef,
+    onOtherEpisode: (_s, e) => void switchEpisodeRef.current(e),
+  });
+
   // --- Держим OwnPlayer в PipPlayerHost в курсе актуальных пропсов -------
   // Реальный <video>/hls.js живёт не здесь (см. PipPlayerHost) — чтобы
   // пережить уход со страницы при активном Picture-in-Picture. Пока вкладка
@@ -795,7 +810,7 @@ export default function WatchPlayer({
           activeOwnPlayerTranslationTitleRef.current = translation?.title ?? null;
           setOwnPlayerTranslationId(translation?.id ?? null);
         },
-        partyControl: inParty ? watchParty.playerControlRef : undefined,
+        partyControl: inParty ? watchParty.playerControlRef : ownPlayerControlRef,
         onPartyUserAction: inParty ? watchParty.reportUserAction : undefined,
       },
       ownPlayerDockRef.current,
