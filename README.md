@@ -332,6 +332,14 @@ rm -rf /opt/mediawatch/.releases && df -h /
 - Расписание фоновых задач живёт в `crontab -l` под root на VPS и в
   `/etc/cron.d/mediawatch-check-episodes` — **в двух местах**, смотреть надо
   оба. `vercel.json` остался со времён Vercel и на VPS ни на что не влияет.
+  В `/etc/cron.d` у каждой строки обязательно имя пользователя (`root`):
+  одна строка без него — и cron молча игнорирует ВЕСЬ файл (так 25.09–10.10.2026
+  не приходили уведомления о новых сериях). Рейтинги КП и IMDb —
+  `refresh-cinema-ext-ratings` в `crontab -l`, в 04:40, до перестройки каталога.
+- nginx (`/etc/nginx/sites-enabled/mediawatch`, в репозитории его нет):
+  в `location /` стоят `proxy_buffer_size 32k; proxy_buffers 8 32k;
+  proxy_busy_buffers_size 64k;` — без них ответ с обновлённой сессией Supabase
+  не влезал в стандартный буфер и nginx отдавал 502 «upstream sent too big header».
   Состояние всех задач и кнопки ручного запуска — на `/admin/status`
   (только для `ADMIN_EMAILS`).
 - `vps-extractor/` разворачивается отдельно — см. его
