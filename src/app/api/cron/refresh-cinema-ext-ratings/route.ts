@@ -28,7 +28,8 @@ export async function GET(request: NextRequest) {
     console.log(
       `[cinema-ext-ratings] готово: запрошено ${result.requested} из ${result.candidates} кандидатов, ` +
         `КП у ${result.withKp}, IMDb у ${result.withImdb}, сбоев ${result.failed} ` +
-        `за ${Math.round(result.durationMs / 1000)} сек`,
+        `за ${Math.round(result.durationMs / 1000)} сек` +
+        (result.failSamples.length > 0 ? `; примеры сбоев: ${result.failSamples.join('; ')}` : ''),
     );
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {

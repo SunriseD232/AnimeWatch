@@ -103,7 +103,35 @@ export interface ExtRatingsRunResult {
   withKp: number;
   withImdb: number;
   failed: number;
+  /** Первые несколько причин сбоев — чтобы видеть в логе, что именно не так. */
+  failSamples: string[];
   durationMs: number;
+}
+
+/** Один тайтл: до трёх попыток с растущей паузой. Первый пробный прогон на
+ *  проде (2026-10-10) потерял 20 из 50 запросов, хотя те же адреса сразу
+ *  после отвечали 200 — сбои у сервиса кратковременные. */
+async function fetchRatingXml(kpId: number): Promise<{ xml: string } | { error: string }> {
+  let lastError = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 500 * attempt));
+    try {
+      const res = await fetch(RATING_URL(kpId), {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        headers: { 'User-Agent': 'Mozilla/5.0 (MediaWatch ratings)' },
+      });
+      if (res.ok) return { xml: await res.text() };
+      lastError = `HTTP ${res.status}`;
+      await res.body?.cancel().catch(() => {});
+      // 404 — у Кинопоиска такого id нет, повтор не поможет.
+      if (res.status === 404) break;
+    } catch (err) {
+      const e = err as Error & { cause?: { code?: string } };
+      lastError = `${e.name}: ${e.message}${e.cause?.code ? ` (${e.cause.code})` : ''}`;
+    }
+  }
+  return { error: lastError };
 }
 
 export async function refreshCinemaExtRatings(budget = DEFAULT_BUDGET): Promise<ExtRatingsRunResult> {
@@ -129,6 +157,7 @@ export async function refreshCinemaExtRatings(budget = DEFAULT_BUDGET): Promise<
   const queue = [...unchecked, ...stale].slice(0, budget);
 
   let failed = 0;
+  const failSamples: string[] = [];
   const pending: ExtRating[] = [];
   let withKp = 0;
   let withImdb = 0;
@@ -142,26 +171,18 @@ export async function refreshCinemaExtRatings(budget = DEFAULT_BUDGET): Promise<
   };
 
   await mapWithConcurrency(queue, CONCURRENCY, async ({ kpId }) => {
-    try {
-      const res = await fetch(RATING_URL(kpId), {
-        cache: 'no-store',
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        headers: { 'User-Agent': 'Mozilla/5.0 (MediaWatch ratings)' },
-      });
-      if (!res.ok) {
-        failed++;
-        return;
-      }
-      const parsed = parseKpRatingXml(await res.text());
-      if (parsed.kp_rating != null) withKp++;
-      if (parsed.imdb_rating != null) withImdb++;
-      pending.push({ kp_id: kpId, ...parsed, checked_at: new Date().toISOString() });
-      if (pending.length >= UPSERT_CHUNK) await flush();
-    } catch {
-      // Сеть моргнула или таймаут — тайтл останется непроверенным и попадёт
-      // в следующий прогон первым.
+    const got = await fetchRatingXml(kpId);
+    if ('error' in got) {
+      // Тайтл останется непроверенным и попадёт в следующий прогон первым.
       failed++;
+      if (failSamples.length < 5) failSamples.push(`${kpId}: ${got.error}`);
+      return;
     }
+    const parsed = parseKpRatingXml(got.xml);
+    if (parsed.kp_rating != null) withKp++;
+    if (parsed.imdb_rating != null) withImdb++;
+    pending.push({ kp_id: kpId, ...parsed, checked_at: new Date().toISOString() });
+    if (pending.length >= UPSERT_CHUNK) await flush();
   });
   await flush();
 
@@ -171,6 +192,7 @@ export async function refreshCinemaExtRatings(budget = DEFAULT_BUDGET): Promise<
     withKp,
     withImdb,
     failed,
+    failSamples,
     durationMs: Date.now() - startedAt,
   };
 }
