@@ -26,5 +26,13 @@ const SUPABASE_FETCH_TIMEOUT_MS = 8_000;
 export function supabaseFetch(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const timeoutSignal = AbortSignal.timeout(SUPABASE_FETCH_TIMEOUT_MS);
   const signal = init?.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
-  return fetch(url, { ...init, signal });
+  // cache: 'no-store' — иначе Next.js складывал ответы базы в свой кэш данных
+  // (.next/cache/fetch-cache) и отдавал их снова до следующего деплоя. Ключ
+  // кэша — адрес запроса, а у постраничных чтений он одинаковый изо дня в
+  // день: крон рейтингов КП/IMDb неделями видел список проверенных тайтлов
+  // на момент первого прогона и каждую ночь перекачивал всё заново, крон
+  // TMDB — застывший cinema_ratings; туда же попадали resolved_streams и
+  // *_index_state (найдено 2026-10-11, 314 ответов Supabase в кэше). Где
+  // кэш нужен, он сделан явно (api_response_cache, subtitle_cache).
+  return fetch(url, { cache: 'no-store', ...init, signal });
 }
