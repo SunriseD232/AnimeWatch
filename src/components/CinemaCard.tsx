@@ -84,12 +84,12 @@ export default function CinemaCard({
             className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
             placeholderClassName="grid h-full w-full place-items-center text-gray-400"
           />
-          {/* Справа сверху — оценки Кинопоиска и IMDb (миграция 0049): их
-              зритель знает, в отличие от TMDB. Подписи словами, а не
-              логотипами — чужие знаки на карточке ни к чему, а «КП» и «IMDb»
-              и так узнаются. Пока оценок нет (новинка, ещё не проверена
-              кроном) — прежний рейтинг TMDB, чтобы угол не пустел. */}
-          {item.kpRating != null || item.imdbRating != null ? (
+          {/* Справа сверху — оценки столбиком: Кинопоиск, IMDb и, когда
+              оценки Кинопоиска нет, TMDB (просьба владельца сайта,
+              2026-10-11: у трети каталога КП нет вовсе, и один значок IMDb
+              выглядел бедно). Подписи словами, а не логотипами — чужие знаки
+              на карточке ни к чему, а «КП», «IMDb» и «TMDB» и так узнаются. */}
+          {(item.kpRating != null || item.imdbRating != null || item.rating !== null) && (
             <span className="absolute right-1.5 top-1.5 flex flex-col items-end gap-1">
               {item.kpRating != null && (
                 <span
@@ -109,17 +109,16 @@ export default function CinemaCard({
                   {item.imdbRating.toFixed(1)}
                 </span>
               )}
+              {item.kpRating == null && item.rating !== null && (
+                <span
+                  className="inline-flex items-baseline gap-1 rounded-md bg-black/70 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-sky-300"
+                  title="Рейтинг TMDB"
+                >
+                  <span className="text-[10px] font-bold">TMDB</span>
+                  {item.rating.toFixed(1)}
+                </span>
+              )}
             </span>
-          ) : (
-            item.rating !== null && (
-              <span
-                className="absolute right-1.5 top-1.5 inline-flex items-center gap-1 rounded-md bg-black/70 px-1.5 py-0.5 text-xs font-medium text-amber-300"
-                title="Рейтинг TMDB"
-              >
-                <StarIcon className="h-3 w-3" filled />
-                {item.rating.toFixed(1)}
-              </span>
-            )
           )}
           {/* Оценка зрителей сайта — слева, отдельно от TMDB справа, и со
               своим значком «люди» вместо звезды: две звёздочки с разными

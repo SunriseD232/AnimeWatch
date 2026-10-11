@@ -332,6 +332,7 @@ function toRow(
   imdbGenres: Map<string, number[]>,
   storedPosters: Set<number>,
   extRatings: ExtRatings,
+  imdbDataset: Map<string, number>,
 ): IndexRow | null {
   const kpId = Number(item.id_kp);
   // Без kinopoisk_id тайтл бесполезен: по нему открывается плеер и пишется
@@ -387,8 +388,35 @@ function toRow(
     // перестройку переживают, и терять их на сутки незачем.
     poster_local: storedPosters.has(kpId),
     kp_rating: extRatings.get(kpId)?.kp ?? null,
-    imdb_rating: extRatings.get(kpId)?.imdb ?? null,
+    // Выгрузка IMDb — первоисточник (0050), оценка из ответа Кинопоиска —
+    // запасная, когда тайтла в выгрузке нет.
+    imdb_rating: (imdbId ? imdbDataset.get(imdbId) : undefined) ?? extRatings.get(kpId)?.imdb ?? null,
   };
+}
+
+/** Оценки IMDb из официальной выгрузки — cinema_imdb_ratings (см.
+ *  lib/cinemaImdbRatings.ts). Те же правила чтения, сбой перестройку не
+ *  роняет. */
+async function loadImdbDatasetRatings(supabase: ReturnType<typeof createServiceClient>): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('cinema_imdb_ratings')
+      .select('imdb_id, rating')
+      .order('imdb_id', { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) {
+      console.error('[cinemaIndex] оценки IMDb из выгрузки прочитать не удалось:', error.message);
+      break;
+    }
+    if (!data || data.length === 0) break;
+    for (const r of data as { imdb_id: string; rating: number }[]) {
+      const rating = Number(r.rating);
+      if (Number.isFinite(rating)) out.set(r.imdb_id, rating);
+    }
+  }
+  return out;
 }
 
 /** Оценки КП и IMDb — долгоживущая таблица, перестройку переживает (см.
@@ -586,6 +614,7 @@ export async function rebuildCinemaIndex(): Promise<CinemaReindexResult> {
   const imdbGenres = await loadImdbGenres(supabase);
   const storedPosters = await loadStoredPosterIds(supabase, 'cinema');
   const extRatings = await loadExtRatings(supabase);
+  const imdbDataset = await loadImdbDatasetRatings(supabase);
 
   // ── Обход ──
   const seen = new Set<number>();
@@ -630,7 +659,7 @@ export async function rebuildCinemaIndex(): Promise<CinemaReindexResult> {
 
       const rows: IndexRow[] = [];
       for (const item of batch) {
-        const row = toRow(item, batchId, ratings, imdbGenres, storedPosters, extRatings);
+        const row = toRow(item, batchId, ratings, imdbGenres, storedPosters, extRatings, imdbDataset);
         // Дубли: один и тот же kinopoisk_id встречается и у нескольких
         // записей апстрима, и между страницами, если он что-то переставил
         // прямо во время обхода. Первичный ключ бы на них упал.
