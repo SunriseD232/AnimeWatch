@@ -3858,6 +3858,10 @@ export default function OwnPlayer({
                 </svg>
               )}
             </button>
+            {/* Обёртка — опора для процентов: они висят над ползунком
+                абсолютно и не занимают место в строке, иначе их появление
+                сдвигало бы ползунок прямо под пальцем. */}
+            <div className="relative flex shrink-0 items-center">
             <input
               type="range"
               min={0}
@@ -3879,10 +3883,14 @@ export default function OwnPlayer({
             {/* Проценты — пока громкость меняют (ползунком или клавишами) и
                 ещё секунду после: по одной полоске не видно, 40 это или 45. */}
             {volumeHint && (
-              <span aria-hidden="true" className="pc-volume-pct w-9 shrink-0 text-right text-xs tabular-nums text-gray-200">
+              <span
+                aria-hidden="true"
+                className="pc-volume-pct pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded bg-black/70 px-1.5 py-0.5 text-xs tabular-nums text-gray-100"
+              >
                 {Math.round((muted ? 0 : volume) * 100)}%
               </span>
             )}
+            </div>
 
             {subtitles.length > 0 && (
               <div className="relative">
