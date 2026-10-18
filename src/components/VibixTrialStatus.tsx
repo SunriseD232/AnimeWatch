@@ -9,8 +9,8 @@ const DATE_FORMAT = new Intl.DateTimeFormat('ru-RU', {
 /**
  * Только для админов (см. lib/admin.ts) — статус пробного периода Vibix,
  * основного плеера кино с точным трекингом позиции (ARCHITECTURE.md §7).
- * Началось 17.07.2026 на 3 месяца — нужно вручную продлевать/переподключать
- * до истечения. Уведомления в колокольчик на тех же датах — см.
+ * Началось 17.07.2026 на 3 месяца, продлено до 17.01.2027 — нужно вручную
+ * продлевать/переподключать до истечения. Уведомления в колокольчик на тех же датах — см.
  * lib/vibixTrial.ts и api/cron/check-episodes.
  */
 export default function VibixTrialStatus() {
@@ -30,7 +30,7 @@ export default function VibixTrialStatus() {
       <p className="mt-1 text-gray-300">
         {expired
           ? `Истёк ${DATE_FORMAT.format(VIBIX_TRIAL_END)} — нужно переподключать Vibix вручную.`
-          : `Истекает ${DATE_FORMAT.format(VIBIX_TRIAL_END)} — осталось ${daysLeft} дн. Через 3 месяца после старта (17.07.2026) нужно подключать снова.`}
+          : `Истекает ${DATE_FORMAT.format(VIBIX_TRIAL_END)} — осталось ${daysLeft} дн. Дальше нужно продлевать/подключать снова.`}
       </p>
     </div>
   );
