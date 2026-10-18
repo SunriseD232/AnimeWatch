@@ -65,7 +65,13 @@ export default function CinemaCard({
               (см. maybeResizeImage в api/proxy/raw/route.ts), 480 с запасом
               под retina-плотность при карточке ~230px в сетке grid-cols-6.
               Запасная ссылка — тот же постер без ресайза: ресайзер иногда
-              спотыкается на битом исходнике, а отдать оригинал может. */}
+              спотыкается на битом исходнике, а отдать оригинал может.
+
+              absolute inset-0 — как у AnimeCard: высоту бокса держит ТОЛЬКО
+              aspect-ratio. Картинка в потоке с h-full от этого же бокса на
+              iOS Safari давала строку сетки на несколько пикселей ниже
+              настоящей карточки; за 12 строк набегало столько, что
+              последний ряд ложился поверх пагинации «Стр. N». */}
           <PosterImage
             width={480}
             height={720}
@@ -81,8 +87,8 @@ export default function CinemaCard({
                   : []
             }
             alt={item.title}
-            className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-            placeholderClassName="grid h-full w-full place-items-center text-gray-400"
+            className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105"
+            placeholderClassName="absolute inset-0 grid place-items-center text-gray-400"
           />
           {/* Справа сверху — оценки столбиком: Кинопоиск, IMDb и, когда
               оценки Кинопоиска нет, TMDB (просьба владельца сайта,
