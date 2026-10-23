@@ -21,12 +21,24 @@ import { logEvent } from '@/lib/clientLog';
  * шапка на каждой странице делала бы лишний запрос.
  */
 /** Разделы со своим поиском по ?q= (см. buildHref ниже). */
+const OWN_SEARCH_SECTIONS = [{ path: '/podcasts', label: 'подкасты' }] as const;
+
+/** Разделы чтения: их ищет общий /search (вкладки «Читать»), type — их
+ *  вкладка там. */
 const READING_SECTIONS = [
-  { path: '/podcasts', label: 'подкасты' },
-  { path: '/books', label: 'книги' },
-  { path: '/ranobe', label: 'ранобэ' },
-  { path: '/manga', label: 'манга' },
+  { path: '/books', type: 'books', label: 'книги' },
+  { path: '/ranobe', type: 'ranobe', label: 'ранобэ' },
+  { path: '/manga', type: 'manga', label: 'манга' },
 ] as const;
+
+/** Вкладки «Читать» на /search: пока открыта одна из них, строка поиска
+ *  остаётся в ней. */
+const READ_TYPES = ['read', 'books', 'manga', 'ranobe'] as const;
+type ReadType = (typeof READ_TYPES)[number];
+
+function isReadType(value: string | null): value is ReadType {
+  return (READ_TYPES as readonly string[]).includes(value ?? '');
+}
 
 export default function SearchBox({
   unified = false,
@@ -69,17 +81,31 @@ export default function SearchBox({
             ? 'cinema'
             : 'anime';
 
-  // В разделах чтения и подкастов шапка ищет в самом разделе: у них свой
-  // поиск (/books?q=… и т. п.), а общий /search знает только аниме и кино —
-  // на странице книг строка поиска уводила бы в аниме.
-  const section = READING_SECTIONS.find(
+  // В подкастах шапка ищет в самом разделе: у них свой поиск
+  // (/podcasts?q=…), на /search их нет.
+  const section = OWN_SEARCH_SECTIONS.find(
     (s) => pathname === s.path || pathname.startsWith(`${s.path}/`),
   );
+  // Чтение ищет общий /search во вкладках «Читать»: из раздела — в его
+  // вкладку, с «Общим поиском» — по всему читаемому сразу; на самой /search
+  // — в открытой вкладке «Читать». Подсказки (аниме и кино) тут не нужны.
+  const readingSection = READING_SECTIONS.find(
+    (s) => pathname === s.path || pathname.startsWith(`${s.path}/`),
+  );
+  const typeParam = params.get('type');
+  const readType: ReadType | null = isReadType(typeParam)
+    ? typeParam
+    : readingSection
+      ? unified
+        ? 'read'
+        : readingSection.type
+      : null;
 
   const buildHref = (q: string) => {
     if (section) return `${section.path}?${new URLSearchParams({ q }).toString()}`;
     const query = new URLSearchParams({ q });
-    if (searchType !== 'anime') query.set('type', searchType);
+    const type = readType ?? searchType;
+    if (type !== 'anime') query.set('type', type);
     return `/search?${query.toString()}`;
   };
 
@@ -109,7 +135,7 @@ export default function SearchBox({
     const trimmed = value.trim();
     // Подсказки /api/search/suggest — только аниме и кино; в разделе
     // чтения они были бы не про то, поэтому там их нет.
-    if (trimmed.length < 2 || section) {
+    if (trimmed.length < 2 || section || readType) {
       setSuggestions([]);
       setActiveIndex(-1);
       return;
@@ -133,7 +159,7 @@ export default function SearchBox({
       clearTimeout(handle);
       controller.abort();
     };
-  }, [value, searchType, section]);
+  }, [value, searchType, section, readType]);
 
   // Закрытие по клику вовне — общий хук (см. useDismissOnOutside).
   // panelRef обязателен: список подсказок живёт в <body>, и без него клик по
@@ -241,6 +267,10 @@ export default function SearchBox({
         aria-label={
           section
             ? `Поиск: ${section.label}`
+            : readType === 'read'
+            ? 'Поиск по книгам, манге и ранобэ'
+            : readType
+            ? `Поиск: ${READING_SECTIONS.find((r) => r.type === readType)?.label ?? ''}`
             : searchType === 'all'
             ? 'Поиск по аниме, фильмам и сериалам'
             : searchType === 'cinema'

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import PosterImage from '@/components/PosterImage';
+import RemovableRow from '@/components/RemovableRow';
 import { getMangaById } from '@/lib/manga';
 import {
   mangaReadHref,
@@ -79,8 +80,8 @@ export default async function MangaContinue() {
             : null;
 
           return (
+            <RemovableRow key={p.id} contentType="manga" id={p.shikimori_id} title={p.anime_title}>
             <Link
-              key={p.id}
               href={href}
               prefetch={false}
               className="press flex items-center gap-3 rounded-2xl bg-bg-card p-3 ring-1 ring-inset ring-white/5 transition hover:ring-accent/60"
@@ -112,6 +113,7 @@ export default async function MangaContinue() {
                 ) : null}
               </div>
             </Link>
+            </RemovableRow>
           );
         })}
       </div>

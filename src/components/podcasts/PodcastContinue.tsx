@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import PosterImage from '@/components/PosterImage';
+import RemovableRow from '@/components/RemovableRow';
 import { fixPosterUrl, watchPercent } from '@/lib/format';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { WatchProgress } from '@/lib/types';
@@ -49,8 +50,8 @@ export default async function PodcastContinue() {
         {entries.map((p) => {
           const percent = watchPercent(p.position_seconds, p.duration_seconds);
           return (
+            <RemovableRow key={p.id} contentType="podcast" id={p.shikimori_id} title={p.anime_title}>
             <Link
-              key={p.id}
               // Эпизод — в адрес: если пользователь остановился на середине
               // конкретного выпуска, вести его в начало канала было бы грубо.
               href={`/podcasts/listen/${p.shikimori_id}/${p.episode}`}
@@ -83,6 +84,7 @@ export default async function PodcastContinue() {
                 ) : null}
               </div>
             </Link>
+            </RemovableRow>
           );
         })}
       </div>

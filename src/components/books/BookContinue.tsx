@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import PosterImage from '@/components/PosterImage';
+import RemovableRow from '@/components/RemovableRow';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { WatchProgress } from '@/lib/types';
 
@@ -48,8 +49,8 @@ export default async function BookContinue() {
             ? `${p.poster_url}${p.poster_url.includes('?') ? '&' : '?'}w=240`
             : null;
           return (
+            <RemovableRow key={p.id} contentType="book" id={p.shikimori_id} title={p.anime_title}>
             <Link
-              key={p.id}
               href={`/books/read/${p.shikimori_id}`}
               prefetch={false}
               className="press flex items-center gap-3 rounded-2xl bg-bg-card p-3 ring-1 ring-inset ring-white/5 transition hover:ring-accent/60"
@@ -80,6 +81,7 @@ export default async function BookContinue() {
                 ) : null}
               </div>
             </Link>
+            </RemovableRow>
           );
         })}
       </div>
