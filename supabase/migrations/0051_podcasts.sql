@@ -23,6 +23,37 @@ alter table watch_progress alter column shikimori_id type bigint;
 alter table user_list alter column shikimori_id type bigint;
 alter table watched_episodes alter column shikimori_id type bigint;
 
+-- get_visible_user_list (0037) объявлена с shikimori_id integer и читает
+-- user_list. После смены типа колонки SQL-функция падала бы на каждом
+-- вызове («return type mismatch») — чужой список на странице друга перестал
+-- бы открываться. Тип результата через create or replace не меняется,
+-- поэтому drop + create; тело и права — как в 0037.
+drop function if exists get_visible_user_list(uuid);
+create function get_visible_user_list(owner uuid)
+returns table (
+  content_type text,
+  shikimori_id bigint,
+  anime_title text,
+  poster_url text,
+  status text,
+  created_at timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select l.content_type, l.shikimori_id, l.anime_title, l.poster_url, l.status, l.created_at
+    from user_list l
+   where l.user_id = owner
+     and can_view_section(owner, 'lists')
+   order by l.created_at desc
+   limit 1000;
+$$;
+
+revoke all on function get_visible_user_list(uuid) from public, anon;
+grant execute on function get_visible_user_list(uuid) to authenticated, service_role;
+
 -- =========================================================
 -- 2. Разрешаем content_type='podcast'
 -- =========================================================
