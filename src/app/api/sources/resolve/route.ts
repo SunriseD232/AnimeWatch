@@ -4,6 +4,11 @@ import {
   getCanonicalChapters,
   resolveChapterContent,
 } from '@/lib/sources/resolve';
+import {
+  MANGALIB_DIR_PREFIX,
+  isMangaLibDir,
+  mangaLibSiteUrl,
+} from '@/lib/sources/mangalib';
 import type {
   ReadingContentType,
   SourceId,
@@ -94,8 +99,23 @@ export async function POST(request: NextRequest) {
   // не искать Remanga заново по названию и не смаппить другой тайтл.
   const externalId =
     typeof body.external_id === 'string' ? body.external_id.trim() : '';
-  const seed: SourceMatch | undefined =
-    externalId.length > 0 && contentType === 'manga'
+  // Карточка только с MangaLib (dir «ml-<slug_url>», lib/mangalibCatalog.ts)
+  // — её seed MangaLib, а не Remanga: у Remanga такого слага нет.
+  const mangaLibSlug =
+    contentType === 'manga' && isMangaLibDir(externalId)
+      ? externalId.slice(MANGALIB_DIR_PREFIX.length)
+      : null;
+  const seed: SourceMatch | undefined = mangaLibSlug
+    ? {
+        source: 'mangalib',
+        externalId: mangaLibSlug,
+        variant: 'default',
+        title,
+        confidence: 1,
+        language: 'ru',
+        externalUrl: mangaLibSiteUrl(mangaLibSlug),
+      }
+    : externalId.length > 0 && contentType === 'manga'
       ? {
           source: 'remanga',
           externalId,

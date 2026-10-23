@@ -62,3 +62,20 @@ export function titleScore(candidates: string[], targets: string[]): number {
 
   return Math.min(1, best);
 }
+
+/**
+ * HTML-сущности в названиях: Remanga и Renovels отдают часть названий
+ * экранированными («Сальвос (ЛитРПГ &quot;Эволюция монстров&quot;)»), и они
+ * так и показывались на карточках (24.10.2026: 254 тайтла манги, 36 ранобэ).
+ */
+export function decodeHtmlEntities(value: string | null): string | null {
+  if (!value) return value;
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&#0*39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
+    .replace(/&amp;/g, '&');
+}

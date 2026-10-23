@@ -232,7 +232,12 @@ function KindChips({
 }) {
   return (
     <div className="-mx-1 flex flex-wrap gap-2">
+      {/* prefetch={false} у всех чипов: они видны сразу, и Next заранее
+          рендерил на сервере каждую их страницу — десятки тяжёлых запросов
+          каталога на одно открытие раздела. 24.10.2026 это забивало базу так,
+          что Supabase Auth не успевал ответить и разделы «не открывались». */}
       <Link
+        prefetch={false}
         href="/manga"
         aria-current={!active ? 'page' : undefined}
         className={[
@@ -246,6 +251,7 @@ function KindChips({
       </Link>
       {kinds.map(({ kind, count }) => (
         <Link
+          prefetch={false}
           key={kind}
           href={`/manga?kind=${encodeURIComponent(kind)}`}
           aria-current={kind === active ? 'page' : undefined}

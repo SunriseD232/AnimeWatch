@@ -148,6 +148,18 @@ export const JOBS = {
     // До 8 сортировок по 1000 страниц Renovels (см. lib/ranobeIndex.ts).
     maxRunMs: 150 * 60 * 1000,
   },
+  'reindex-mangalib': {
+    label: 'Каталог MangaLib: склейка с Remanga',
+    duration: '~10 минут',
+    state: {
+      table: 'source_link_state',
+      startedColumn: 'last_run_started_at',
+      finishedColumn: 'last_run_finished_at',
+      keyColumn: 'job',
+      keyValue: 'mangalib-catalog',
+    },
+    maxRunMs: 60 * 60 * 1000,
+  },
   'link-manga-sources': {
     label: 'Сопоставить мангу с источниками',
     // Джоба chunked: один запуск — один батч. Повторять, пока не done.

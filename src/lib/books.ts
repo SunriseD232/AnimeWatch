@@ -1,4 +1,5 @@
 import { getCachedJson } from '@/lib/cache/apiCache';
+import { singleFlight } from '@/lib/singleFlight';
 import { wordSearchFilter } from '@/lib/indexSearch';
 import { signImageUrl, signRawUrl } from '@/lib/extract/proxy';
 import { createClient } from '@/lib/supabase/server';
@@ -648,9 +649,10 @@ export async function getBookCatalog(
     const supabase = createClient();
     let q = supabase
       .from('book_index')
-      // estimated: после импорта дампа в каталоге сотни тысяч книг (см.
-      // такой же выбор в getMangaCatalog).
-      .select('*', { count: 'estimated' })
+      // planned — оценка планировщика, без счёта строк. estimated при
+      // фильтре жанра всё равно считал точно: 0,6 с на каждую страницу жанра
+      // при 620 тыс. книг. Для числа страниц пагинации оценки хватает.
+      .select('*', { count: 'planned' })
       .eq('in_catalog', true);
 
     const query = (params.query ?? '').trim();
@@ -688,11 +690,12 @@ export async function getBookGenres(): Promise<string[]> {
   // Флибусты книг сотни тысяч, а PostgREST отдаёт не больше 1000 строк — код
   // раньше считал жанры по первой тысяче. Кэш на 6 часов.
   try {
-    return await getCachedJson('books:genres', 6 * 60 * 60, async () => {
+    // singleFlight: при пустом кэше параллельные заходы ждут один подсчёт.
+    return await singleFlight('books:genres', 10 * 60 * 1000, () => getCachedJson('books:genres', 6 * 60 * 60, async () => {
       const { data, error } = await createServiceClient().rpc('book_genre_counts', { lim: 40 });
       if (error) throw new Error(error.message);
       return ((data ?? []) as { genre: string }[]).map((row) => row.genre);
-    });
+    }));
   } catch {
     return [];
   }

@@ -60,6 +60,12 @@ export interface CatalogIndexSpec<T extends { id: number }> {
   fullOrderings: string[];
   /** Записей на страницу — проверенный максимум источника. */
   pageSize: number;
+  /**
+   * Чьи строки решает этот обход: title_id меньше этого значения. У манги в
+   * том же индексе лежат карточки только с MangaLib (title_id ≥
+   * MANGALIB_KEY_OFFSET) — их Remanga не видит и не должна снимать из каталога.
+   */
+  keyBelow?: number;
 }
 
 export interface CatalogRunResult {
@@ -244,11 +250,13 @@ export async function crawlFull<T extends { id: number }>(
     );
   }
 
-  const { error: sweepError } = await supabase
+  let sweep = supabase
     .from(spec.table)
     .update({ in_catalog: false, rank: null })
     .eq('in_catalog', true)
     .lt('updated_at', startedAt.toISOString());
+  if (spec.keyBelow != null) sweep = sweep.lt('title_id', spec.keyBelow);
+  const { error: sweepError } = await sweep;
 
   const { error: stateError } = await supabase
     .from(spec.stateTable)

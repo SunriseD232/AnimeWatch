@@ -89,6 +89,15 @@ export function signImageUrl(url: string): string {
 }
 
 /**
+ * То же, что signImageUrl, но с заголовками к источнику. Обложки MangaLib
+ * (cover.imglib.info) без Referer отвечают 403, а ссылка на обложку живёт в
+ * manga_index месяцами — короткий TTL signRawUrl тут не годится.
+ */
+export function signImageUrlWithHeaders(url: string, headers: Record<string, string>): string {
+  return signWithTtl(url, headers, IMAGE_TOKEN_TTL_MS);
+}
+
+/**
  * Звук подкаста: тот же /api/proxy/raw, но с разрешённым запасным путём
  * через VLESS-туннель (см. fetchAndProxy). Часть аудио-CDN закрыта для
  * российского IP этой VPS — anchor.fm и buzzsprout отвечают 403, akamaized

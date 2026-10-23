@@ -19,9 +19,15 @@ import {
 } from '@/lib/sources/mangaView';
 import {
   findCanonicalIdxBySourceKey,
+  getCanonicalChapters,
   getStoredCanonicalChapters,
   resolveChapterContent,
 } from '@/lib/sources/resolve';
+import {
+  MANGALIB_DIR_PREFIX,
+  isMangaLibDir,
+  mangaLibSiteUrl,
+} from '@/lib/sources/mangalib';
 import type { SourceId, SourceTitleKey } from '@/lib/sources/types';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
 import type { WatchProgress } from '@/lib/types';
@@ -94,7 +100,29 @@ export default async function MangaReaderPage({
   };
 
   const preferred = asSourceId(firstParam(searchParams?.source));
-  const canonical = await getStoredCanonicalChapters(titleKey);
+  const mangaLibOnly = isMangaLibDir(details.dir);
+  let canonical = await getStoredCanonicalChapters(titleKey);
+  // Тайтл только с MangaLib: оглавления у Remanga нет, старого пути чтения
+  // тоже. Если по прямой ссылке зашли раньше, чем карточка собрала
+  // оглавление, собираем его здесь (seed — slug_url MangaLib).
+  if (mangaLibOnly && canonical.length === 0) {
+    const slug = details.dir.slice(MANGALIB_DIR_PREFIX.length);
+    try {
+      canonical = await getCanonicalChapters(titleKey, {
+        seed: {
+          source: 'mangalib',
+          externalId: slug,
+          variant: 'default',
+          title: details.title,
+          confidence: 1,
+          language: 'ru',
+          externalUrl: mangaLibSiteUrl(slug),
+        },
+      });
+    } catch {
+      canonical = [];
+    }
+  }
   const canonicalChapter =
     canonical.find((chapter) => chapter.idx === segment) ?? null;
 
@@ -160,7 +188,7 @@ export default async function MangaReaderPage({
         paid: false,
       });
     }
-  } else {
+  } else if (!mangaLibOnly) {
     // Старый путь: главы и страницы напрямую из Remanga.
     const legacyChapters = details.branchId
       ? await listMangaChapters(details.branchId, details.chaptersCount ?? 0)

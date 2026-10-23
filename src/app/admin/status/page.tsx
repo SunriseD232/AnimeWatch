@@ -35,7 +35,7 @@ export default async function AdminStatusPage() {
 
   const supabase = createServiceClient();
 
-  const [animeState, cinemaState, podcastState, bookState, ranobeState, mangaState, animePosters, cinemaPosters, ratings, imdbGenres, extractor, sourceHealth, linkManga, linkRanobe, bookStorage, savedBooks] = await Promise.all([
+  const [animeState, cinemaState, podcastState, bookState, ranobeState, mangaState, animePosters, cinemaPosters, ratings, imdbGenres, extractor, sourceHealth, linkManga, linkRanobe, bookStorage, savedBooks, mangaLibCatalog] = await Promise.all([
     supabase.from('anime_index_state').select('*').eq('id', true).maybeSingle(),
     supabase.from('cinema_index_state').select('*').eq('id', true).maybeSingle(),
     supabase.from('podcast_index_state').select('*').eq('id', true).maybeSingle(),
@@ -60,6 +60,7 @@ export default async function AdminStatusPage() {
     // Книги, сохранённые на сервере (миграция 0058).
     supabase.from('book_storage_state').select('*').eq('id', true).maybeSingle(),
     supabase.from('user_saved_books').select('*', { count: 'exact', head: true }),
+    supabase.from('source_link_state').select('*').eq('job', 'mangalib-catalog').maybeSingle(),
   ]);
 
   const a = animeState.data as Record<string, unknown> | null;
@@ -73,6 +74,7 @@ export default async function AdminStatusPage() {
   const mLink = linkManga.data as Record<string, unknown> | null;
   const rLink = linkRanobe.data as Record<string, unknown> | null;
   const bs = bookStorage.data as Record<string, unknown> | null;
+  const ml = mangaLibCatalog.data as Record<string, unknown> | null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -132,12 +134,21 @@ export default async function AdminStatusPage() {
         <Row label="Ошибка" value={String(r?.last_error ?? '') || 'нет'} ok={!r?.last_error} />
       </Section>
 
-      <Section title="Каталог манги" jobs={['reindex-manga', 'reindex-manga-full']}>
+      <Section title="Каталог манги" jobs={['reindex-manga', 'reindex-manga-full', 'reindex-mangalib']}>
         <Row label="Тайтлов в витрине" value={num(m?.titles_count)} />
         <Row label="Собран" value={stamp(m?.built_at)} ok={fresh(m?.built_at, 48)} />
         <Row label="Последний запуск начат" value={stamp(m?.last_run_started_at)} />
         <Row label="Последний запуск завершён" value={stamp(m?.last_run_finished_at)} />
         <Row label="Ошибка" value={String(m?.last_error ?? '') || 'нет'} ok={!m?.last_error} />
+              {/* Каталог MangaLib (lib/mangalibCatalog.ts): titles_total — всего у
+            MangaLib, titles_done — склеено с Remanga, last_cursor — своих
+            карточек (тайтлов, которых у Remanga нет). */}
+        <Row
+          label="MangaLib"
+          value={`${num(ml?.titles_total)} тайтлов · склеено ${num(ml?.titles_done)} · своих ${num(ml?.last_cursor)} · ${stamp(ml?.last_run_finished_at)}`}
+          ok={fresh(ml?.last_run_finished_at, 24 * 8)}
+        />
+        <Row label="Ошибка MangaLib" value={String(ml?.last_error ?? '') || 'нет'} ok={!ml?.last_error} />
       </Section>
 
       <Section title="Книги на сервере" jobs={['cleanup-saved-books']}>

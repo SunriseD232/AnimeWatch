@@ -1,8 +1,18 @@
 import { getCachedJson } from '@/lib/cache/apiCache';
+import { singleFlight } from '@/lib/singleFlight';
+import { decodeHtmlEntities } from '@/lib/sources/text';
 import { wordSearchFilter } from '@/lib/indexSearch';
 import { signImageUrl } from '@/lib/extract/proxy';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import {
+  MANGALIB_DIR_PREFIX,
+  MANGALIB_KEY_OFFSET,
+  getMangaLibDetails,
+  isMangaLibDir,
+  mangaLibCover,
+  mangaLibSiteUrl,
+} from '@/lib/sources/mangalib';
 import {
   formatMangaChapterLabel,
   type MangaChapter,
@@ -291,14 +301,14 @@ export function normalizeManga(item: unknown): MangaSummary | null {
   if (id == null || id <= 0 || !dir) return null;
 
   const title =
-    asText(obj.main_name) ??
-    asText(obj.rus_name) ??
-    asText(obj.secondary_name) ??
-    asText(obj.en_name);
+    decodeHtmlEntities(asText(obj.main_name)) ??
+    decodeHtmlEntities(asText(obj.rus_name)) ??
+    decodeHtmlEntities(asText(obj.secondary_name)) ??
+    decodeHtmlEntities(asText(obj.en_name));
   if (!title) return null;
 
-  const secondary = asText(obj.secondary_name);
-  const english = asText(obj.en_name);
+  const secondary = decodeHtmlEntities(asText(obj.secondary_name));
+  const english = decodeHtmlEntities(asText(obj.en_name));
   const originalTitle =
     secondary && secondary !== title
       ? secondary
@@ -424,6 +434,7 @@ export async function fetchMangaCatalogPage(options: {
 export async function getMangaDetails(dir: string): Promise<MangaDetails | null> {
   const clean = dir.trim();
   if (!clean) return null;
+  if (isMangaLibDir(clean)) return getMangaLibCard(clean);
 
   const fallback = await getMangaByDir(clean);
 
@@ -471,6 +482,63 @@ export async function getMangaDetails(dir: string): Promise<MangaDetails | null>
     categories: namesOf(content.categories),
     branchId,
     firstChapterId,
+    sourceAvailable: true,
+  };
+}
+
+/**
+ * Карточка тайтла, которого нет у Remanga, — только с MangaLib (dir
+ * «ml-<slug_url>», см. lib/mangalibCatalog.ts). Оглавления у Remanga для него
+ * нет (branchId = null): главы берёт каноническая ось из MangaLib (seed по
+ * slug_url, см. /api/sources/resolve). Источник не ответил — запись из индекса.
+ */
+async function getMangaLibCard(dir: string): Promise<MangaDetails | null> {
+  const fallback = await getMangaByDir(dir);
+  let live: Awaited<ReturnType<typeof getMangaLibDetails>> = null;
+  try {
+    live = await cachedJson(`manga:mangalib:${dir}`, TITLE_TTL_SECONDS, async () => {
+      const details = await getMangaLibDetails(dir.slice(MANGALIB_DIR_PREFIX.length));
+      if (!details) throw new Error('MangaLib не ответил');
+      return details;
+    });
+  } catch {
+    live = null;
+  }
+  if (!live) {
+    if (!fallback) return null;
+    return {
+      ...fallback,
+      description: null,
+      genres: [],
+      categories: [],
+      branchId: null,
+      firstChapterId: null,
+      sourceAvailable: false,
+    };
+  }
+  const slug = dir.slice(MANGALIB_DIR_PREFIX.length);
+  return {
+    id: fallback?.id ?? MANGALIB_KEY_OFFSET + live.id,
+    dir,
+    title: live.rusName ?? live.engName ?? live.name ?? fallback?.title ?? 'Без названия',
+    originalTitle: live.engName ?? live.name,
+    // Все альтернативные названия — для подписи и сопоставления с другими
+    // источниками (MangaDex, SelfManga ищут по ним).
+    alternativeTitle: [live.name, ...live.otherNames].filter(Boolean).join(' / ') || null,
+    kind: live.kind,
+    status: live.status,
+    year: live.year,
+    rating: live.rating,
+    votes: live.votes,
+    views: null,
+    chaptersCount: live.chaptersCount,
+    coverUrl: mangaLibCover(live.coverRaw) ?? fallback?.coverUrl ?? null,
+    sourceUrl: mangaLibSiteUrl(slug),
+    description: live.description,
+    genres: live.genres,
+    categories: [],
+    branchId: null,
+    firstChapterId: null,
     sourceAvailable: true,
   };
 }
@@ -839,13 +907,14 @@ export async function getMangaKinds(): Promise<{ kind: string; count: number }[]
   // чипы показывали бы цифры первой тысячи. Кэш на 6 часов: каталог меняется
   // раз в сутки.
   try {
-    return await getCachedJson('manga:kinds', 6 * 60 * 60, async () => {
+    // singleFlight: при пустом кэше параллельные заходы ждут один подсчёт.
+    return await singleFlight('manga:kinds', 10 * 60 * 1000, () => getCachedJson('manga:kinds', 6 * 60 * 60, async () => {
       const { data, error } = await createServiceClient().rpc('manga_kind_counts');
       if (error) throw new Error(error.message);
       return ((data ?? []) as { kind: string; count: number | string }[])
         .map((row) => ({ kind: row.kind, count: Number(row.count) }))
         .slice(0, 12);
-    });
+    }));
   } catch {
     return [];
   }

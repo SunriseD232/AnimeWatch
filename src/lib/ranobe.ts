@@ -1,5 +1,7 @@
 import sanitizeHtml from 'sanitize-html';
 import { getCachedJson } from '@/lib/cache/apiCache';
+import { singleFlight } from '@/lib/singleFlight';
+import { decodeHtmlEntities } from '@/lib/sources/text';
 import { wordSearchFilter } from '@/lib/indexSearch';
 import { signImageUrl } from '@/lib/extract/proxy';
 import { createClient } from '@/lib/supabase/server';
@@ -299,14 +301,14 @@ export function normalizeRanobe(item: unknown): RanobeSummary | null {
   if (id == null || id <= 0 || !dir) return null;
 
   const title =
-    asText(obj.main_name) ??
-    asText(obj.rus_name) ??
-    asText(obj.secondary_name) ??
-    asText(obj.en_name);
+    decodeHtmlEntities(asText(obj.main_name)) ??
+    decodeHtmlEntities(asText(obj.rus_name)) ??
+    decodeHtmlEntities(asText(obj.secondary_name)) ??
+    decodeHtmlEntities(asText(obj.en_name));
   if (!title) return null;
 
-  const secondary = asText(obj.secondary_name);
-  const english = asText(obj.en_name);
+  const secondary = decodeHtmlEntities(asText(obj.secondary_name));
+  const english = decodeHtmlEntities(asText(obj.en_name));
   const originalTitle =
     secondary && secondary !== title
       ? secondary
@@ -867,13 +869,14 @@ export async function getRanobeKinds(): Promise<{ kind: string; count: number }[
   // чипы показывали бы цифры первой тысячи. Кэш на 6 часов: каталог меняется
   // раз в сутки.
   try {
-    return await getCachedJson('ranobe:kinds', 6 * 60 * 60, async () => {
+    // singleFlight: при пустом кэше параллельные заходы ждут один подсчёт.
+    return await singleFlight('ranobe:kinds', 10 * 60 * 1000, () => getCachedJson('ranobe:kinds', 6 * 60 * 60, async () => {
       const { data, error } = await createServiceClient().rpc('ranobe_kind_counts');
       if (error) throw new Error(error.message);
       return ((data ?? []) as { kind: string; count: number | string }[])
         .map((row) => ({ kind: row.kind, count: Number(row.count) }))
         .slice(0, 12);
-    });
+    }));
   } catch {
     return [];
   }

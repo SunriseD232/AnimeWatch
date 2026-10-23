@@ -1,5 +1,6 @@
 import { fetchMangaCatalogPage, mangaIndexRow } from '@/lib/manga';
 import type { MangaSummary } from '@/lib/mangaShared';
+import { MANGALIB_KEY_OFFSET } from '@/lib/sources/mangalib';
 import {
   crawlFull,
   rebuildShowcase,
@@ -37,6 +38,8 @@ const SPEC: CatalogIndexSpec<MangaSummary> = {
   fullOrderings: ['-id', 'id'],
   // 30 — проверенный максимум каталога (на 32 Remanga отвечает 400).
   pageSize: 30,
+  // Карточки только с MangaLib (lib/mangalibCatalog.ts) этот обход не решает.
+  keyBelow: MANGALIB_KEY_OFFSET,
 };
 
 export interface MangaReindexResult {

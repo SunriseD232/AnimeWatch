@@ -13,7 +13,7 @@
  * ошибки не кэшируются, а источник отключается флагом SOURCE_MANGALIB.
  */
 
-import { signRawUrl } from '@/lib/extract/proxy';
+import { signImageUrlWithHeaders, signRawUrl } from '@/lib/extract/proxy';
 import { formatChapterLabel, normalizeChapterNo } from './chapterLabel';
 import { isSourceEnabled, recordSourceError, recordSourceOk } from './health';
 import { titleScore } from './text';
@@ -103,6 +103,9 @@ async function apiJson(path: string): Promise<JsonObject | null> {
           'User-Agent': USER_AGENT,
           Accept: 'application/json',
           Referer: `${SITE_BASE}/`,
+          // Без Site-Id карточка тайтла (/manga/{slug}) отвечает 404, хотя
+          // поиск и главы работают (проверено 24.10.2026).
+          'Site-Id': '1',
         },
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         cache: 'no-store',
@@ -324,3 +327,133 @@ export const mangalib: SourceAdapter = {
     return { format: 'images', pages };
   },
 };
+
+// ─────────────────────────── Каталог MangaLib ───────────────────────────
+// Каталог манги у нас — объединение Remanga и MangaLib (lib/mangalibCatalog.ts):
+// одинаковые тайтлы склеиваются в одну карточку, а тайтлы, которых у Remanga
+// нет, получают свою — с адресом /manga/ml-<slug_url> и ключом
+// MANGALIB_KEY_OFFSET + id MangaLib (он же shikimori_id прогресса).
+
+/** Ключи тайтлов только с MangaLib: id Remanga (< 10⁶) с ними не пересекаются,
+ *  а JS-число остаётся точным (< 2⁵³). */
+export const MANGALIB_KEY_OFFSET = 10_000_000_000;
+
+/** Префикс dir у карточек только с MangaLib. */
+export const MANGALIB_DIR_PREFIX = 'ml-';
+
+export function isMangaLibDir(dir: string): boolean {
+  return dir.startsWith(MANGALIB_DIR_PREFIX);
+}
+
+export function mangaLibSiteUrl(slugUrl: string): string {
+  return `https://mangalib.me/ru/manga/${slugUrl}`;
+}
+
+/** Обложка через наш прокси: cover.imglib.info без Referer отвечает 403. */
+export function mangaLibCover(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    return signImageUrlWithHeaders(url, { Referer: `${SITE_BASE}/` });
+  } catch {
+    return url;
+  }
+}
+
+export interface MangaLibListItem {
+  id: number;
+  slugUrl: string;
+  rusName: string | null;
+  engName: string | null;
+  name: string | null;
+  kind: string | null;
+  status: string | null;
+  year: number | null;
+  rating: number | null;
+  votes: number | null;
+  /** Ссылка на обложку у источника, без подписи. */
+  coverRaw: string | null;
+}
+
+function listItem(raw: unknown): MangaLibListItem | null {
+  const item = asObject(raw);
+  if (!item) return null;
+  const id = asNumber(item.id);
+  const slugUrl = asText(item.slug_url);
+  if (id == null || !slugUrl) return null;
+  const rating = asObject(item.rating);
+  const cover = asObject(item.cover);
+  return {
+    id,
+    slugUrl,
+    rusName: asText(item.rus_name),
+    engName: asText(item.eng_name),
+    name: asText(item.name),
+    kind: asText(asObject(item.type)?.label),
+    status: asText(asObject(item.status)?.label),
+    year: parseYear(item.releaseDateString ?? item.releaseDate),
+    rating: rating ? asNumber(rating.average) : null,
+    votes: rating ? asNumber(rating.votes) : null,
+    coverRaw: cover ? asText(cover.default) ?? asText(cover.md) ?? asText(cover.thumbnail) : null,
+  };
+}
+
+/**
+ * Страница каталога по дате добавления (60 тайтлов). Весь каталог — ~690
+ * страниц (24.10.2026), потолка в 1000 страниц, как у Remanga, он не
+ * достигает. null — источник не ответил.
+ */
+export async function fetchMangaLibCatalogPage(
+  page: number,
+): Promise<{ items: MangaLibListItem[]; hasNext: boolean } | null> {
+  const json = await apiJson(
+    `/manga?site_id[]=1&sort_by=created_at&sort_type=desc&page=${page}`,
+  );
+  if (!json) return null;
+  const items = asArray(json.data)
+    .map(listItem)
+    .filter((item): item is MangaLibListItem => item !== null);
+  const meta = asObject(json.meta);
+  return { items, hasNext: meta?.has_next_page === true };
+}
+
+/** Описание MangaLib — документ ProseMirror; собираем текст по абзацам. */
+function proseText(node: unknown): string {
+  const obj = asObject(node);
+  if (!obj) return typeof node === 'string' ? node : '';
+  if (obj.type === 'text') return asText(obj.text) ?? '';
+  const inner = asArray(obj.content).map(proseText).join('');
+  return obj.type === 'paragraph' ? `${inner}\n` : inner;
+}
+
+export interface MangaLibDetails extends MangaLibListItem {
+  description: string | null;
+  genres: string[];
+  otherNames: string[];
+  chaptersCount: number | null;
+}
+
+/** Карточка тайтла MangaLib по slug_url (с числовым префиксом или без). */
+export async function getMangaLibDetails(slugUrl: string): Promise<MangaLibDetails | null> {
+  const json = await apiJson(
+    `/manga/${encodeURIComponent(slugUrl)}?fields[]=summary&fields[]=genres&fields[]=otherNames&fields[]=releaseDate&fields[]=chap_count`,
+  );
+  const data = json ? asObject(json.data) : null;
+  const base = data ? listItem(data) : null;
+  if (!data || !base) return null;
+  const summary = data.summary;
+  const description = (typeof summary === 'string' ? summary : proseText(summary))
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const count = asObject(data.items_count);
+  return {
+    ...base,
+    description: description || null,
+    genres: asArray(data.genres)
+      .map((g) => asText(asObject(g)?.name))
+      .filter((g): g is string => g !== null),
+    otherNames: asArray(data.otherNames)
+      .map(asText)
+      .filter((n): n is string => n !== null),
+    chaptersCount: count ? asNumber(count.uploaded) : null,
+  };
+}
