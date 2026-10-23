@@ -829,6 +829,26 @@ export interface RanobeCatalogParams {
   pageSize?: number;
 }
 
+
+/** Поиск с опечатками по индексу (search_ranobe_fuzzy, миграция 0061). */
+async function fuzzySearch(
+  supabase: ReturnType<typeof createClient>,
+  query: string,
+  from: number,
+  pageSize: number,
+) {
+  const { data, error } = await supabase.rpc('search_ranobe_fuzzy', {
+    q: query.toLowerCase(),
+    lim: pageSize,
+    off: from,
+  });
+  if (error) {
+    console.error('[ranobe] search_ranobe_fuzzy:', error.message);
+    return [];
+  }
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => fromIndexRow(r));
+}
+
 /**
  * Витрина из своего индекса: быстрый первый экран и поиск по подстроке
  * триграммами. Никогда не бросает — при недоступном Supabase возвращает
@@ -868,6 +888,15 @@ export async function getRanobeCatalog(
       .order('views', { ascending: false, nullsFirst: false })
       .order('title_id', { ascending: true })
       .range(from, from + pageSize - 1);
+
+    if (query && (data ?? []).length === 0) {
+      // Точный поиск по словам пуст — пробуем с опечатками (миграция 0061:
+      // «Фриерен» → «Фрирен»). Только запасным путём, чтобы точные
+      // совпадения не тонули среди похожих.
+      const fuzzy = await fuzzySearch(supabase, query, from, pageSize);
+      const items = fuzzy.filter((item) => !params.kind || item.kind === params.kind);
+      return { items, total: from + items.length + (fuzzy.length === pageSize ? 1 : 0) };
+    }
 
     return {
       items: (data ?? []).map((r) => fromIndexRow(r as Record<string, unknown>)),

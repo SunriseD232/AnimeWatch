@@ -633,6 +633,26 @@ export interface BookCatalogParams {
   pageSize?: number;
 }
 
+
+/** Поиск с опечатками по индексу (search_book_fuzzy, миграция 0061). */
+async function fuzzySearch(
+  supabase: ReturnType<typeof createClient>,
+  query: string,
+  from: number,
+  pageSize: number,
+) {
+  const { data, error } = await supabase.rpc('search_book_fuzzy', {
+    q: query.toLowerCase(),
+    lim: pageSize,
+    off: from,
+  });
+  if (error) {
+    console.error('[book] search_book_fuzzy:', error.message);
+    return [];
+  }
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => fromIndexRow(r));
+}
+
 /**
  * Витрина каталога: книги, найденные кроном (`in_catalog = true`), плюс
  * поиск по ним триграммами. Никогда не бросает: нет таблицы/упал Supabase —
@@ -674,6 +694,15 @@ export async function getBookCatalog(
       .order('downloads', { ascending: false, nullsFirst: false })
       .order('book_id', { ascending: false })
       .range(from, from + pageSize - 1);
+
+    if (query && (data ?? []).length === 0) {
+      // Точный поиск по словам пуст — пробуем с опечатками (миграция 0061:
+      // «Фриерен» → «Фрирен»). Только запасным путём, чтобы точные
+      // совпадения не тонули среди похожих.
+      const fuzzy = await fuzzySearch(supabase, query, from, pageSize);
+      const items = fuzzy.filter((book) => !params.genre || book.genres.includes(params.genre));
+      return { items, total: from + items.length + (fuzzy.length === pageSize ? 1 : 0) };
+    }
 
     return {
       items: (data ?? []).map((r) => fromIndexRow(r as Record<string, unknown>)),
