@@ -16,6 +16,13 @@
 -- оператор <% ими пользуется, запрос по манге ~5 мс, по 620 тыс. книг
 -- ~170 мс.
 
+-- Роль postgres здесь не суперпользователь, а `set pg_trgm.…` у функции
+-- проверяется при создании: пока библиотека pg_trgm не загружена в сеансе,
+-- параметр считается чужим и создание падает с «permission denied to set
+-- parameter». Любой вызов функции pg_trgm загружает библиотеку, и параметр
+-- становится обычным пользовательским.
+select show_trgm('a');
+
 create or replace function search_manga_fuzzy(q text, lim integer default 24, off integer default 0)
 returns setof manga_index
 language sql
