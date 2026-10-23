@@ -15,12 +15,13 @@ import ModeSwitch from './ModeSwitch';
  * список» один на оба раздела: внутри профиля у него свой переключатель
  * «Аниме / Фильмы и сериалы».
  *
- * Подкасты, книги, ранобэ и манга здесь не стоят: они — вкладки
- * переключателя разделов рядом с логотипом (ModeSwitch), как аниме и кино.
+ * Разделы (аниме, кино, книги, ранобэ, манга, подкасты) здесь не стоят: они
+ * в переключателе «Смотреть / Читать / Слушать» рядом с логотипом
+ * (ModeSwitch).
  *
- * С xl — подписи, между md и xl — только значки: рядом переключатель из
- * шести разделов и поиск, и на 1024–1279px подписи вытесняли бы поиск. На
- * телефоне этих ссылок нет вовсе — там нижний док (MobileDock).
+ * «Главная» и «Каталог» — всегда значками (однозначные, а строка шапки не
+ * превращается в перечисление), «Мой список» — подписью с xl. На телефоне
+ * этих ссылок нет вовсе — там нижний док (MobileDock).
  */
 /**
  * Раздел, в котором человек сейчас. Путь — первым, но одного пути мало:
@@ -62,7 +63,7 @@ function HeaderNavView({ mode }: { mode: ContentType }) {
 
   return (
     <div className="hidden shrink-0 items-center gap-0.5 md:flex">
-      <NavItem href={homeHref(mode)} label="Главная" active={isHome}>
+      <NavItem href={homeHref(mode)} label="Главная" active={isHome} iconOnly>
         <path d="M3.5 10.5 12 4l8.5 6.5" />
         <path d="M5.5 9v10a1 1 0 0 0 1 1H10v-5.5h4V20h3.5a1 1 0 0 0 1-1V9" />
       </NavItem>
@@ -70,6 +71,7 @@ function HeaderNavView({ mode }: { mode: ContentType }) {
         href={mode === 'cinema' ? '/cinema/catalog' : '/catalog'}
         label="Каталог"
         active={isCatalog}
+        iconOnly
       >
         <rect x="3" y="3" width="7" height="7" rx="2" />
         <rect x="14" y="3" width="7" height="7" rx="2" />
@@ -89,11 +91,16 @@ function NavItem({
   href,
   label,
   active,
+  iconOnly = false,
   children,
 }: {
   href: string;
   label: string;
   active: boolean;
+  /** Только значок на любой ширине (подпись — скринридеру и в title). Так
+   *  «Главная» и «Каталог»: значки однозначные, а строка шапки рядом с
+   *  переключателем разделов не превращается в перечисление. */
+  iconOnly?: boolean;
   /** Контур значка для средней ширины экрана (сетка 24×24, линией). */
   children: ReactNode;
 }) {
@@ -107,14 +114,14 @@ function NavItem({
       aria-current={active ? 'page' : undefined}
       title={label}
       className={[
-        'press flex items-center rounded-full px-2 py-2 text-sm font-medium transition xl:px-3',
+        ['press flex items-center rounded-full px-2 py-2 text-sm font-medium transition', iconOnly ? '' : 'xl:px-3'].join(' '),
         active ? 'bg-white/10 text-white' : 'text-gray-300 hover:bg-white/5 hover:text-white',
       ].join(' ')}
     >
       <svg
         viewBox="0 0 24 24"
         aria-hidden="true"
-        className="h-5 w-5 fill-none stroke-current xl:hidden"
+        className={['h-5 w-5 fill-none stroke-current', iconOnly ? '' : 'xl:hidden'].join(' ')}
         strokeWidth="1.7"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -122,7 +129,7 @@ function NavItem({
         {children}
       </svg>
       {/* Подпись видна с xl, на средней ширине остаётся для скринридера. */}
-      <span className="sr-only xl:not-sr-only xl:whitespace-nowrap">{label}</span>
+      <span className={iconOnly ? 'sr-only' : 'sr-only xl:not-sr-only xl:whitespace-nowrap'}>{label}</span>
     </Link>
   );
 }
