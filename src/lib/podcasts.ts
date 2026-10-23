@@ -245,9 +245,13 @@ function attr(node: unknown, name: string): string {
 /** Убираем теги и разворачиваем основные сущности — описания в фидах это HTML. */
 export function stripHtml(raw: string): string {
   if (!raw) return '';
+  // Переносы строк сохраняем: описание выпуска показывается целиком
+  // (whitespace-pre-line), и склеенное в одну строку оно читалось сплошной
+  // стеной текста — у подкастов это обычно абзацы и списки тем.
   return raw
-    .replace(/<br\s*\/?>/gi, ' ')
-    .replace(/<\/p>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '• ')
     .replace(/<[^>]+>/g, '')
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
@@ -257,7 +261,9 @@ export function stripHtml(raw: string): string {
     .replace(/&#39;|&apos;/g, "'")
     .replace(/&mdash;/g, '—')
     .replace(/&ndash;/g, '–')
-    .replace(/\s+/g, ' ')
+    .replace(/[ \t\f\v\u00a0]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 

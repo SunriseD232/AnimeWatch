@@ -145,6 +145,14 @@ export default async function PodcastPage({ params }: { params: { id: string } }
                         .filter(Boolean)
                         .join(' · ')}
                     </span>
+                    {/* Описание выпуска из RSS — если оно есть. В списке две
+                        строки, чтобы выпуски не превращались в простыню;
+                        целиком — на странице выпуска. */}
+                    {ep.description ? (
+                      <span className="line-clamp-2 text-xs leading-relaxed text-gray-400 [overflow-wrap:anywhere]">
+                        {ep.description}
+                      </span>
+                    ) : null}
                   </span>
                 </Link>
               </li>

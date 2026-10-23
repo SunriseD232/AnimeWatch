@@ -74,6 +74,17 @@ export default async function PodcastListenPage({
         isAuthed={Boolean(user)}
         startPosition={resumeFrom}
       />
+
+      {/* Описание выпуска целиком — то, что автор написал в RSS. Пусто — блока
+          нет вовсе. */}
+      {episode.description ? (
+        <section className="flex flex-col gap-2 rounded-2xl bg-bg-card p-4 ring-1 ring-inset ring-white/5">
+          <h2 className="text-sm font-semibold text-gray-200">Описание выпуска</h2>
+          <p className="whitespace-pre-line text-sm leading-relaxed text-gray-300 [overflow-wrap:anywhere]">
+            {episode.description}
+          </p>
+        </section>
+      ) : null}
     </div>
   );
 }
