@@ -4,6 +4,7 @@ import { signImageUrl, signRawUrl } from '@/lib/extract/proxy';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { XMLParser } from 'fast-xml-parser';
+import { XML_ENTITY_OPTIONS } from '@/lib/xmlLimits';
 import { vlessDispatcher } from '@/lib/net/vlessProxy';
 import { readStoredBookFile } from '@/lib/bookDisk';
 import {
@@ -65,6 +66,8 @@ const xmlParser = new XMLParser({
   parseTagValue: false,
   trimValues: true,
   isArray: (name) => name === 'entry' || name === 'link' || name === 'category',
+  // Лимит раскрытий сущностей поднят — см. lib/xmlLimits.ts.
+  processEntities: XML_ENTITY_OPTIONS,
 });
 
 type XmlNode = Record<string, unknown>;

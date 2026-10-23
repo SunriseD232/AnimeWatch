@@ -4,6 +4,7 @@ import { getCachedJson } from '@/lib/cache/apiCache';
 import { wordSearchFilter } from '@/lib/indexSearch';
 import { signPodcastAudioUrl } from '@/lib/extract/proxy';
 import { XMLParser } from 'fast-xml-parser';
+import { XML_ENTITY_OPTIONS } from '@/lib/xmlLimits';
 import { vlessDispatcher } from '@/lib/net/vlessProxy';
 
 /**
@@ -205,6 +206,8 @@ const xmlParser = new XMLParser({
   parseAttributeValue: false,
   // item — всегда массив, даже если он в фиде один.
   isArray: (name) => name === 'item',
+  // Лимит раскрытий сущностей поднят — см. lib/xmlLimits.ts.
+  processEntities: XML_ENTITY_OPTIONS,
 });
 
 type XmlNode = Record<string, unknown>;

@@ -1,5 +1,6 @@
 import { unzipSync } from 'fflate';
 import { XMLParser } from 'fast-xml-parser';
+import { XML_ENTITY_OPTIONS } from '@/lib/xmlLimits';
 
 /**
  * FB2 → HTML на сервере (запасной путь чтения, см. lib/bookShared.ts).
@@ -51,7 +52,8 @@ const parser = new XMLParser({
   // Пустые теги (`<empty-line/>`) должны остаться узлами, а не превратиться
   // в пустую строку: иначе абзац-разделитель пропадёт.
   alwaysCreateTextNode: false,
-  processEntities: true,
+  // Лимит раскрытий сущностей поднят — см. lib/xmlLimits.ts.
+  processEntities: XML_ENTITY_OPTIONS,
 });
 
 /** Имя тега узла (у узла ровно один ключ, кроме служебного `:@`). */
