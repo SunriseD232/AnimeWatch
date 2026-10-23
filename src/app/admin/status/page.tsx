@@ -113,9 +113,18 @@ export default async function AdminStatusPage() {
         <Row label="Последний запуск начат" value={stamp(b?.last_run_started_at)} />
         <Row label="Последний запуск завершён" value={stamp(b?.last_run_finished_at)} />
         <Row label="Ошибка" value={String(b?.last_error ?? '') || 'нет'} ok={!b?.last_error} />
+        {/* Еженедельный импорт дампа Флибусты (scripts/flibusta-import.sh) —
+            он решает, что есть в каталоге. Запускается кроном на сервере, не
+            отсюда: это скрипт, а не роут сайта. */}
+        <Row
+          label="Дамп Флибусты"
+          value={`${num(b?.dump_books)} книг · ${stamp(b?.dump_imported_at)}`}
+          ok={fresh(b?.dump_imported_at, 24 * 8)}
+        />
+        <Row label="Ошибка импорта" value={String(b?.dump_error ?? '') || 'нет'} ok={!b?.dump_error} />
       </Section>
 
-      <Section title="Каталог ранобэ" jobs={['reindex-ranobe']}>
+      <Section title="Каталог ранобэ" jobs={['reindex-ranobe', 'reindex-ranobe-full']}>
         <Row label="Тайтлов в витрине" value={num(r?.titles_count)} />
         <Row label="Собран" value={stamp(r?.built_at)} ok={fresh(r?.built_at, 48)} />
         <Row label="Последний запуск начат" value={stamp(r?.last_run_started_at)} />
@@ -123,7 +132,7 @@ export default async function AdminStatusPage() {
         <Row label="Ошибка" value={String(r?.last_error ?? '') || 'нет'} ok={!r?.last_error} />
       </Section>
 
-      <Section title="Каталог манги" jobs={['reindex-manga']}>
+      <Section title="Каталог манги" jobs={['reindex-manga', 'reindex-manga-full']}>
         <Row label="Тайтлов в витрине" value={num(m?.titles_count)} />
         <Row label="Собран" value={stamp(m?.built_at)} ok={fresh(m?.built_at, 48)} />
         <Row label="Последний запуск начат" value={stamp(m?.last_run_started_at)} />

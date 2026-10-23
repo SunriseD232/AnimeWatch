@@ -63,6 +63,104 @@ function upscaleArtwork(url: string | null | undefined, px = 600): string | null
   return url.replace(/\/\d+x\d+bb\.(jpg|png)$/, `/${px}x${px}bb.$1`);
 }
 
+// ─────────────────────────── Чарты Apple по жанрам ───────────────────────────
+// Нужны каталогу (lib/podcastIndex.ts): поиск iTunes отдаёт максимум 200 шоу
+// на запрос и не фильтрует по жанру (genreId он игнорирует — проверено
+// 24.10.2026), а чарт жанра в стране — это ровно «200 популярных шоу этого
+// жанра здесь». Новый API чартов (rss.applemarketingtools.com) с VPS не
+// отвечал JSON-ом; старый itunes.apple.com/…/rss/toppodcasts работает и
+// держит запрос в 1,5 с подряд без ограничений.
+
+/** Верхние жанры подкастов Apple — запас, если список жанров не загрузился. */
+const FALLBACK_PODCAST_GENRES = [
+  1301, 1321, 1303, 1304, 1483, 1511, 1512, 1487, 1305, 1502, 1310, 1489, 1314,
+  1533, 1324, 1545, 1309, 1318, 1488,
+];
+
+/**
+ * Все жанры подкастов Apple вместе с поджанрами (на 24.10.2026 — 110). Один
+ * запрос к справочнику; не ответил — 19 верхних жанров.
+ */
+export async function listPodcastGenreIds(): Promise<number[]> {
+  try {
+    const res = await fetch('https://itunes.apple.com/WebObjects/MZStoreServices.woa/ws/genres?id=26', {
+      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+      signal: AbortSignal.timeout(15_000),
+      cache: 'no-store',
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    type Genre = { id?: string; subgenres?: Record<string, Genre> };
+    const root = ((await res.json()) as Record<string, Genre>)['26'];
+    const ids: number[] = [];
+    for (const genre of Object.values(root?.subgenres ?? {})) {
+      ids.push(Number(genre.id));
+      for (const sub of Object.values(genre.subgenres ?? {})) ids.push(Number(sub.id));
+    }
+    const valid = ids.filter((id) => Number.isSafeInteger(id) && id > 0);
+    return valid.length > 0 ? valid : FALLBACK_PODCAST_GENRES;
+  } catch {
+    return FALLBACK_PODCAST_GENRES;
+  }
+}
+
+/** Шоу из чарта: порядок в массиве = место в чарте. */
+export interface PodcastChartEntry {
+  id: number;
+  title: string;
+  author: string | null;
+  artworkUrl: string | null;
+  genre: string | null;
+  releasedAt: string | null;
+}
+
+/**
+ * Топ-200 жанра в стране. Бросает с кодом HTTP в сообщении — вызывающий
+ * решает, ждать ли (403/429 — Apple притормаживает) или идти дальше.
+ */
+export async function fetchPodcastChart(
+  region: string,
+  genreId: number,
+): Promise<PodcastChartEntry[]> {
+  const res = await fetch(
+    `https://itunes.apple.com/${region}/rss/toppodcasts/limit=200/genre=${genreId}/json`,
+    {
+      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+      signal: AbortSignal.timeout(15_000),
+      cache: 'no-store',
+    },
+  );
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  type Label = { label?: string; attributes?: Record<string, string> };
+  type Entry = {
+    id?: Label;
+    'im:name'?: Label;
+    'im:artist'?: Label;
+    'im:image'?: Label[];
+    category?: Label;
+    'im:releaseDate'?: Label;
+  };
+  const data = (await res.json()) as { feed?: { entry?: Entry[] | Entry } };
+  const raw = data.feed?.entry;
+  const entries = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  const out: PodcastChartEntry[] = [];
+  for (const e of entries) {
+    const id = Number(e.id?.attributes?.['im:id']);
+    const title = e['im:name']?.label?.trim();
+    if (!Number.isSafeInteger(id) || id <= 0 || !title) continue;
+    const images = e['im:image'] ?? [];
+    const released = e['im:releaseDate']?.label;
+    out.push({
+      id,
+      title,
+      author: e['im:artist']?.label?.trim() || null,
+      artworkUrl: upscaleArtwork(images[images.length - 1]?.label),
+      genre: e.category?.attributes?.label ?? null,
+      releasedAt: released && !Number.isNaN(Date.parse(released)) ? new Date(released).toISOString() : null,
+    });
+  }
+  return out;
+}
+
 // ─────────────────────────── Разбор ответов iTunes ───────────────────────────
 
 interface ItunesPodcastResult {
@@ -508,7 +606,8 @@ export async function getPodcastCatalog(
       .from('podcast_index')
       .select(
         'collection_id, title, author, artwork_original, genre, country, language, episode_count',
-        { count: 'exact' },
+        // estimated: с чартами по жанрам в партии десятки тысяч шоу.
+        { count: 'estimated' },
       )
       .eq('batch_id', await activePodcastBatch(supabase));
 
@@ -524,6 +623,9 @@ export async function getPodcastCatalog(
       sort === 'new'
         ? q.order('released_at', { ascending: false, nullsFirst: false })
         : q.order('rank', { ascending: true, nullsFirst: false });
+    // Места 1–200 повторяются в каждом чарте жанра: без второго ключа
+    // страницы каталога повторяли бы и теряли шоу.
+    q = q.order('collection_id', { ascending: true });
 
     const { data, count, error } = await q.range(from, to);
     if (error) throw new Error(error.message);

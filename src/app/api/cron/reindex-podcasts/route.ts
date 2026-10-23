@@ -12,7 +12,7 @@ import { rebuildPodcastIndex } from '@/lib/podcastIndex';
  * не жёсткий — прогон может идти десятки минут.
  */
 export const dynamic = 'force-dynamic';
-export const maxDuration = 3600;
+export const maxDuration = 5400;
 
 export async function GET(request: NextRequest) {
   const auth = request.headers.get('authorization');

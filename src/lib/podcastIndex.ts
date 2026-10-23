@@ -3,6 +3,8 @@ import { createServiceClient } from '@/lib/supabase/service';
 import {
   DEFAULT_PODCAST_REGION,
   PODCAST_REGIONS,
+  fetchPodcastChart,
+  listPodcastGenreIds,
   searchPodcastsLive,
   type PodcastRegion,
   type PodcastSummary,
@@ -11,7 +13,9 @@ import {
 /**
  * Построение локального индекса каталога подкастов (см. миграцию 0052).
  *
- * Источник — iTunes Search API по регионам. Каталог у нас лёгкий: id, название,
+ * Источники — iTunes Search API по регионам и чарты Apple по всем жанрам
+ * (110 жанров × 19 регионов, по 200 шоу; ~2 100 запросов, около часа — партия
+ * ночная и неспешная). Каталог у нас лёгкий: id, название,
  * автор, обложка, жанр, регион, язык. Эпизоды и аудио сюда НЕ попадают — они
  * читаются из RSS на лету (lib/podcasts.ts).
  *
@@ -45,8 +49,17 @@ const SEED_TERMS = ['podcast', 'news', 'business', 'comedy'];
  *  держим заметным: партия неспешная, ночная. */
 const REQUEST_INTERVAL_MS = 3_500;
 
-/** Предохранитель от бесконечного цикла. */
-const MAX_ITEMS = 40_000;
+/** Предохранитель от бесконечного цикла. С чартами по жанрам уникальных шоу
+ *  десятки тысяч, потолок с запасом. */
+const MAX_ITEMS = 150_000;
+
+/** Пауза между запросами к чартам. Чарты держат запрос в ~1,5 с подряд без
+ *  ограничений (проверено 24.10.2026: 50 подряд — все 200), в отличие от
+ *  поиска с его ~20 в минуту. */
+const CHART_INTERVAL_MS = 500;
+
+/** Apple притормаживает (403/429) — ждём столько и идём дальше. */
+const CHART_BACKOFF_MS = 30_000;
 
 /** Партия меньше этого — точно обрыв, а не «каталог усох». Указатель при
  *  сильной усадке не трогаем. */
@@ -162,6 +175,50 @@ export async function rebuildPodcastIndex(): Promise<PodcastReindexResult> {
       await sleep(REQUEST_INTERVAL_MS);
     }
     if (seen.size >= MAX_ITEMS) break;
+  }
+
+  // ── Чарты по жанрам ──
+  // Порядок: сначала все регионы по одному жанру, потом следующий жанр —
+  // если Apple начнёт притормаживать, недобор размажется по жанрам, а не
+  // выбьет целые страны.
+  const genreIds = await listPodcastGenreIds();
+  requests++;
+  let chartFailures = 0;
+  outer: for (const genreId of genreIds) {
+    for (const region of PODCAST_REGIONS) {
+      if (seen.size >= MAX_ITEMS) break outer;
+      try {
+        const chart = await fetchPodcastChart(region.code, genreId);
+        chart.forEach((item, i) => {
+          if (seen.has(item.id) || seen.size >= MAX_ITEMS) return;
+          seen.set(item.id, {
+            batch_id: batchId,
+            collection_id: item.id,
+            title: item.title,
+            author: item.author,
+            description: null,
+            artwork_original: item.artworkUrl,
+            genre: item.genre,
+            country: region.code,
+            // Язык чарт не сообщает; страна — ближайшая подсказка, а точный
+            // язык подтянется из RSS на карточке шоу.
+            language: null,
+            episode_count: null,
+            rank: i + 1,
+            released_at: item.releasedAt,
+          });
+        });
+      } catch (err) {
+        chartFailures++;
+        const message = err instanceof Error ? err.message : String(err);
+        if (/HTTP (403|429)/.test(message)) await sleep(CHART_BACKOFF_MS);
+      }
+      requests++;
+      await sleep(CHART_INTERVAL_MS);
+    }
+  }
+  if (chartFailures > 0) {
+    console.warn(`[podcastIndex] чартов не загрузилось: ${chartFailures}`);
   }
 
   const rows = [...seen.values()];

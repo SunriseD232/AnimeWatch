@@ -648,7 +648,9 @@ export async function getBookCatalog(
     const supabase = createClient();
     let q = supabase
       .from('book_index')
-      .select('*', { count: 'exact' })
+      // estimated: после импорта дампа в каталоге сотни тысяч книг (см.
+      // такой же выбор в getMangaCatalog).
+      .select('*', { count: 'estimated' })
       .eq('in_catalog', true);
 
     const query = (params.query ?? '').trim();
@@ -663,7 +665,13 @@ export async function getBookCatalog(
       q = q.contains('genres', [params.genre]);
     }
 
-    const { data, count } = await q.order('rank', { ascending: true }).range(from, from + pageSize - 1);
+    // Витрина OPDS (rank), затем книги из дампа: популярные по скачиваниям,
+    // свежие по id. id — последним ключом для стабильной пагинации.
+    const { data, count } = await q
+      .order('rank', { ascending: true, nullsFirst: false })
+      .order('downloads', { ascending: false, nullsFirst: false })
+      .order('book_id', { ascending: false })
+      .range(from, from + pageSize - 1);
 
     return {
       items: (data ?? []).map((r) => fromIndexRow(r as Record<string, unknown>)),
@@ -676,26 +684,15 @@ export async function getBookCatalog(
 
 /** Жанры, которые реально есть в витрине, — для фильтра. */
 export async function getBookGenres(): Promise<string[]> {
+  // Считает база (миграция 0060, book_genre_counts): после импорта дампа
+  // Флибусты книг сотни тысяч, а PostgREST отдаёт не больше 1000 строк — код
+  // раньше считал жанры по первой тысяче. Кэш на 6 часов.
   try {
-    const supabase = createClient();
-    // Разворачивать массивы в SQL-функцию ради одного фильтра — лишняя
-    // миграция. Витрина небольшая (тысячи строк), поэтому берём колонку и
-    // считаем частоты здесь.
-    const { data } = await supabase
-      .from('book_index')
-      .select('genres')
-      .eq('in_catalog', true)
-      .limit(20_000);
-    const counts = new Map<string, number>();
-    for (const row of data ?? []) {
-      for (const g of (row.genres as string[] | null) ?? []) {
-        counts.set(g, (counts.get(g) ?? 0) + 1);
-      }
-    }
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([g]) => g)
-      .slice(0, 40);
+    return await getCachedJson('books:genres', 6 * 60 * 60, async () => {
+      const { data, error } = await createServiceClient().rpc('book_genre_counts', { lim: 40 });
+      if (error) throw new Error(error.message);
+      return ((data ?? []) as { genre: string }[]).map((row) => row.genre);
+    });
   } catch {
     return [];
   }

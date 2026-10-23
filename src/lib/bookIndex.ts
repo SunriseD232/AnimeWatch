@@ -26,15 +26,18 @@ import type { BookSummary } from '@/lib/bookShared';
  *   2. Проверяем, что выборка вменяемая — иначе индекс Флибусты лёг, и
  *      затирать витрину пустотой нельзя.
  *   3. Upsert всех найденных строк с `in_catalog = true` и новым `rank`.
- *   4. Всё, что не тронуто этим прогоном (`updated_at < начала прогона`),
- *      помечаем `in_catalog = false, rank = null`. Метаданные остаются:
- *      карточки продолжают открываться.
+ *   4. У всего, что не тронуто этим прогоном (`updated_at < начала прогона`),
+ *      снимаем `rank` — книга уходит из витрины, но остаётся в каталоге.
+ *
+ * Что вообще есть в каталоге (`in_catalog`), с 0060 решает еженедельный
+ * импорт SQL-дампа Флибусты (scripts/flibusta-import.sh): ~620 тыс. книг в
+ * FB2/EPUB. Эта ночная пересборка — только витрина свежего и популярного
+ * поверх него, с обложками и числом скачиваний, которых в дампе нет.
  *
  * Источники обхода: новинки (`/opds/new/{page}/new`, 20 книг на страницу) и
  * жанры (`/opds/genres` → поджанры → первая страница ленты). Глубина
- * намеренно ограничена: цель — представительная витрина, а не копия
- * миллионного каталога Флибусты. Всё, чего в витрине нет, находит живой
- * OPDS-поиск на странице /books.
+ * намеренно ограничена: цель — представительная витрина; полный каталог —
+ * дело импорта дампа.
  */
 
 /** Сколько страниц новинок обходим. 40 × 20 = 800 свежих книг. */
@@ -206,20 +209,22 @@ export async function rebuildBookIndex(): Promise<BookReindexResult> {
     }
   }
 
-  // ── 4. Убрать из витрины то, чего больше нет ──
-  // Ровно те строки, которые не тронуты этим прогоном: upsert проставил им
-  // updated_at = nowIso, а у остальных он старше начала прогона. Сравнение
-  // строгое — nowIso мог совпасть с границей.
+  // ── 4. Снять место в витрине с тех, кто из неё выпал ──
+  // Только rank. in_catalog решает еженедельный импорт дампа Флибусты
+  // (scripts/flibusta-import.sh): раньше этот шаг снимал in_catalog со всего,
+  // чего нет в сегодняшних лентах OPDS, и с дампом каждую ночь прятал бы
+  // сотни тысяч книг. Строки, не тронутые этим прогоном, — те, у кого
+  // updated_at старше начала (upsert проставил найденным nowIso).
   const { error: sweepError } = await supabase
     .from('book_index')
-    .update({ in_catalog: false, rank: null })
-    .eq('in_catalog', true)
+    .update({ rank: null })
+    .not('rank', 'is', null)
     .lt('updated_at', startedAt.toISOString());
 
   if (sweepError) {
-    // Витрина уже обновлена — это не повод валить прогон. Но в ней остались
-    // книги, которых Флибуста больше не отдаёт; напишем об этом в состояние.
-    console.error('[bookIndex] убрать старые книги из витрины не удалось:', sweepError.message);
+    // Витрина уже обновлена — это не повод валить прогон; порядок остался
+    // с прошлой ночи, напишем об этом в состояние.
+    console.error('[bookIndex] снять rank со старых книг не удалось:', sweepError.message);
   }
 
   const { error: stateError } = await supabase
@@ -228,7 +233,7 @@ export async function rebuildBookIndex(): Promise<BookReindexResult> {
       built_at: new Date().toISOString(),
       titles_count: fresh,
       last_run_finished_at: new Date().toISOString(),
-      last_error: sweepError ? `витрина не подчищена: ${sweepError.message}` : null,
+      last_error: sweepError ? `rank не снят: ${sweepError.message}` : null,
     })
     .eq('id', true);
 

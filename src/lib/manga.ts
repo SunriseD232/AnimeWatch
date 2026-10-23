@@ -799,7 +799,10 @@ export async function getMangaCatalog(
     const supabase = createClient();
     let q = supabase
       .from('manga_index')
-      .select('*', { count: 'exact' })
+      // estimated, а не exact: после полного обхода в каталоге десятки тысяч
+      // строк, и точный count(*) на каждом открытии раздела дорог. Для
+      // числа страниц пагинации оценки хватает.
+      .select('*', { count: 'estimated' })
       .eq('in_catalog', true);
 
     const query = (params.query ?? '').trim();
@@ -813,7 +816,11 @@ export async function getMangaCatalog(
     if (params.kind) q = q.eq('kind', params.kind);
 
     const { data, count } = await q
-      .order('rank', { ascending: true })
+      // Сначала витрина (rank), потом остальной каталог по просмотрам; id —
+      // последним ключом, чтобы страницы не повторяли и не теряли записи.
+      .order('rank', { ascending: true, nullsFirst: false })
+      .order('views', { ascending: false, nullsFirst: false })
+      .order('title_id', { ascending: true })
       .range(from, from + pageSize - 1);
 
     return {
@@ -827,24 +834,18 @@ export async function getMangaCatalog(
 
 /** Типы в витрине — для чипов над сеткой. */
 export async function getMangaKinds(): Promise<{ kind: string; count: number }[]> {
+  // Считает база (миграция 0060, manga_kind_counts): раньше код выгружал колонку и
+  // считал сам, а PostgREST отдаёт не больше 1000 строк — с полным каталогом
+  // чипы показывали бы цифры первой тысячи. Кэш на 6 часов: каталог меняется
+  // раз в сутки.
   try {
-    const supabase = createClient();
-    const { data } = await supabase
-      .from('manga_index')
-      .select('kind')
-      .eq('in_catalog', true)
-      .limit(20_000);
-
-    const counts = new Map<string, number>();
-    for (const row of data ?? []) {
-      const kind = (row.kind as string | null)?.trim();
-      if (kind) counts.set(kind, (counts.get(kind) ?? 0) + 1);
-    }
-
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([kind, count]) => ({ kind, count }))
-      .slice(0, 12);
+    return await getCachedJson('manga:kinds', 6 * 60 * 60, async () => {
+      const { data, error } = await createServiceClient().rpc('manga_kind_counts');
+      if (error) throw new Error(error.message);
+      return ((data ?? []) as { kind: string; count: number | string }[])
+        .map((row) => ({ kind: row.kind, count: Number(row.count) }))
+        .slice(0, 12);
+    });
   } catch {
     return [];
   }

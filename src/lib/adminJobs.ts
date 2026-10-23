@@ -78,15 +78,15 @@ export const JOBS = {
   },
   'reindex-podcasts': {
     label: 'Перестроить каталог подкастов',
-    duration: '~10-20 минут',
+    duration: '~1 час',
     state: {
       table: 'podcast_index_state',
       startedColumn: 'last_run_started_at',
       finishedColumn: 'last_run_finished_at',
     },
-    // Потолок с запасом: iTunes лимитит ~20 запросов в минуту на IP, а
-    // регионов 19 × слов 4 — это около 76 запросов с паузой 3.5 сек.
-    maxRunMs: 90 * 60 * 1000,
+    // Потолок с запасом: поиск iTunes — 76 запросов с паузой 3,5 сек, чарты —
+    // ~2 100 запросов по ~1,5 сек, плюс паузы, если Apple притормозит.
+    maxRunMs: 150 * 60 * 1000,
   },
   'reindex-books': {
     label: 'Перестроить каталог книг',
@@ -125,6 +125,28 @@ export const JOBS = {
     // записей). Потолок с запасом: если источник начнёт отвечать медленно,
     // прогон растянется, но не оборвётся.
     maxRunMs: 60 * 60 * 1000,
+  },
+  'reindex-manga-full': {
+    label: 'Полный обход каталога манги',
+    duration: '~20 минут',
+    state: {
+      table: 'manga_index_state',
+      startedColumn: 'last_run_started_at',
+      finishedColumn: 'last_run_finished_at',
+    },
+    // ~1 825 страниц Remanga с паузой 250 мс и повторами при сбоях.
+    maxRunMs: 90 * 60 * 1000,
+  },
+  'reindex-ranobe-full': {
+    label: 'Полный обход каталога ранобэ',
+    duration: '~35 минут',
+    state: {
+      table: 'ranobe_index_state',
+      startedColumn: 'last_run_started_at',
+      finishedColumn: 'last_run_finished_at',
+    },
+    // ~3 266 страниц Renovels.
+    maxRunMs: 120 * 60 * 1000,
   },
   'link-manga-sources': {
     label: 'Сопоставить мангу с источниками',
