@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { decodeSegment } from '@/lib/routeParams';
 import ListButton from '@/components/ListButton';
 import { getListEntry } from '@/lib/listEntry';
 import { notFound } from 'next/navigation';
@@ -27,7 +28,7 @@ export async function generateMetadata({
 }: {
   params: { dir: string };
 }): Promise<Metadata> {
-  const details = await getMangaDetails(params.dir);
+  const details = await getMangaDetails(decodeSegment(params.dir));
   if (!details) return { title: 'Манга — MediaWatch' };
   return {
     title: `${details.title} — манга — MediaWatch`,
@@ -51,7 +52,7 @@ export default async function MangaTitlePage({
 }: {
   params: { dir: string };
 }) {
-  const details = await getMangaDetails(params.dir);
+  const details = await getMangaDetails(decodeSegment(params.dir));
   if (!details) notFound();
 
   const supabase = createClient();

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { decodeSegment } from '@/lib/routeParams';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import RanobeReader from '@/components/ranobe/RanobeReader';
@@ -14,7 +15,7 @@ export async function generateMetadata({
 }: {
   params: { dir: string; chapterId: string };
 }): Promise<Metadata> {
-  const details = await getRanobeDetails(params.dir);
+  const details = await getRanobeDetails(decodeSegment(params.dir));
   if (!details) return { title: 'Ранобэ — MediaWatch' };
   return { title: `${details.title} — читать — MediaWatch` };
 }
@@ -40,7 +41,7 @@ export default async function RanobeReaderPage({
   const chapterId = Number(params.chapterId);
   if (!Number.isSafeInteger(chapterId) || chapterId <= 0) notFound();
 
-  const details = await getRanobeDetails(params.dir);
+  const details = await getRanobeDetails(decodeSegment(params.dir));
   if (!details) notFound();
 
   const [chapters, chapter] = await Promise.all([

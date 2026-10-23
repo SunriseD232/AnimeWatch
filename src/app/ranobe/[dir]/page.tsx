@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { decodeSegment } from '@/lib/routeParams';
 import ListButton from '@/components/ListButton';
 import { getListEntry } from '@/lib/listEntry';
 import { notFound } from 'next/navigation';
@@ -28,7 +29,7 @@ export async function generateMetadata({
 }: {
   params: { dir: string };
 }): Promise<Metadata> {
-  const details = await getRanobeDetails(params.dir);
+  const details = await getRanobeDetails(decodeSegment(params.dir));
   if (!details) return { title: 'Ранобэ — MediaWatch' };
   return {
     title: `${details.title} — ранобэ — MediaWatch`,
@@ -48,7 +49,7 @@ export async function generateMetadata({
  * приходит от источника без покупки, и делать вид, что мы его обошли, нельзя.
  */
 export default async function RanobePage({ params }: { params: { dir: string } }) {
-  const details = await getRanobeDetails(params.dir);
+  const details = await getRanobeDetails(decodeSegment(params.dir));
   if (!details) notFound();
 
   const supabase = createClient();

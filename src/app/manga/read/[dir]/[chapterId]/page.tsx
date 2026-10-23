@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { decodeSegment } from '@/lib/routeParams';
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import MangaReader from '@/components/manga/MangaReader';
@@ -53,7 +54,7 @@ export async function generateMetadata({
 }: {
   params: { dir: string; chapterId: string };
 }): Promise<Metadata> {
-  const details = await getMangaDetails(params.dir);
+  const details = await getMangaDetails(decodeSegment(params.dir));
   if (!details) return { title: 'Манга — MediaWatch' };
   return { title: `${details.title} — читать — MediaWatch` };
 }
@@ -78,7 +79,7 @@ export default async function MangaReaderPage({
   const segment = Number(params.chapterId);
   if (!Number.isSafeInteger(segment) || segment <= 0) notFound();
 
-  const details = await getMangaDetails(params.dir);
+  const details = await getMangaDetails(decodeSegment(params.dir));
   if (!details) notFound();
 
   const titleKey: SourceTitleKey = {
