@@ -18,23 +18,43 @@ import { SlidingPill, useSlidingPill } from '@/components/useSlidingPill';
 // Адрес у вкладки не фиксированный: он зависит от того, где мы сейчас —
 // из каталога переключатель ведёт в каталог соседнего раздела, а не на
 // главную (см. sectionHref в lib/mode.ts).
-const TABS: { value: ContentType; label: string; short: string }[] = [
+//
+// Подкасты, книги, ранобэ и манга — в том же ряду: это такие же разделы
+// сайта, и стоять отдельно от «Аниме / Фильмы и сериалы» (как было пунктами
+// навигации справа) им незачем. У них свой адрес (path) и нет куки раздела:
+// кука aw_mode помнит только аниме/кино — по ней логотип и «/» ведут на
+// главную нужного видео-раздела.
+const TABS: { value: ContentType; label: string; short: string; path?: string }[] = [
   { value: 'anime', label: 'Аниме', short: 'Аниме' },
   { value: 'cinema', label: 'Фильмы и сериалы', short: 'Кино' },
+  { value: 'podcast', label: 'Подкасты', short: 'Подкасты', path: '/podcasts' },
+  { value: 'book', label: 'Книги', short: 'Книги', path: '/books' },
+  { value: 'ranobe', label: 'Ранобэ', short: 'Ранобэ', path: '/ranobe' },
+  { value: 'manga', label: 'Манга', short: 'Манга', path: '/manga' },
 ];
+
+/** Раздел по пути — для подкастов/книг/ранобэ/манги; null — видео-раздел. */
+function sectionFromPath(pathname: string): ContentType | null {
+  const tab = TABS.find(
+    (t) => t.path && (pathname === t.path || pathname.startsWith(`${t.path}/`)),
+  );
+  return tab ? tab.value : null;
+}
 
 function setModeCookie(mode: ContentType) {
   document.cookie = `${MODE_COOKIE}=${mode}; path=/; max-age=31536000; samesite=lax`;
 }
 
 /**
- * Переключатель разделов «Аниме» ↔ «Фильмы и сериалы». Живёт в шапке рядом
+ * Переключатель разделов: «Аниме», «Фильмы и сериалы», подкасты, книги,
+ * ранобэ и манга. Живёт в шапке рядом
  * с логотипом (см. HeaderNav.tsx), раньше стоял поверх баннера главной и над
  * каталогом — оттуда убран, чтобы не было двух одинаковых контролов.
  * Сегментированный контрол на ссылках (route-based), активный подсвечен.
  *
- * compact — вариант для шапки: до lg «Кино» вместо «Фильмы и сериалы» и
- * отступы плотнее, иначе на телефоне поиску рядом не оставалось места.
+ * compact — вариант для шапки: до xl «Кино» вместо «Фильмы и сериалы» и
+ * отступы плотнее, иначе поиску рядом не оставалось места (с xl, а не lg —
+ * с тех пор как в ряду шесть разделов).
  */
 export default function ModeSwitch({
   active,
@@ -53,14 +73,17 @@ export default function ModeSwitch({
   // раздела занимает сотни миллисекунд, и всё это время подсветка оставалась
   // на старой вкладке. Выглядело так, будто клик не сработал.
   const [optimistic, setOptimistic] = useState<ContentType | null>(null);
-  const shown = optimistic ?? active;
+  const pathname = usePathname();
+  // В разделе чтения/подкастов подсвечиваем его, а не аниме/кино из куки:
+  // иначе на странице манги горели «Фильмы и сериалы».
+  const current = sectionFromPath(pathname) ?? active;
+  const shown = optimistic ?? current;
 
   // Переход состоялся — отпускаем оптимистичное состояние.
   useEffect(() => {
     setOptimistic(null);
-  }, [active]);
+  }, [current]);
 
-  const pathname = usePathname();
   const { rootRef, setTabRef, pill } = useSlidingPill(shown);
 
   return (
@@ -78,10 +101,14 @@ export default function ModeSwitch({
       <SlidingPill pill={pill} />
       {TABS.map((tab) => {
         const isActive = tab.value === shown;
+        // На телефоне шесть вкладок рядом с лупой не помещаются: там остаются
+        // «Аниме / Кино» и текущий раздел, а все разделы есть в нижнем доке
+        // (MobileDock).
+        const mobileHidden = Boolean(tab.path) && !isActive;
         return (
           <Link
             key={tab.value}
-            href={sectionHref(pathname, tab.value)}
+            href={tab.path ?? sectionHref(pathname, tab.value)}
             // prefetch={false}: автопрефетч Next.js для этих ссылок (видимы в
             // шапке с самого рендера) может выстрелить вторым RSC-запросом
             // почти одновременно с реальным переходом по клику, поймав
@@ -98,8 +125,9 @@ export default function ModeSwitch({
               // показывает скелетон целевой страницы (см. её loading.tsx /
               // внутренний Suspense) — полноэкранный спиннер поверх старой
               // страницы больше не нужен и только прятал этот скелетон.
-              if (tab.value === active) return;
-              setModeCookie(tab.value);
+              if (tab.value === current) return;
+              // Кука — только для видео-разделов (см. TABS выше).
+              if (!tab.path) setModeCookie(tab.value);
               setOptimistic(tab.value);
             }}
             className={[
@@ -109,14 +137,15 @@ export default function ModeSwitch({
               // кривой прямоугольник. Ширина у rounded-full и так по
               // содержимому, переносить нечего.
               'press relative z-10 whitespace-nowrap rounded-full text-sm font-medium transition-colors duration-200',
+              mobileHidden ? 'hidden md:inline-block' : '',
               compact ? 'px-3 py-1.5 sm:px-4' : 'px-4 py-2',
               isActive ? 'text-accent-fg' : 'text-gray-300 hover:text-white',
             ].join(' ')}
           >
             {compact ? (
               <>
-                <span className="lg:hidden">{tab.short}</span>
-                <span className="hidden lg:inline">{tab.label}</span>
+                <span className="xl:hidden">{tab.short}</span>
+                <span className="hidden xl:inline">{tab.label}</span>
               </>
             ) : (
               tab.label
