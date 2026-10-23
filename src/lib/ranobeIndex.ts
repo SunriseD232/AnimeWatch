@@ -9,8 +9,9 @@ import {
 /**
  * Каталог ранобэ (миграция 0055) поверх lib/catalogIndex.ts:
  *   • ночью — витрина популярного (rank), см. rebuildRanobeIndex;
- *   • раз в неделю — полный обход Renovels (~98 тыс. тайтлов, ~3 266
- *     страниц), см. crawlRanobeFull: он решает, что есть в каталоге.
+ *   • раз в неделю — полный обход Renovels (~98 тыс. тайтлов; несколько
+ *     сортировок по 1000 страниц), см. crawlRanobeFull: он решает, что есть
+ *     в каталоге.
  */
 const SPEC: CatalogIndexSpec<RanobeSummary> = {
   label: 'ранобэ',
@@ -27,7 +28,11 @@ const SPEC: CatalogIndexSpec<RanobeSummary> = {
     { ordering: '-id', pages: 7 },
     { ordering: '-views', pages: 9, categories: 196 },
   ],
-  fullOrdering: '-id',
+  // Тайтлов ~98 тыс., а сортировка отдаёт максимум 30 тыс. (1000 страниц):
+  // два прохода по id оставили бы середину (id ~187–225 тыс.) недоступной.
+  // Поэтому ещё и другие ключи в обе стороны — вместе они перекрывают
+  // каталог; обход останавливается, как только собрано заявленное число.
+  fullOrderings: ['-id', 'id', '-views', 'views', '-count_chapters', 'count_chapters', '-rating', 'rating'],
   // 30 — потолок каталога Renovels: с 23.10.2026 на count > 30 он отвечает 400.
   pageSize: 30,
 };

@@ -134,19 +134,19 @@ export const JOBS = {
       startedColumn: 'last_run_started_at',
       finishedColumn: 'last_run_finished_at',
     },
-    // ~1 825 страниц Remanga с паузой 250 мс и повторами при сбоях.
+    // Два прохода по 1000 страниц Remanga с паузой 250 мс и повторами.
     maxRunMs: 90 * 60 * 1000,
   },
   'reindex-ranobe-full': {
     label: 'Полный обход каталога ранобэ',
-    duration: '~35 минут',
+    duration: 'до ~1,5 часа',
     state: {
       table: 'ranobe_index_state',
       startedColumn: 'last_run_started_at',
       finishedColumn: 'last_run_finished_at',
     },
-    // ~3 266 страниц Renovels.
-    maxRunMs: 120 * 60 * 1000,
+    // До 8 сортировок по 1000 страниц Renovels (см. lib/ranobeIndex.ts).
+    maxRunMs: 150 * 60 * 1000,
   },
   'link-manga-sources': {
     label: 'Сопоставить мангу с источниками',

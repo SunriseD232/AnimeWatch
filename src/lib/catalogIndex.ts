@@ -50,8 +50,14 @@ export interface CatalogIndexSpec<T extends { id: number }> {
   ): object;
   /** Витрина: порядок источников = приоритет. */
   showcase: CatalogSource[];
-  /** Сортировка полного обхода — стабильная, чтобы страницы не съезжали. */
-  fullOrdering: string;
+  /**
+   * Сортировки полного обхода. Одной мало: Remanga и Renovels отдают не
+   * дальше 1000-й страницы («Слишком большая страница», 24.10.2026) — это
+   * 30 тыс. тайтлов на сортировку. Проходы с разных концов (-id и id,
+   * просмотры, рейтинг…) вместе покрывают каталог; обход останавливается,
+   * как только собрано заявленное источником число.
+   */
+  fullOrderings: string[];
   /** Записей на страницу — проверенный максимум источника. */
   pageSize: number;
 }
@@ -70,6 +76,8 @@ const MIN_SANE = 150;
 const MIN_FULL_COVERAGE = 0.8;
 /** И не усохнуть сильнее чем вдвое к прошлому полному обходу. */
 const MAX_SHRINK_RATIO = 0.5;
+/** Дальше 1000-й страницы источники не отдают (см. fullOrderings). */
+const MAX_PAGES = 1000;
 /** Повторы пустой страницы посреди каталога: 5, 15, 45 секунд. */
 const RETRY_DELAYS_MS = [5_000, 15_000, 45_000];
 const CHUNK = 500;
@@ -178,44 +186,48 @@ export async function crawlFull<T extends { id: number }>(
   const seen = new Set<number>();
   let pending: object[] = [];
   let requests = 0;
-  let totalPages = 1;
   let declaredTotal = 0;
 
-  for (let page = 1; page <= totalPages; page++) {
-    let res = await spec.fetchPage({ ordering: spec.fullOrdering, page, count: spec.pageSize });
-    requests++;
-    // Пустая страница посреди каталога — сбой источника, а не конец:
-    // повторяем, и только потом сдаёмся (без снятия in_catalog).
-    for (const delay of RETRY_DELAYS_MS) {
-      if (res.items.length > 0) break;
-      await sleep(delay);
-      res = await spec.fetchPage({ ordering: spec.fullOrdering, page, count: spec.pageSize });
+  orderings: for (const ordering of spec.fullOrderings) {
+    let totalPages = 1;
+    for (let page = 1; page <= totalPages; page++) {
+      let res = await spec.fetchPage({ ordering, page, count: spec.pageSize });
       requests++;
-    }
-    if (res.items.length === 0) {
-      throw new Error(
-        `${spec.label}: страница ${page} из ${totalPages} пустая после повторов — обход прерван, каталог не урезан`,
-      );
-    }
-    if (page === 1) {
-      totalPages = res.totalPages;
-      declaredTotal = res.total;
-    }
+      // Пустая страница посреди каталога — сбой источника, а не конец:
+      // повторяем, и только потом сдаёмся (без снятия in_catalog).
+      for (const delay of RETRY_DELAYS_MS) {
+        if (res.items.length > 0) break;
+        await sleep(delay);
+        res = await spec.fetchPage({ ordering, page, count: spec.pageSize });
+        requests++;
+      }
+      if (res.items.length === 0) {
+        throw new Error(
+          `${spec.label}: ${ordering}, страница ${page} из ${totalPages} пустая после повторов — обход прерван, каталог не урезан`,
+        );
+      }
+      if (page === 1) {
+        totalPages = Math.min(res.totalPages, MAX_PAGES);
+        declaredTotal = Math.max(declaredTotal, res.total);
+      }
 
-    const nowIso = new Date().toISOString();
-    for (const item of res.items) {
-      if (seen.has(item.id)) continue;
-      seen.add(item.id);
-      // Без rank: порядок витрины — дело ночного прогона.
-      const row = spec.toRow(item, { inCatalog: true, updatedAt: nowIso }) as Record<string, unknown>;
-      delete row.rank;
-      pending.push(row);
+      const nowIso = new Date().toISOString();
+      for (const item of res.items) {
+        if (seen.has(item.id)) continue;
+        seen.add(item.id);
+        // Без rank: порядок витрины — дело ночного прогона.
+        const row = spec.toRow(item, { inCatalog: true, updatedAt: nowIso }) as Record<string, unknown>;
+        delete row.rank;
+        pending.push(row);
+      }
+      if (pending.length >= CHUNK) {
+        await upsertChunk(spec.table, pending);
+        pending = [];
+      }
+      // Собрано всё, что заявил источник, — остальные проходы не нужны.
+      if (declaredTotal > 0 && seen.size >= declaredTotal) break orderings;
+      await sleep(REQUEST_INTERVAL_MS);
     }
-    if (pending.length >= CHUNK) {
-      await upsertChunk(spec.table, pending);
-      pending = [];
-    }
-    await sleep(REQUEST_INTERVAL_MS);
   }
   await upsertChunk(spec.table, pending);
 

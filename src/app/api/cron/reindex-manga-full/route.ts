@@ -11,7 +11,7 @@ import { crawlMangaFull } from '@/lib/mangaIndex';
  * прогон — снимается. Если обход оборвался или увидел подозрительно мало,
  * каталог не урезается.
  *
- * ~1 825 страниц с паузой 250 мс — ~20 минут. Защита — Authorization: Bearer
+ * Два прохода по 1000 страниц с паузой 250 мс — ~20 минут. Защита — Authorization: Bearer
  * CRON_SECRET, исход — в manga_index_state.last_error (/admin/status).
  */
 export const dynamic = 'force-dynamic';

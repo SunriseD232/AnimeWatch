@@ -11,11 +11,11 @@ import { crawlRanobeFull } from '@/lib/ranobeIndex';
  * прогон — снимается. Если обход оборвался или увидел подозрительно мало,
  * каталог не урезается.
  *
- * ~3 266 страниц с паузой 250 мс — ~35 минут. Защита — Authorization: Bearer
+ * До 8 сортировок по 1000 страниц с паузой 250 мс — до ~1,5 часа. Защита — Authorization: Bearer
  * CRON_SECRET, исход — в ranobe_index_state.last_error (/admin/status).
  */
 export const dynamic = 'force-dynamic';
-export const maxDuration = 3600;
+export const maxDuration = 9000;
 
 export async function GET(request: NextRequest) {
   const auth = request.headers.get('authorization');
