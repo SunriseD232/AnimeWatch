@@ -170,7 +170,7 @@ async function cachedJson<T>(
 
 // ─────────────────────────── Нормализация ───────────────────────────
 
-/** Абсолютный адрес медиа на сайте Renovels. */
+/** Абсолютный адрес на сайте Renovels (картинки и ссылки в тексте глав). */
 function absoluteSiteUrl(raw: string | null): string | null {
   if (!raw) return null;
   const value = raw.trim();
@@ -182,12 +182,28 @@ function absoluteSiteUrl(raw: string | null): string | null {
 }
 
 /**
+ * Адрес обложки. Список (v2) отдаёт её с «/media/titles/…», а карточка (v1,
+ * /api/titles/…) — относительным «titles/…» без /media. absoluteSiteUrl
+ * склеивал такой путь в renovels.org/titles/… — это 404, и в «Продолжить» и
+ * историю уходила битая обложка (24.10.2026). Как в lib/manga.ts: голый путь
+ * обложки живёт под /media/. Ссылки в тексте глав так не правим — там
+ * относительный путь значит страницу сайта, а не медиа.
+ */
+function absoluteCoverUrl(raw: string | null): string | null {
+  const value = raw?.trim();
+  if (value && !value.startsWith('/') && !/^(https?:)?\/\//i.test(value) && !value.startsWith('media/')) {
+    return `${SITE_BASE}/media/${value}`;
+  }
+  return absoluteSiteUrl(value ?? null);
+}
+
+/**
  * Подпись обложки через /api/proxy/raw. Без секрета (локальная сборка без
  * .env) отдаём прямой адрес: картинка может не загрузиться, но заглушка из-за
  * отсутствующего секрета — хуже.
  */
 function signCover(raw: string | null): string | null {
-  const absolute = absoluteSiteUrl(raw);
+  const absolute = absoluteCoverUrl(raw);
   if (!absolute) return null;
   try {
     return signImageUrl(absolute);
