@@ -103,6 +103,11 @@ echo "==> проверка собранного"
 test -f "$BUILD_DIR/standalone/server.js" || { echo "нет standalone/server.js"; exit 1; }
 test -d "$BUILD_DIR/static" || { echo "нет static"; exit 1; }
 
+# next build кладёт копию .env внутрь standalone с правами 644 — секреты
+# (ключ service_role, CRON_SECRET) читались бы любым пользователем сервера.
+# Сайт работает от root, ему 600 не мешает.
+chmod 600 "$BUILD_DIR/standalone/.env" 2>/dev/null || true
+
 # next.config.js использует output: 'standalone', а Next в этом режиме НЕ
 # копирует статику и public/ внутрь standalone сам.
 # Статика кладётся по ТОМУ ЖЕ относительному пути, что и остальной вывод

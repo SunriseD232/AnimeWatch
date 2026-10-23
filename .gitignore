@@ -37,3 +37,12 @@ next-env.d.ts
 # Сборки деплоя: .next — симлинк на одну из них (см. scripts/deploy.sh)
 .build-*/
 .current
+
+# Локальные файлы вне проекта. config_new.* — конфиг xray с данными
+# подключения, в репозиторий его нельзя. android/ — локальная обёртка
+# Capacitor, к сайту не относится.
+config_new.*
+/android/
+
+# Отчёт scripts/measure-coverage.mjs — генерируется при каждом запуске.
+scripts/coverage-report.json
