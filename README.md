@@ -331,8 +331,10 @@ rm -rf /opt/mediawatch/.releases && df -h /
 - В Supabase **Authentication → URL Configuration** добавьте домен сайта в
   `Site URL` / `Redirect URLs`.
 - Расписание фоновых задач живёт в `crontab -l` под root на VPS и в
-  `/etc/cron.d/mediawatch-check-episodes` — **в двух местах**, смотреть надо
-  оба. `vercel.json` остался со времён Vercel и на VPS ни на что не влияет.
+  `/etc/cron.d/` — **в нескольких местах**, смотреть надо все:
+  `mediawatch-check-episodes` (уведомления), `mediawatch-reading` (витрины
+  подкастов/книг/ранобэ/манги 6:20–7:20, уборка книг 7:40, сопоставление
+  источников каждые 15 минут) и `mediawatch-backup` (бэкап в 3:30). `vercel.json` остался со времён Vercel и на VPS ни на что не влияет.
   В `/etc/cron.d` у каждой строки обязательно имя пользователя (`root`):
   одна строка без него — и cron молча игнорирует ВЕСЬ файл (так 25.09–10.10.2026
   не приходили уведомления о новых сериях). Рейтинги КП и IMDb —
