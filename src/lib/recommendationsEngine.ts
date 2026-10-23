@@ -3,7 +3,12 @@ import { mapWithConcurrency } from '@/lib/concurrency';
 import { cacheBackdrops, type BackdropCandidate } from '@/lib/backdropCache';
 import type { BackdropKind } from '@/lib/backdropPath';
 import { vlessDispatcher } from '@/lib/net/vlessProxy';
-import type { ContentType } from '@/lib/types';
+import type { CatalogType } from '@/lib/types';
+
+/** Рекомендации строятся только по каталогам аниме и кино: у подкастов нет
+ *  ни anime_index/cinema_index, ни жанровых id в тех же таблицах. CatalogType
+ *  (см. lib/types.ts) держит Record-таблицы ниже исчерпывающими и не даёт
+ *  случайно передать сюда 'podcast'. */
 
 /** Внутренний ключ для гостевого «пользователя» в rankedByUser (см. ниже) —
  *  не пишется никуда в базу (hero теперь выбирается на чтении, см.
@@ -46,17 +51,17 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const TABLE: Record<ContentType, string> = { anime: 'anime_index', cinema: 'cinema_index' };
-const STATE_TABLE: Record<ContentType, string> = {
+const TABLE: Record<CatalogType, string> = { anime: 'anime_index', cinema: 'cinema_index' };
+const STATE_TABLE: Record<CatalogType, string> = {
   anime: 'anime_index_state',
   cinema: 'cinema_index_state',
 };
-const ID_COLUMN: Record<ContentType, string> = { anime: 'shikimori_id', cinema: 'kp_id' };
-const TITLE_COLUMN: Record<ContentType, string> = { anime: 'russian', cinema: 'title' };
+const ID_COLUMN: Record<CatalogType, string> = { anime: 'shikimori_id', cinema: 'kp_id' };
+const TITLE_COLUMN: Record<CatalogType, string> = { anime: 'russian', cinema: 'title' };
 
 async function getActiveBatchId(
   supabase: SupabaseService,
-  contentType: ContentType,
+  contentType: CatalogType,
 ): Promise<string | null> {
   const { data, error } = await supabase
     .from(STATE_TABLE[contentType])
@@ -111,7 +116,7 @@ interface UserHistory {
 async function getUserHistory(
   supabase: SupabaseService,
   userId: string,
-  contentType: ContentType,
+  contentType: CatalogType,
 ): Promise<UserHistory> {
   const [{ data: wp }, { data: ul }] = await Promise.all([
     supabase
@@ -182,7 +187,7 @@ interface Candidate {
  *  в UserHistory. */
 async function getCandidatePool(
   supabase: SupabaseService,
-  contentType: ContentType,
+  contentType: CatalogType,
   excludedIds: number[],
   genreIds: number[],
 ): Promise<Candidate[]> {
@@ -221,7 +226,7 @@ async function getCandidatePool(
  *  истории (или модель ничего не вернула), и общий guest-hero. */
 async function getPopularPool(
   supabase: SupabaseService,
-  contentType: ContentType,
+  contentType: CatalogType,
   limit: number,
 ): Promise<Candidate[]> {
   return getCandidatePool(supabase, contentType, [], []).then((all) => all.slice(0, limit));
@@ -339,7 +344,7 @@ async function requestRecommendations(
 async function replaceRecommendations(
   supabase: SupabaseService,
   userId: string,
-  contentType: ContentType,
+  contentType: CatalogType,
   items: RecommendedItem[],
 ): Promise<void> {
   await supabase
@@ -485,9 +490,9 @@ export async function refreshRecommendations(): Promise<RefreshRecommendationsRe
   // фоллбэк) — нужен только чтобы собрать множество id, которым может
   // понадобиться backdrop (см. ниже), выбор конкретного hero здесь больше
   // не происходит.
-  const rankedByUser = new Map<string, Record<ContentType, number[]>>();
+  const rankedByUser = new Map<string, Record<CatalogType, number[]>>();
 
-  for (const contentType of ['anime', 'cinema'] as ContentType[]) {
+  for (const contentType of ['anime', 'cinema'] as CatalogType[]) {
     const popularPool = await getPopularPool(supabase, contentType, RECOMMENDATION_LIMIT);
 
     await mapWithConcurrency(userIds, OPENROUTER_CONCURRENCY, async (userId) => {

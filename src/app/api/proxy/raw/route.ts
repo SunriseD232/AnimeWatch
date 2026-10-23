@@ -80,7 +80,9 @@ async function handleGet(request: NextRequest, isHeadProbe: boolean): Promise<Re
     range = 'bytes=0-0';
   }
 
-  const upstream = await fetchAndProxy(range, resolved.url, resolved.headers);
+  const upstream = await fetchAndProxy(range, resolved.url, resolved.headers, {
+    tunnelFallback: resolved.tunnelFallback,
+  });
   // Ресайз только для обычных полных запросов картинки — Range-запрос
   // (частичная загрузка/HEAD-проба) отдаём как есть, менять формат под
   // произвольный byte-range технически можно, но незачем.

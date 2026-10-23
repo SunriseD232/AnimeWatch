@@ -59,19 +59,20 @@ export default async function ProfilePage({ searchParams }: { searchParams: { ta
   // Ссылки на наши копии обложек — одним запросом на все списки сразу.
   // Проверяем ЗДЕСЬ, а не собираем в карточке: ссылка на несуществующий файл
   // это 404 у каждого тайтла, которого нет в кэше.
+  // Только аниме и кино: копии обложек есть лишь у них, а id подкаста или
+  // манги совпал бы с id чужого аниме и подтянул бы его обложку.
+  const withLocalPoster = (type: string): type is 'anime' | 'cinema' =>
+    type === 'anime' || type === 'cinema';
   const localPosters = await getLocalPosterMap([
-    ...items.map((i) => ({
-      kind: i.content_type === 'cinema' ? ('cinema' as const) : ('anime' as const),
-      id: i.shikimori_id,
-    })),
-    ...historyItems.map((h) => ({
-      kind: h.content_type === 'cinema' ? ('cinema' as const) : ('anime' as const),
-      id: h.shikimori_id,
-    })),
-    ...ratings.map((r) => ({
-      kind: r.contentType === 'cinema' ? ('cinema' as const) : ('anime' as const),
-      id: r.shikimoriId,
-    })),
+    ...items
+      .filter((i) => withLocalPoster(i.content_type))
+      .map((i) => ({ kind: i.content_type as 'anime' | 'cinema', id: i.shikimori_id })),
+    ...historyItems
+      .filter((h) => withLocalPoster(h.content_type))
+      .map((h) => ({ kind: h.content_type as 'anime' | 'cinema', id: h.shikimori_id })),
+    ...ratings
+      .filter((r) => r.contentType === 'anime' || r.contentType === 'cinema')
+      .map((r) => ({ kind: r.contentType as 'anime' | 'cinema', id: r.shikimoriId })),
   ]);
   const isAdmin = isAdminEmail(user.email);
   const relayEnabled = isAdmin ? await getVpsRelayEnabled(true) : false;

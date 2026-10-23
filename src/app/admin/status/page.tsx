@@ -5,6 +5,8 @@ import { getCachedUser } from '@/lib/supabase/server';
 import RunJobButton from '@/components/admin/RunJobButton';
 import ResetExtractorButton from '@/components/admin/ResetExtractorButton';
 import { getExtractorHealth } from '@/lib/extractorHealth';
+import { sourceTitleLabel } from '@/lib/sources/chapterLabel';
+import type { SourceId } from '@/lib/sources/types';
 import type { JobName } from '@/lib/adminJobs';
 
 export const metadata = { title: 'Состояние — MediaWatch' };
@@ -33,9 +35,13 @@ export default async function AdminStatusPage() {
 
   const supabase = createServiceClient();
 
-  const [animeState, cinemaState, animePosters, cinemaPosters, ratings, imdbGenres, extractor] = await Promise.all([
+  const [animeState, cinemaState, podcastState, bookState, ranobeState, mangaState, animePosters, cinemaPosters, ratings, imdbGenres, extractor, sourceHealth, linkManga, linkRanobe, bookStorage, savedBooks] = await Promise.all([
     supabase.from('anime_index_state').select('*').eq('id', true).maybeSingle(),
     supabase.from('cinema_index_state').select('*').eq('id', true).maybeSingle(),
+    supabase.from('podcast_index_state').select('*').eq('id', true).maybeSingle(),
+    supabase.from('book_index_state').select('*').eq('id', true).maybeSingle(),
+    supabase.from('ranobe_index_state').select('*').eq('id', true).maybeSingle(),
+    supabase.from('manga_index_state').select('*').eq('id', true).maybeSingle(),
     supabase.from('poster_cache').select('*', { count: 'exact', head: true }).eq('kind', 'anime').gt('bytes', 0),
     supabase.from('poster_cache').select('*', { count: 'exact', head: true }).eq('kind', 'cinema').gt('bytes', 0),
     supabase.from('cinema_ratings').select('*', { count: 'exact', head: true }).not('rating', 'is', null),
@@ -47,10 +53,26 @@ export default async function AdminStatusPage() {
     // никогда не бросает: если экстрактор лежит, страница должна об этом
     // сказать, а не упасть вместе с ним.
     getExtractorHealth(),
+    // Источники чтения: здоровье и прогресс chunked-маппинга.
+    supabase.from('source_health').select('*').order('source'),
+    supabase.from('source_link_state').select('*').eq('job', 'manga').maybeSingle(),
+    supabase.from('source_link_state').select('*').eq('job', 'ranobe').maybeSingle(),
+    // Книги, сохранённые на сервере (миграция 0058).
+    supabase.from('book_storage_state').select('*').eq('id', true).maybeSingle(),
+    supabase.from('user_saved_books').select('*', { count: 'exact', head: true }),
   ]);
 
   const a = animeState.data as Record<string, unknown> | null;
   const c = cinemaState.data as Record<string, unknown> | null;
+  const p = podcastState.data as Record<string, unknown> | null;
+  const b = bookState.data as Record<string, unknown> | null;
+  const r = ranobeState.data as Record<string, unknown> | null;
+  const m = mangaState.data as Record<string, unknown> | null;
+
+  const healthRows = (sourceHealth.data ?? []) as Record<string, unknown>[];
+  const mLink = linkManga.data as Record<string, unknown> | null;
+  const rLink = linkRanobe.data as Record<string, unknown> | null;
+  const bs = bookStorage.data as Record<string, unknown> | null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -75,6 +97,96 @@ export default async function AdminStatusPage() {
         <Row label="Последний запуск начат" value={stamp(c?.last_run_started_at)} />
         <Row label="Последний запуск завершён" value={stamp(c?.last_run_finished_at)} />
         <Row label="Ошибка" value={String(c?.last_error ?? '') || 'нет'} ok={!c?.last_error} />
+      </Section>
+
+      <Section title="Каталог подкастов" jobs={['reindex-podcasts']}>
+        <Row label="Подкастов в активной партии" value={num(p?.titles_count)} />
+        <Row label="Собран" value={stamp(p?.built_at)} ok={fresh(p?.built_at, 48)} />
+        <Row label="Последний запуск начат" value={stamp(p?.last_run_started_at)} />
+        <Row label="Последний запуск завершён" value={stamp(p?.last_run_finished_at)} />
+        <Row label="Ошибка" value={String(p?.last_error ?? '') || 'нет'} ok={!p?.last_error} />
+      </Section>
+
+      <Section title="Каталог книг" jobs={['reindex-books']}>
+        <Row label="Книг в витрине" value={num(b?.titles_count)} />
+        <Row label="Собран" value={stamp(b?.built_at)} ok={fresh(b?.built_at, 48)} />
+        <Row label="Последний запуск начат" value={stamp(b?.last_run_started_at)} />
+        <Row label="Последний запуск завершён" value={stamp(b?.last_run_finished_at)} />
+        <Row label="Ошибка" value={String(b?.last_error ?? '') || 'нет'} ok={!b?.last_error} />
+      </Section>
+
+      <Section title="Каталог ранобэ" jobs={['reindex-ranobe']}>
+        <Row label="Тайтлов в витрине" value={num(r?.titles_count)} />
+        <Row label="Собран" value={stamp(r?.built_at)} ok={fresh(r?.built_at, 48)} />
+        <Row label="Последний запуск начат" value={stamp(r?.last_run_started_at)} />
+        <Row label="Последний запуск завершён" value={stamp(r?.last_run_finished_at)} />
+        <Row label="Ошибка" value={String(r?.last_error ?? '') || 'нет'} ok={!r?.last_error} />
+      </Section>
+
+      <Section title="Каталог манги" jobs={['reindex-manga']}>
+        <Row label="Тайтлов в витрине" value={num(m?.titles_count)} />
+        <Row label="Собран" value={stamp(m?.built_at)} ok={fresh(m?.built_at, 48)} />
+        <Row label="Последний запуск начат" value={stamp(m?.last_run_started_at)} />
+        <Row label="Последний запуск завершён" value={stamp(m?.last_run_finished_at)} />
+        <Row label="Ошибка" value={String(m?.last_error ?? '') || 'нет'} ok={!m?.last_error} />
+      </Section>
+
+      <Section title="Книги на сервере" jobs={['cleanup-saved-books']}>
+        <Row label="Сохранений у пользователей" value={num(savedBooks.count)} />
+        <Row
+          label="Файлов на диске"
+          value={`${num(bs?.files_count)} · ${Math.round(Number(bs?.bytes_total ?? 0) / 1024 / 1024)} МБ`}
+        />
+        <Row label="Очистка начата" value={stamp(bs?.last_run_started_at)} />
+        <Row label="Очистка завершена" value={stamp(bs?.last_run_finished_at)} ok={fresh(bs?.last_run_finished_at, 48)} />
+        <Row label="Ошибка" value={String(bs?.last_error ?? '') || 'нет'} ok={!bs?.last_error} />
+      </Section>
+
+      <Section
+        title="Источники чтения"
+        jobs={['link-manga-sources', 'link-ranobe-flibusta']}
+      >
+        {healthRows.length === 0 ? (
+          <Row label="Источники" value="ещё не было запросов" />
+        ) : (
+          healthRows.map((row) => (
+            <Row
+              key={String(row.source)}
+              label={
+                sourceTitleLabel(String(row.source) as SourceId) ||
+                String(row.source)
+              }
+              value={[
+                row.enabled === false ? 'выкл' : 'вкл',
+                `ошибок ${num(row.errors_24h)}`,
+                row.last_error
+                  ? `ошибка: ${String(row.last_error).slice(0, 80)}`
+                  : stamp(row.last_ok_at),
+              ].join(' · ')}
+              ok={row.enabled !== false && !row.last_error}
+            />
+          ))
+        )}
+
+        <Row
+          label="Маппинг манги"
+          value={`${num(mLink?.titles_done)} тайтлов · ${stamp(mLink?.last_run_finished_at)}`}
+        />
+        <Row
+          label="Ошибка маппинга манги"
+          value={String(mLink?.last_error ?? '') || 'нет'}
+          ok={!mLink?.last_error}
+        />
+
+        <Row
+          label="Маппинг ранобэ"
+          value={`${num(rLink?.titles_done)} тайтлов · ${stamp(rLink?.last_run_finished_at)}`}
+        />
+        <Row
+          label="Ошибка маппинга ранобэ"
+          value={String(rLink?.last_error ?? '') || 'нет'}
+          ok={!rLink?.last_error}
+        />
       </Section>
 
       <Section title="Рейтинги TMDB" jobs={['refresh-cinema-ratings']}>
@@ -173,7 +285,8 @@ export default async function AdminStatusPage() {
 
       <p className="text-xs text-gray-400">
         Расписание: индекс аниме — 5:00, индекс кино — 5:20, обложки — 5:40,
-        рейтинги — воскресенье 4:00. Кнопка «Запустить» дёргает ту же ручку,
+        каталог подкастов — 6:20, каталог книг — 6:40, каталог ранобэ — 7:00,
+        каталог манги — 7:20, рейтинги — воскресенье 4:00. Кнопка «Запустить» дёргает ту же ручку,
         что и системный крон, и отвечает сразу — исход появится в строках выше,
         когда прогон закончится.
       </p>

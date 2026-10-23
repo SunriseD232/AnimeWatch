@@ -2,7 +2,12 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { isAdminEmail } from '@/lib/admin';
 import { getCachedUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
-import { JOBS, type JobName, isJobName } from '@/lib/adminJobs';
+import {
+  JOBS,
+  isJobName,
+  type JobName,
+  type JobStateRef,
+} from '@/lib/adminJobs';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,10 +35,14 @@ async function alreadyRunning(job: JobName): Promise<boolean> {
   if (!def.state) return false;
 
   const supabase = createServiceClient();
+  const state: JobStateRef = def.state;
+  const keyColumn = state.keyColumn ?? 'id';
+  const keyValue = state.keyValue ?? true;
+
   const { data } = await supabase
-    .from(def.state.table)
-    .select(`${def.state.startedColumn}, ${def.state.finishedColumn}`)
-    .eq('id', true)
+    .from(state.table)
+    .select('*')
+    .eq(keyColumn, keyValue)
     .maybeSingle();
   if (!data) return false;
 

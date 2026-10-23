@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { contentTitleHref, contentTypeLabel, localPosterKey } from '@/lib/contentLinks';
 import { useMemo, useState } from 'react';
 import PosterImage from '@/components/PosterImage';
 import { fixPosterUrl } from '@/lib/format';
@@ -80,17 +81,17 @@ export default function RatingsView({
 
       <ul className="grid gap-2 sm:grid-cols-2">
         {sorted.map((r) => {
-          const kind = r.contentType === 'cinema' ? 'cinema' : 'anime';
+          const posterKey = localPosterKey(r.contentType, r.shikimoriId) ?? '';
           return (
-            <li key={`${kind}:${r.shikimoriId}`}>
+            <li key={`${r.contentType}:${r.shikimoriId}`}>
               <Link
-                href={`/${kind}/${r.shikimoriId}`}
+                href={contentTitleHref(r.contentType, r.shikimoriId)}
                 className="card-lift flex items-center gap-3 rounded-xl bg-bg-card p-2.5 ring-1 ring-white/5 hover:ring-accent/60"
               >
                 <div className="relative h-16 w-11 shrink-0 overflow-hidden rounded-lg bg-bg-soft">
-                  {r.posterUrl || localPosters[`${kind}:${r.shikimoriId}`] ? (
+                  {r.posterUrl || localPosters[posterKey] ? (
                     <PosterImage
-                      sources={[localPosters[`${kind}:${r.shikimoriId}`], fixPosterUrl(r.posterUrl)]}
+                      sources={[localPosters[posterKey], fixPosterUrl(r.posterUrl)]}
                       alt=""
                       className="absolute inset-0 h-full w-full object-cover"
                       placeholderClassName="h-full w-full"
@@ -101,7 +102,7 @@ export default function RatingsView({
                   <span className="line-clamp-2 text-sm font-medium text-gray-100">
                     {r.title ?? 'Без названия'}
                   </span>
-                  <span className="text-xs text-gray-400">{kind === 'cinema' ? 'Кино' : 'Аниме'}</span>
+                  <span className="text-xs text-gray-400">{contentTypeLabel(r.contentType)}</span>
                 </div>
                 <span className="relative grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent text-base font-bold tabular-nums text-accent-fg">
                   <span className="sr-only">Оценка </span>

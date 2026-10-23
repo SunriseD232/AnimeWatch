@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { contentTitleHref, localPosterKey } from '@/lib/contentLinks';
 import { useEffect, useRef, useState } from 'react';
 import type {
   ContentType,
@@ -14,22 +15,36 @@ import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ToastProvider';
 import { SlidingPill, useSlidingPill } from '@/components/useSlidingPill';
 import StatusFilterDropdown from '@/components/StatusFilterDropdown';
-import { LIST_STATUS_LABELS, LIST_STATUS_OPTIONS } from '@/lib/listStatus';
+import { listStatusLabel, listStatusOptions } from '@/lib/listStatus';
 import { IconBadge, ListPlusIcon } from '@/components/social/icons';
 
 const TYPE_TABS: { value: ContentType; label: string }[] = [
   { value: 'anime', label: 'Аниме' },
   { value: 'cinema', label: 'Фильмы и сериалы' },
+  { value: 'podcast', label: 'Подкасты' },
+  { value: 'book', label: 'Книги' },
+  { value: 'ranobe', label: 'Ранобэ' },
+  { value: 'manga', label: 'Манга' },
 ];
 
-const STATUS_OPTIONS = LIST_STATUS_OPTIONS;
+/** Аниме и кино — всегда; остальные вкладки появляются, когда в разделе
+ *  есть хоть одна запись: шесть вкладок у человека, который читает только
+ *  мангу, были бы шумом, а на телефоне — горизонтальной прокруткой. */
+const ALWAYS_SHOWN: ContentType[] = ['anime', 'cinema'];
 
-const FILTERS: { value: UserListStatus | 'all'; label: string }[] = [
-  { value: 'all', label: 'Все' },
-  ...STATUS_OPTIONS,
-];
+/** Куда вести из пустой вкладки. */
+const EMPTY_TARGET: Record<ContentType, { href: string; label: string }> = {
+  anime: { href: '/catalog', label: 'Найти что посмотреть →' },
+  cinema: { href: '/cinema/catalog', label: 'Найти что посмотреть →' },
+  podcast: { href: '/podcasts', label: 'Найти что послушать →' },
+  book: { href: '/books', label: 'Найти что почитать →' },
+  ranobe: { href: '/ranobe', label: 'Найти что почитать →' },
+  manga: { href: '/manga', label: 'Найти что почитать →' },
+};
 
-const STATUS_LABELS = LIST_STATUS_LABELS;
+function filtersFor(type: ContentType): { value: UserListStatus | 'all'; label: string }[] {
+  return [{ value: 'all', label: 'Все' }, ...listStatusOptions(type)];
+}
 
 /** Карточка тайтла в списке — своё состояние раскрытия названия на каждую. */
 function ListCard({
@@ -60,7 +75,7 @@ function ListCard({
         {item.poster_url ? (
           <PosterImage
             sources={[
-              localPosters[`${item.content_type === 'cinema' ? 'cinema' : 'anime'}:${item.shikimori_id}`],
+              localPosters[localPosterKey(item.content_type, item.shikimori_id) ?? ''],
               fixPosterUrl(item.poster_url),
             ]}
             alt={item.anime_title}
@@ -73,7 +88,7 @@ function ListCard({
           </div>
         )}
         <span className="absolute left-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-accent-text">
-          {STATUS_LABELS[item.status]}
+          {listStatusLabel(item.content_type, item.status)}
         </span>
       </div>
       <div className="p-2.5">
@@ -109,7 +124,7 @@ function ListCard({
         </button>
       ) : (
         <Link
-          href={`/${item.content_type === 'cinema' ? 'cinema' : 'anime'}/${item.shikimori_id}`}
+          href={contentTitleHref(item.content_type, item.shikimori_id)}
           className="flex flex-1 flex-col"
         >
           {body}
@@ -175,8 +190,16 @@ export default function UserListView({
 
   const { rootRef, setTabRef, pill } = useSlidingPill(type);
 
-  // Аниме и кино — раздельные вкладки, чтобы списки не перемешивались.
+  // Каждый раздел — своя вкладка, чтобы списки не перемешивались.
   const ofType = localItems.filter((i) => i.content_type === type);
+  const tabs = TYPE_TABS.filter(
+    (t) =>
+      ALWAYS_SHOWN.includes(t.value) ||
+      t.value === type ||
+      localItems.some((i) => i.content_type === t.value),
+  );
+  const FILTERS = filtersFor(type);
+  const STATUS_OPTIONS = listStatusOptions(type);
   const visible =
     filter === 'all' ? ofType : ofType.filter((i) => i.status === filter);
 
@@ -245,16 +268,20 @@ export default function UserListView({
           ModeSwitch на главной. Визуально отличается от ряда фильтров
           статуса ниже — раньше оба ряда были одинаковыми плоскими пилюлями,
           и было сложно с ходу понять, что это два разных уровня. */}
+      {/* max-w-full + overflow-x-auto: с подкастами, книгами, ранобэ и мангой
+          вкладок может стать до шести, а на телефоне они не помещаются в
+          ширину. Ряд прокручивается вбок, полоса прокрутки видна — иначе
+          крайние разделы просто пропали бы из виду. */}
       <div
         ref={rootRef}
-        className="relative inline-flex w-fit rounded-full border border-white/10 bg-bg-card p-1"
+        className="relative inline-flex w-fit max-w-full overflow-x-auto rounded-full border border-white/10 bg-bg-card p-1"
       >
         {/* Подсветка — переезжающим ползунком, тем же, что на главной
             (useSlidingPill). Раньше здесь заливалась сама кнопка, и раздел
             менялся рывком: подсветка гасла на одной вкладке и зажигалась на
             другой. */}
         <SlidingPill pill={pill} />
-        {TYPE_TABS.map((t) => {
+        {tabs.map((t) => {
           const count = localItems.filter(
             (i) => i.content_type === t.value,
           ).length;
@@ -266,7 +293,7 @@ export default function UserListView({
               onClick={() => setType(t.value)}
               aria-pressed={type === t.value}
               className={[
-                'press relative z-10 rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200',
+                'press relative z-10 shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200',
                 type === t.value ? 'text-accent-fg' : 'text-gray-300 hover:text-white',
               ].join(' ')}
             >
@@ -383,10 +410,10 @@ export default function UserListView({
           </IconBadge>
           <p className="text-sm text-gray-400">Здесь пока пусто.</p>
           <Link
-            href={type === 'cinema' ? '/cinema/catalog' : '/catalog'}
+            href={EMPTY_TARGET[type].href}
             className="press rounded-full bg-accent px-4 py-2 text-sm font-medium text-accent-fg transition hover:bg-accent-hover"
           >
-            Найти что посмотреть →
+            {EMPTY_TARGET[type].label}
           </Link>
         </div>
       ) : (

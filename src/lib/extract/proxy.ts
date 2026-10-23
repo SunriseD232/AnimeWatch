@@ -49,9 +49,21 @@ function fromBase64url(input: string): string {
   return Buffer.from(input, 'base64url').toString('utf8');
 }
 
-function signWithTtl(url: string, headers: Record<string, string>, ttlMs: number): string {
+function signWithTtl(
+  url: string,
+  headers: Record<string, string>,
+  ttlMs: number,
+  tunnelFallback = false,
+): string {
   const payload = base64url(
-    JSON.stringify({ u: url, h: headers, exp: Date.now() + ttlMs }),
+    JSON.stringify({
+      u: url,
+      h: headers,
+      exp: Date.now() + ttlMs,
+      // Флаг внутри подписанного payload, а не в query: клиент не может
+      // включить туннель сам себе для произвольной ссылки.
+      ...(tunnelFallback ? { t: 1 } : {}),
+    }),
   );
   const sig = createHmac('sha256', secret()).update(payload).digest('hex');
   return `/api/proxy/raw?u=${payload}&s=${sig}`;
@@ -76,11 +88,28 @@ export function signImageUrl(url: string): string {
   return signWithTtl(url, {}, IMAGE_TOKEN_TTL_MS);
 }
 
+/**
+ * Звук подкаста: тот же /api/proxy/raw, но с разрешённым запасным путём
+ * через VLESS-туннель (см. fetchAndProxy). Часть аудио-CDN закрыта для
+ * российского IP этой VPS — anchor.fm и buzzsprout отвечают 403, akamaized
+ * у «Радио Свободы» не устанавливает TCP, — а через туннель отдают 206
+ * (проверено с VPS 23.10.2026). Только для подкастов: видео-CDN бывают
+ * привязаны к адресу VPS (Alloha, см. fetchUpstream), и туннель им вреден.
+ */
+export function signPodcastAudioUrl(url: string): string {
+  // Браузерный User-Agent: без него fetch шлёт «node», и часть хостингов
+  // (buzzsprout — проверено 23.10.2026) отвечает 403, а с ним — 206.
+  return signWithTtl(url, { 'User-Agent': PODCAST_AUDIO_UA }, RAW_TOKEN_TTL_MS, true);
+}
+
+const PODCAST_AUDIO_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+
 /** Проверяет и разворачивает токен из /api/proxy/raw?u=...&s=... */
 export function verifyRawToken(
   payload: string | null,
   sig: string | null,
-): { url: string; headers: Record<string, string> } | null {
+): { url: string; headers: Record<string, string>; tunnelFallback: boolean } | null {
   if (!payload || !sig) return null;
   const expected = createHmac('sha256', secret()).update(payload).digest('hex');
   if (expected.length !== sig.length) return null;
@@ -97,9 +126,10 @@ export function verifyRawToken(
       u: string;
       h: Record<string, string>;
       exp: number;
+      t?: number;
     };
     if (!data.u || typeof data.exp !== 'number' || data.exp < Date.now()) return null;
-    return { url: data.u, headers: data.h ?? {} };
+    return { url: data.u, headers: data.h ?? {}, tunnelFallback: data.t === 1 };
   } catch {
     return null;
   }
@@ -303,7 +333,12 @@ async function needsVpsRelay(url: string): Promise<boolean> {
  * БД для serverless/Vercel), этот список — фиксированное обходное решение
  * под конкретную сеть текущей VPS, включено всегда.
  */
-const VLESS_HOSTS = [/(^|\.)download\.real-debrid\.com$/i];
+const VLESS_HOSTS = [
+  /(^|\.)download\.real-debrid\.com$/i,
+  // Флибуста (обложки книг): с этой VPS напрямую блокируется по IP, TCP не
+  // устанавливается. Сами книги и OPDS идут через туннель в lib/books.ts.
+  /(^|\.)flibusta\.(is|site)$/i,
+];
 
 function needsVlessProxy(url: string): boolean {
   try {
@@ -388,7 +423,16 @@ async function fetchWithHeadersTimeout(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), UPSTREAM_HEADERS_TIMEOUT_MS);
   try {
-    return await fetch(url, { ...init, signal: controller.signal } as RequestInit);
+    // cache: 'no-store' обязателен. Без него Next 14 складывал каждый ответ
+    // меньше 2 МБ — сегменты видео Videoseed — в .next/cache/fetch-cache с
+    // revalidate на год: 23.10.2026 там было 20 ГБ, +2,5–5 ГБ в сутки, диск
+    // VPS заполнился бы за несколько дней. Сегменты не переиспользуются, а
+    // кэш никто не чистит до следующего деплоя.
+    return await fetch(url, {
+      ...init,
+      cache: 'no-store',
+      signal: controller.signal,
+    } as RequestInit);
   } finally {
     clearTimeout(timer);
   }
@@ -457,22 +501,52 @@ export async function fetchAndProxy(
   incomingRange: string | null,
   url: string,
   headers: Record<string, string>,
+  options: { tunnelFallback?: boolean } = {},
 ): Promise<Response> {
   const upstreamHeaders: Record<string, string> = { ...headers };
   if (incomingRange) upstreamHeaders.Range = incomingRange;
 
+  // Повтор через VLESS-туннель — только для токенов с флагом (звук
+  // подкастов, см. signPodcastAudioUrl). Видео сюда не попадает: у него
+  // флага нет, и путь ниже для него не изменился.
+  const viaTunnel = () =>
+    fetchWithHeadersTimeout(url, {
+      headers: upstreamHeaders,
+      redirect: 'follow',
+      dispatcher: vlessDispatcher(),
+    });
+
   let upstream: UpstreamResponse;
   try {
     upstream = await fetchUpstream(url, upstreamHeaders);
+    if (options.tunnelFallback && (upstream.status === 403 || upstream.status === 451)) {
+      // Тело отказа не нужно — освобождаем соединение до повтора.
+      await upstream.text().catch(() => {});
+      upstream = await viaTunnel();
+    }
   } catch (err) {
-    console.error(
-      `[extract/proxy] fetchUpstream упал url=${url}:`,
-      err instanceof Error ? err.message : err,
-    );
-    return new Response(JSON.stringify({ error: 'upstream_unreachable' }), {
-      status: 502,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    if (!options.tunnelFallback) {
+      console.error(
+        `[extract/proxy] fetchUpstream упал url=${url}:`,
+        err instanceof Error ? err.message : err,
+      );
+      return new Response(JSON.stringify({ error: 'upstream_unreachable' }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    try {
+      upstream = await viaTunnel();
+    } catch (tunnelErr) {
+      console.error(
+        `[extract/proxy] ни напрямую, ни через туннель url=${url}:`,
+        tunnelErr instanceof Error ? tunnelErr.message : tunnelErr,
+      );
+      return new Response(JSON.stringify({ error: 'upstream_unreachable' }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
   }
 
   if (!upstream.ok && upstream.status !== 206) {

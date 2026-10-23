@@ -37,7 +37,14 @@ export function useSlidingPill(active: string) {
       if (!root || !el) return;
       const r = root.getBoundingClientRect();
       const t = el.getBoundingClientRect();
-      setPill({ left: t.left - r.left, width: t.width });
+      // + scrollLeft: в профиле ряд вкладок прокручивается (UserListView), а
+      // ползунок лежит внутри прокручиваемого содержимого — без поправки он
+      // съезжал бы на величину прокрутки. Где прокрутки нет, это 0.
+      setPill({ left: t.left - r.left + root.scrollLeft, width: t.width });
+      // Активная вкладка, уехавшая за край, сама возвращается в поле зрения.
+      if (t.left < r.left || t.right > r.right) {
+        el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
     };
     measure();
 

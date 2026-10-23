@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { contentTitleHref, localPosterKey } from '@/lib/contentLinks';
 import { useMemo, useState } from 'react';
 import PosterImage from '@/components/PosterImage';
 import { fixPosterUrl } from '@/lib/format';
@@ -61,17 +62,16 @@ export default function PublicListView({
       </div>
       <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
         {shown.map((item) => {
-          const kind = item.contentType === 'cinema' ? 'cinema' : 'anime';
-          const key = `${kind}:${item.shikimoriId}`;
+          const key = `${item.contentType}:${item.shikimoriId}`;
           return (
             <li key={key}>
               <Link
-                href={`/${kind}/${item.shikimoriId}`}
+                href={contentTitleHref(item.contentType, item.shikimoriId)}
                 className="card-lift group flex flex-col overflow-hidden rounded-xl bg-bg-card ring-1 ring-white/5 hover:ring-accent/60"
               >
                 <div className="relative aspect-[2/3] w-full overflow-hidden bg-bg-soft">
                   <PosterImage
-                    sources={[localPosters[key], fixPosterUrl(item.posterUrl)]}
+                    sources={[localPosters[localPosterKey(item.contentType, item.shikimoriId) ?? ''], fixPosterUrl(item.posterUrl)]}
                     alt=""
                     className="absolute inset-0 h-full w-full object-cover"
                     placeholderClassName="grid h-full w-full place-items-center text-xs text-gray-400"

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { contentProgressPercent, contentResumeHref, contentUnitLabel } from '@/lib/contentLinks';
 import PosterImage from '@/components/PosterImage';
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
@@ -50,16 +51,22 @@ export default function ContinueCard({
   const [expanded, setExpanded] = useState(false);
   const titleRef = useRef<HTMLHeadingElement>(null);
 
-  const percent = watchPercent(
-    progress.position_seconds,
-    progress.duration_seconds,
-  );
+  // Видео и подкасты — по секундам; книги/ранобэ/манга — по
+  // progress_percent (у них в position_seconds не секунды, см. unit).
+  const isTimed = !progress.unit || progress.unit === 'seconds';
+  const percent = isTimed
+    ? watchPercent(progress.position_seconds, progress.duration_seconds)
+    : contentProgressPercent(progress);
 
-  // Кино маршрутизируется с сезоном, аниме — без.
-  const watchHref =
-    progress.content_type === 'cinema'
-      ? `/cinema/watch/${progress.shikimori_id}/${progress.season ?? 1}/${progress.episode}`
-      : `/watch/${progress.shikimori_id}/${progress.episode}`;
+  // Кино маршрутизируется с сезоном, аниме — без; остальные типы — в свои
+  // плееры/читатели (админка показывает здесь весь прогресс человека).
+  const watchHref = contentResumeHref(progress);
+  const unitLabel =
+    progress.content_type === 'anime' || progress.content_type === 'cinema'
+      ? isMultiSeason
+        ? `С${progress.season ?? 1} · Серия ${progress.episode}`
+        : `Серия ${progress.episode}`
+      : contentUnitLabel(progress.content_type, progress.season ?? 1, progress.episode);
 
   async function remove() {
     if (removing) return;
@@ -120,8 +127,8 @@ export default function ContinueCard({
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
           <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-2 py-0.5 text-xs font-medium text-white">
-            {isMultiSeason ? `С${progress.season ?? 1} · Серия ${progress.episode}` : `Серия ${progress.episode}`} ·{' '}
-            {formatTime(progress.position_seconds)}
+            {unitLabel}
+            {isTimed ? ` · ${formatTime(progress.position_seconds)}` : percent != null ? ` · ${percent}%` : ''}
           </span>
           {percent !== null && (
             <div className="absolute inset-x-0 bottom-0 h-1 bg-white/10">

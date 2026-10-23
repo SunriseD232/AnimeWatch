@@ -1,15 +1,54 @@
 /**
  * Тип контента. 'anime' — каталог Shikimori + поиск Kodik по shikimori_id.
  * 'cinema' — фильмы/сериалы из каталога Kodik + поиск по kinopoisk_id.
+ * 'podcast' — аудиоподкасты из iTunes/RSS; shikimori_id хранит Apple
+ * collectionId (см. миграцию 0051 — колонка стала bigint, Apple id бывает
+ * больше int32).
+ * 'book' | 'manga' | 'ranobe' — чтение (миграция 0053). shikimori_id несёт
+ * внешний id источника, а сам источник — в отдельной колонке `source`
+ * (у ReManga и Renovels свои числовые id, без неё они бы столкнулись).
  */
-export type ContentType = 'anime' | 'cinema';
+export type ContentType = 'anime' | 'cinema' | 'podcast' | 'book' | 'manga' | 'ranobe';
+
+/**
+ * Типы контента, у которых есть каталог с постерами и подборками (аниме,
+ * кино). Подкасты сюда не входят: у них нет «похожего», рейтингов и
+ * backdrop-баннеров — эти механизмы завязаны на постере 2:3 и Shikimori/
+ * Kinopoisk-каталоги (см. recommendations.ts, lib/social/server.ts).
+ *
+ * Отдельный тип, а не просто 'anime' | 'cinema' на месте: раньше ContentType
+ * был ровно этими двумя, и после добавления подкастов компилятор сам показал
+ * все места, где подразумевался каталог, а не любой контент.
+ */
+export type CatalogType = Exclude<ContentType, 'podcast' | 'book' | 'manga' | 'ranobe'>;
+
+/**
+ * Единица позиции внутри юнита (watch_progress.unit, миграция 0053).
+ * Секунда годится только для видео и звука; книга — это проценты (точной
+ * доли в числителе нет, она в locator), манга — страница.
+ */
+export type ProgressUnit = 'seconds' | 'page' | 'chapter' | 'percent';
+
+/** Источник тайтла для типов, где он неоднозначен (книги/манга/ранобэ). */
+export type ContentSource =
+  | 'flibusta'
+  | 'remanga'
+  | 'renovels'
+  | 'mangadex'
+  | 'mangalib'
+  | 'selfmanga'
+  | 'mintmanga'
+  | 'yai'
+  | 'shikimori'
+  | 'itunes';
 
 /** Строка прогресса просмотра (таблица watch_progress). */
 export interface WatchProgress {
   id: string;
   user_id: string;
   content_type: ContentType;
-  // Для 'anime' — shikimori_id, для 'cinema' — kinopoisk_id (колонка общая).
+  // Для 'anime' — shikimori_id, для 'cinema' — kinopoisk_id, для 'podcast' —
+  // Apple collectionId (колонка общая, см. миграцию 0051).
   shikimori_id: number;
   anime_title: string;
   poster_url: string | null;
@@ -22,6 +61,16 @@ export interface WatchProgress {
   /** Текстовая метка озвучки — см. миграцию 0008 (translation_id Yummy не
    *  стабилен между сериями, поэтому для восстановления используем строку). */
   translation_title: string | null;
+  /** Источник тайтла для книг/манги/ранобэ (миграция 0053). У аниме/кино/
+   *  подкастов null: там источник однозначен по content_type. */
+  source?: ContentSource | null;
+  /** Единица позиции (миграция 0053). Старые строки — 'seconds'. */
+  unit?: ProgressUnit;
+  /** Доля прочитанного 0..1 (книги/ранобэ/манга). Точное место — в locator. */
+  progress_percent?: number | null;
+  /** Место, которое не влезает в число: cfi epub.js, chapterId, chapterLabel
+   *  («Том 3, глава 5»), scrollY. См. миграцию 0053. */
+  locator?: Record<string, unknown> | null;
   updated_at: string;
 }
 
@@ -37,6 +86,14 @@ export interface WatchProgressInput {
   duration_seconds: number | null;
   translation_id: number | null;
   translation_title: string | null;
+  /** Источник тайтла для книг/манги/ранобэ (миграция 0053). */
+  source?: ContentSource | null;
+  /** Единица позиции (миграция 0053). Не задана — сервер считает 'seconds'. */
+  unit?: ProgressUnit;
+  /** Доля прочитанного 0..1 (книги/ранобэ). */
+  progress_percent?: number | null;
+  /** Место, которое не влезает в число (cfi, chapterId, chapterLabel). */
+  locator?: Record<string, unknown> | null;
   /** Режим «отметить открытую серию» без позиции (Videoseed). */
   mark?: boolean;
   /** Пометить серию season/episode полностью просмотренной. */

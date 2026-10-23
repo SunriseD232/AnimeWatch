@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { contentTitleHref } from '@/lib/contentLinks';
 import { useCallback, useEffect, useId, useState } from 'react';
 import PosterImage from '@/components/PosterImage';
 import { fixPosterUrl, formatDateTime } from '@/lib/format';
@@ -154,7 +155,6 @@ function MyCommentItem({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const editId = useId();
-  const kind = comment.contentType === 'cinema' ? 'cinema' : 'anime';
 
   async function save() {
     const next = text.trim();
@@ -195,7 +195,7 @@ function MyCommentItem({
   return (
     <li className="flex gap-3 rounded-xl bg-bg-card p-3 ring-1 ring-white/5">
       <Link
-        href={`/${kind}/${comment.shikimoriId}`}
+        href={contentTitleHref(comment.contentType, comment.shikimoriId)}
         className="relative hidden h-20 w-14 shrink-0 overflow-hidden rounded-lg bg-bg-soft sm:block"
         aria-label={comment.title ?? 'Тайтл'}
       >

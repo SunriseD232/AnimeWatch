@@ -969,3 +969,294 @@ body {
     min-height: 12rem;
   }
 }
+
+/* ─────────────────────────── FB2-читатель ───────────────────────────
+   Разметку собирает серверный парсер (src/lib/fb2.ts), поэтому классов
+   Tailwind в ней нет и быть не может: они появляются в рантайме, а Tailwind
+   вырезает всё, чего не видел в исходниках. Стили ниже — единственное место,
+   где внешний вид FB2 задаётся явно. Цвета наследуются от контейнера, чтобы
+   текст оставался читаемым на фоне карточки. */
+.fb2-content {
+  font-size: 15px;
+  line-height: 1.7;
+  color: #d9dce3;
+  overflow-wrap: break-word;
+}
+
+.fb2-content .fb2-body > .fb2-section:first-child > .fb2-title:first-child {
+  margin-top: 0;
+}
+
+/* Якорь оглавления — на <section>, а заголовок внутри. Отступ прокрутки
+   нужен обоим: scrollIntoView ставит раздел вплотную к верхнему краю. */
+.fb2-content .fb2-section {
+  scroll-margin-top: 1rem;
+}
+
+.fb2-content .fb2-title {
+  margin: 1.8em 0 0.7em;
+  font-size: 1.25em;
+  font-weight: 700;
+  line-height: 1.3;
+  /* Якорь из оглавления не должен прятаться под липкой шапкой — её тут нет,
+     но запас от верхнего края всё равно нужен: scrollIntoView ставит раздел
+     вплотную к границе прокрутки. */
+  scroll-margin-top: 1rem;
+}
+
+.fb2-content .fb2-section .fb2-section .fb2-title {
+  font-size: 1.1em;
+}
+
+.fb2-content p {
+  margin: 0 0 0.75em;
+  text-align: justify;
+  hyphens: auto;
+}
+
+.fb2-content .fb2-subtitle {
+  margin: 1.4em 0 0.8em;
+  font-weight: 600;
+  font-style: italic;
+  text-align: center;
+}
+
+.fb2-content .fb2-empty {
+  margin: 0;
+  height: 0.9em;
+}
+
+.fb2-content .fb2-epigraph,
+.fb2-content .fb2-cite {
+  margin: 1.2em 0 1.2em 1.5em;
+  padding-left: 1em;
+  border-left: 2px solid rgb(255 255 255 / 0.12);
+  color: #b9bec9;
+  font-style: italic;
+}
+
+.fb2-content .fb2-poem {
+  margin: 1.2em 0;
+}
+
+.fb2-content .fb2-stanza {
+  margin: 0 0 1em;
+}
+
+.fb2-content .fb2-v {
+  margin: 0;
+  text-align: left;
+  white-space: pre-wrap;
+}
+
+.fb2-content .fb2-text-author {
+  margin: 0.2em 0 0.8em;
+  text-align: right;
+  font-style: italic;
+  color: #b9bec9;
+}
+
+.fb2-content .fb2-table {
+  width: 100%;
+  margin: 1em 0;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.fb2-content .fb2-table td,
+.fb2-content .fb2-table th {
+  border: 1px solid rgb(255 255 255 / 0.12);
+  padding: 0.35em 0.5em;
+  vertical-align: top;
+}
+
+.fb2-content a {
+  color: #8ab4f8;
+}
+
+.fb2-content sub,
+.fb2-content sup {
+  font-size: 0.75em;
+}
+
+.fb2-scroll {
+  scrollbar-width: thin;
+}
+
+/* ─────────────────────────── Читатель ранобэ ───────────────────────────
+   HTML главы приходит от Renovels и чистится sanitize-html (src/lib/ranobe.ts):
+   классы и стили вырезаны, поэтому Tailwind тут не поможет — внешний вид
+   задаётся тегами. Набор тегов ограничен, но включает картинки, таблицы и
+   цитаты: у авторских романов они встречаются. */
+.ranobe-content {
+  font-size: 16px;
+  line-height: 1.75;
+  color: #d9dce3;
+  overflow-wrap: break-word;
+}
+
+.ranobe-content p,
+.ranobe-content div {
+  margin: 0 0 0.85em;
+}
+
+/* Пустые div-разделители у источника иногда несут отступ, но пустой блок
+   не должен создавать полноценную строку. */
+.ranobe-content div:empty {
+  display: none;
+}
+
+.ranobe-content h1,
+.ranobe-content h2,
+.ranobe-content h3,
+.ranobe-content h4,
+.ranobe-content h5,
+.ranobe-content h6 {
+  margin: 1.6em 0 0.7em;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #f1f3f7;
+}
+
+.ranobe-content h1 {
+  font-size: 1.35em;
+}
+
+.ranobe-content h2 {
+  font-size: 1.22em;
+}
+
+.ranobe-content h3,
+.ranobe-content h4,
+.ranobe-content h5,
+.ranobe-content h6 {
+  font-size: 1.1em;
+}
+
+.ranobe-content em,
+.ranobe-content i {
+  font-style: italic;
+}
+
+.ranobe-content strong,
+.ranobe-content b {
+  font-weight: 700;
+  color: #f1f3f7;
+}
+
+.ranobe-content blockquote {
+  margin: 1.2em 0;
+  padding-left: 1em;
+  border-left: 2px solid rgb(255 255 255 / 0.14);
+  color: #b9bec9;
+}
+
+.ranobe-content ul,
+.ranobe-content ol {
+  margin: 0 0 0.9em;
+  padding-left: 1.5em;
+}
+
+.ranobe-content ul {
+  list-style: disc;
+}
+
+.ranobe-content ol {
+  list-style: decimal;
+}
+
+.ranobe-content li {
+  margin: 0.2em 0;
+}
+
+.ranobe-content hr {
+  margin: 1.6em auto;
+  width: 40%;
+  border: 0;
+  border-top: 1px solid rgb(255 255 255 / 0.14);
+}
+
+.ranobe-content a {
+  color: #8ab4f8;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ranobe-content img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1em auto;
+  border-radius: 0.75rem;
+}
+
+.ranobe-content figure {
+  margin: 1em 0;
+}
+
+.ranobe-content figcaption {
+  margin-top: 0.4em;
+  text-align: center;
+  font-size: 0.85em;
+  color: #9aa0ab;
+}
+
+.ranobe-content pre {
+  margin: 1em 0;
+  padding: 0.75em;
+  overflow-x: auto;
+  border-radius: 0.75rem;
+  background: rgb(255 255 255 / 0.04);
+  font-size: 0.9em;
+}
+
+.ranobe-content code {
+  font-size: 0.9em;
+}
+
+.ranobe-content table {
+  width: 100%;
+  margin: 1em 0;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.ranobe-content th,
+.ranobe-content td {
+  border: 1px solid rgb(255 255 255 / 0.12);
+  padding: 0.35em 0.5em;
+  vertical-align: top;
+}
+
+.ranobe-content sub,
+.ranobe-content sup {
+  font-size: 0.75em;
+}
+
+/* Прокрутка главы: тонкий скроллбар и никакого «резинки» на границе —
+   страница иначе дёргается вместе с родительским скроллом. */
+.ranobe-scroll {
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
+}
+
+/* ─────────────────────────── Читатель манги ───────────────────────────
+   Страницы — обычные <img> с шириной и высотой от Remanga: браузер резервирует
+   место до загрузки, и восстановление позиции не прыгает. object-fit не нужен:
+   картинки идут в натуральной пропорции, шириной во всю колонку. */
+.manga-scroll {
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
+}
+
+.manga-scroll img {
+  background-color: rgb(255 255 255 / 0.03);
+}
+
+/* На очень широком экране не растягиваем страницу на всю карточку: у манги
+   комфортная ширина чтения меньше, чем у видео. */
+@media (min-width: 1536px) {
+  .manga-scroll > div {
+    max-width: 56rem;
+  }
+}

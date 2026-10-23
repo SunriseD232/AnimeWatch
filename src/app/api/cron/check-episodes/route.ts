@@ -2,6 +2,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { episodeCount, getAnime } from '@/lib/shikimori';
 import { getCinemaById } from '@/lib/videoseed-catalog';
+import { getMangaById, getMangaDetails } from '@/lib/manga';
+import { getRanobeById, getRanobeDetails } from '@/lib/ranobe';
+import { getPodcastDetails } from '@/lib/podcasts';
 import { ADMIN_EMAILS } from '@/lib/admin';
 import { VIBIX_MILESTONES } from '@/lib/vibixTrial';
 import type { ContentType } from '@/lib/types';
@@ -20,18 +23,46 @@ interface WatchingRow {
   poster_url: string | null;
 }
 
-/** Текущее число серий тайтла: Shikimori для аниме, Videoseed для кино. */
+/**
+ * Текущее число юнитов тайтла: серий (Shikimori — аниме, Videoseed — кино),
+ * глав (Remanga — манга, Renovels — ранобэ) или выпусков (RSS — подкасты).
+ * null — источник не ответил или тип не проверяется (книги): baseline тогда
+ * не трогаем, сравним в следующий раз.
+ */
 async function getCurrentEpisodeCount(
   contentType: ContentType,
   shikimoriId: number,
 ): Promise<number | null> {
   try {
-    if (contentType === 'anime') {
-      const anime = await getAnime(shikimoriId);
-      return episodeCount(anime);
+    switch (contentType) {
+      case 'anime':
+        return episodeCount(await getAnime(shikimoriId));
+      case 'cinema':
+        return (await getCinemaById(shikimoriId))?.episodesTotal ?? null;
+      case 'manga': {
+        // Remanga отдаёт карточку по слагу, а в списке — числовой id;
+        // слаг берём из своего индекса.
+        const indexed = await getMangaById(shikimoriId);
+        if (!indexed?.dir) return null;
+        const details = await getMangaDetails(indexed.dir);
+        // sourceAvailable=false — это запись из индекса, а не живой ответ:
+        // по ней прирост не считаем, иначе старое число «откатило» бы базу.
+        return details && details.sourceAvailable !== false ? details.chaptersCount ?? null : null;
+      }
+      case 'ranobe': {
+        const indexed = await getRanobeById(shikimoriId);
+        if (!indexed?.dir) return null;
+        const details = await getRanobeDetails(indexed.dir);
+        return details && details.sourceAvailable !== false ? details.chaptersCount ?? null : null;
+      }
+      case 'podcast': {
+        const details = await getPodcastDetails(shikimoriId);
+        // Пустой список выпусков — фид не разобрался, а не «выпусков ноль».
+        return details && details.episodes.length > 0 ? details.episodes.length : null;
+      }
+      default:
+        return null;
     }
-    const item = await getCinemaById(shikimoriId);
-    return item?.episodesTotal ?? null;
   } catch {
     return null;
   }
@@ -93,7 +124,10 @@ export async function GET(request: NextRequest) {
   const { data: watching, error } = await supabase
     .from('user_list')
     .select('content_type, shikimori_id, anime_title, poster_url')
-    .eq('status', 'watching');
+    .eq('status', 'watching')
+    // Только типы, у которых бывают новые юниты и которые умеет
+    // getCurrentEpisodeCount. Книги — нет: новых глав у книги не бывает.
+    .in('content_type', ['anime', 'cinema', 'manga', 'ranobe', 'podcast']);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

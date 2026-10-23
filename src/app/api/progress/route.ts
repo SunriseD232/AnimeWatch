@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
-import type { WatchProgressInput } from '@/lib/types';
+import type { ContentType, WatchProgressInput } from '@/lib/types';
 
 /**
  * Upsert прогресса просмотра. Вызывается как обычным fetch (keepalive),
@@ -33,8 +33,40 @@ export async function POST(request: NextRequest) {
   const seasonRaw = Number(body.season);
   const season = Number.isFinite(seasonRaw) && seasonRaw >= 1 ? seasonRaw : 1;
   const position = Number(body.position_seconds);
-  const contentType =
-    body.content_type === 'cinema' ? 'cinema' : 'anime';
+  // Все шесть типов (миграция 0053 расширила constraint). Незнакомое значение
+  // по-прежнему падает в 'anime' — так же, как было до книг: молча.
+  const contentType: ContentType =
+    body.content_type === 'cinema' ||
+    body.content_type === 'podcast' ||
+    body.content_type === 'book' ||
+    body.content_type === 'manga' ||
+    body.content_type === 'ranobe'
+      ? body.content_type
+      : 'anime';
+  // Источник (flibusta/remanga/…) — только у книг/манги/ранобэ. Пишем как
+  // есть: свободный текст, а не enum, чтобы новый источник не требовал
+  // миграции.
+  const source = typeof body.source === 'string' && body.source ? body.source : null;
+  // Единица позиции. Книга шлёт 'percent', манга — 'page', видео/подкаст —
+  // 'seconds' (или не шлёт вовсе). Незнакомое — 'seconds'.
+  const unit =
+    body.unit === 'page' || body.unit === 'chapter' || body.unit === 'percent'
+      ? body.unit
+      : 'seconds';
+  // Доля прочитанного. Ранобэ и манга шлют её вместе с unit='chapter'/'page':
+  // прогресс — это глава (episode) плюс доля прокрутки внутри неё, а
+  // progress_percent хранит общий процент по тайтлу. Без этого «продолжить»
+  // показывало бы только номер главы и теряло место внутри неё.
+  const percentRaw = Number(body.progress_percent);
+  const progressPercent =
+    (unit === 'percent' || unit === 'chapter' || unit === 'page') &&
+    Number.isFinite(percentRaw)
+      ? Math.max(0, Math.min(1, percentRaw))
+      : null;
+  const locator =
+    body.locator && typeof body.locator === 'object' && !Array.isArray(body.locator)
+      ? body.locator
+      : null;
   // Режим «отметить открытую серию»: нужен для Videoseed, который не сообщает
   // странице позицию воспроизведения. Пишем прогресс на уровне сезон/серия.
   const isMark = body.mark === true;
@@ -68,6 +100,7 @@ export async function POST(request: NextRequest) {
         episode,
         anime_title: body.anime_title ?? null,
         poster_url: body.poster_url ?? null,
+        source,
       },
       {
         // Было ignoreDuplicates: true (ON CONFLICT DO NOTHING) — из-за
@@ -96,6 +129,7 @@ export async function POST(request: NextRequest) {
         anime_title: body.anime_title ?? 'Без названия',
         poster_url: body.poster_url ?? null,
         status: 'completed',
+        source,
       },
       { onConflict: 'user_id,content_type,shikimori_id' },
     );
@@ -138,6 +172,10 @@ export async function POST(request: NextRequest) {
         translation_id:
           body.translation_id != null ? Number(body.translation_id) : null,
         translation_title: body.translation_title ?? null,
+        source,
+        unit,
+        progress_percent: progressPercent,
+        locator,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'user_id,content_type,shikimori_id' },
@@ -150,8 +188,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, marked: true });
   }
 
-  // Не сохраняем случайные открытия (< 5 сек).
-  const hasPosition = Number.isFinite(position) && position >= 5;
+  // Не сохраняем случайные открытия (< 5 сек). Для чтения это условие
+  // неприменимо: у книги позиция в страницах/процентах, и «первая страница» —
+  // законное место остановки. Поэтому у не-секундных юнитов проверяем иначе.
+  const hasPosition =
+    unit === 'seconds'
+      ? Number.isFinite(position) && position >= 5
+      : Number.isFinite(position) || progressPercent != null;
 
   if (hasPosition) {
     const { error } = await supabase.from('watch_progress').upsert(
@@ -163,7 +206,7 @@ export async function POST(request: NextRequest) {
         poster_url: body.poster_url ?? null,
         season,
         episode,
-        position_seconds: position,
+        position_seconds: Number.isFinite(position) ? position : 0,
         duration_seconds:
           body.duration_seconds != null
             ? Number(body.duration_seconds)
@@ -171,6 +214,10 @@ export async function POST(request: NextRequest) {
         translation_id:
           body.translation_id != null ? Number(body.translation_id) : null,
         translation_title: body.translation_title ?? null,
+        source,
+        unit,
+        progress_percent: progressPercent,
+        locator,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'user_id,content_type,shikimori_id' },

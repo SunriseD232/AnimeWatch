@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { contentTitleHref, newUnitText } from '@/lib/contentLinks';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useDismissOnOutside } from '@/components/useAnchoredPanel';
@@ -54,7 +55,8 @@ function timeAgo(iso: string): string {
 type Section = 'episodes' | 'friends' | 'replies' | 'system';
 
 const SECTION_LABELS: Record<Section, string> = {
-  episodes: 'Серии',
+  // Не «Серии»: сюда же приходят новые главы манги/ранобэ и выпуски подкастов.
+  episodes: 'Новинки',
   friends: 'Друзья',
   replies: 'Ответы',
   system: 'Система',
@@ -74,7 +76,8 @@ function tableFor(kind: AppNotification['kind']) {
 }
 
 const EMPTY_TEXT: Record<Section, string> = {
-  episodes: 'Новых серий нет. Уведомления приходят по тайтлам со статусом «Смотрю».',
+  episodes:
+    'Новых серий, глав и выпусков нет. Уведомления приходят по тайтлам со статусом «Смотрю», «Читаю» или «Слушаю».',
   friends: 'Заявок в друзья нет.',
   replies: 'Ответов на ваши комментарии пока нет.',
   system: 'Системных уведомлений нет.',
@@ -472,7 +475,7 @@ function UnreadDot({ read }: { read: boolean }) {
 function EpisodeRow({ n, onOpen }: { n: EpisodeNotification; onOpen: () => void }) {
   return (
     <Link
-      href={`/${n.content_type === 'cinema' ? 'cinema' : 'anime'}/${n.shikimori_id}`}
+      href={contentTitleHref(n.content_type, n.shikimori_id)}
       onClick={onOpen}
       className={['relative flex gap-3 px-4 py-3 pr-11 transition hover:bg-white/5', n.read_at ? 'opacity-60' : ''].join(' ')}
     >
@@ -484,7 +487,7 @@ function EpisodeRow({ n, onOpen }: { n: EpisodeNotification; onOpen: () => void 
       </div>
       <div className="min-w-0 flex-1">
         <p className="line-clamp-1 text-sm font-medium text-gray-100">{n.title}</p>
-        <p className="text-xs text-gray-400">Новая серия — теперь их {n.episode}</p>
+        <p className="text-xs text-gray-400">{newUnitText(n.content_type, n.episode)}</p>
         <p className="mt-0.5 text-[11px] text-gray-400">{timeAgo(n.created_at)}</p>
       </div>
       <UnreadDot read={!!n.read_at} />

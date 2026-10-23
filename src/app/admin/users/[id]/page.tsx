@@ -8,6 +8,8 @@ import { getCachedUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { toPublicUser } from '@/lib/social/server';
 import { getCinemaSeasonCountMap } from '@/lib/videoseed-catalog';
+import { listSavedBooks } from '@/lib/bookStorage';
+import { MAX_SAVED_BOOKS } from '@/lib/bookShared';
 import type { UserListItem, WatchedEpisode, WatchProgress } from '@/lib/types';
 
 export const metadata = { title: 'Профиль пользователя — MediaWatch' };
@@ -92,6 +94,10 @@ export default async function AdminUserProfilePage({
     .filter((p) => p.content_type === 'cinema')
     .map((p) => p.shikimori_id);
   const seasonCountMap = await getCinemaSeasonCountMap(cinemaIds);
+  // Книги, сохранённые на сервере (миграция 0058) — тоже только чтение:
+  // убрать чужую книгу отсюда нельзя, как и всё остальное на странице.
+  const savedBooks = await listSavedBooks(params.id);
+
   const progressWithSeasons = progress.map((p) => ({
     progress: p,
     isMultiSeason: (seasonCountMap.get(p.shikimori_id) ?? 0) > 1,
@@ -114,6 +120,35 @@ export default async function AdminUserProfilePage({
       <AdminResetPasswordCard userId={params.id} />
 
       <AdminUserTabs items={items} history={history} continueWatching={progressWithSeasons} />
+
+      <section className="flex flex-col gap-2">
+        <h2 className="text-lg font-semibold">
+          Книги на сервере · {savedBooks.length} из {MAX_SAVED_BOOKS}
+        </h2>
+        {savedBooks.length === 0 ? (
+          <p className="text-sm text-gray-400">Пользователь не сохранял книги на сервере.</p>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {savedBooks.map((book) => (
+              <li
+                key={book.bookId}
+                className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 rounded-xl bg-bg-card px-3 py-2 text-sm ring-1 ring-white/5"
+              >
+                <Link href={`/books/${book.bookId}`} className="min-w-0 font-medium [overflow-wrap:anywhere] hover:underline">
+                  {book.title}
+                  {book.author ? <span className="font-normal text-gray-400"> — {book.author}</span> : null}
+                </Link>
+                <span className="text-xs text-gray-400">
+                  {book.formats.join(', ').toUpperCase()} · сохранена{' '}
+                  {new Date(book.savedAt).toLocaleDateString('ru-RU')} · хранится до{' '}
+                  {new Date(book.expiresAt).toLocaleDateString('ru-RU')}
+                  {book.finished ? ' · дочитана' : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

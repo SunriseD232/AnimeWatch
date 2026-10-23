@@ -11,7 +11,7 @@ import {
   ListPlusIcon,
 } from '@/components/social/icons';
 import { logEvent } from '@/lib/clientLog';
-import { LIST_STATUS_OPTIONS } from '@/lib/listStatus';
+import { listMuteLabel, listStatusOptions } from '@/lib/listStatus';
 import type { ContentType, UserListStatus } from '@/lib/types';
 
 interface Props {
@@ -55,7 +55,10 @@ export default function ListButton({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const current = LIST_STATUS_OPTIONS.find((o) => o.value === status);
+  // Подписи по типу: «Читаю» для книг, «Слушаю» для подкастов.
+  const options = listStatusOptions(contentType);
+  const current = options.find((o) => o.value === status);
+  const muteLabel = listMuteLabel(contentType, muted);
 
   // Закрытие по клику вовне и по Escape; фокус — внутрь панели на текущий
   // статус, по Escape — обратно на кнопку (тот же порядок, что у оценки).
@@ -220,7 +223,7 @@ export default function ListButton({
           style={{ left: panelLeft, width: PANEL_WIDTH }}
           className="glass-panel absolute z-20 mt-2 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl border border-white/10 shadow-2xl"
         >
-          {LIST_STATUS_OPTIONS.map((o) => {
+          {options.map((o) => {
             const selected = status === o.value;
             return (
               <button
@@ -240,10 +243,13 @@ export default function ListButton({
           })}
           {status && (
             <div className="border-t border-white/10">
-              <button type="button" role="menuitem" onClick={toggleMute} className={`${itemClass} text-gray-200`}>
-                {muted ? <BellIcon className="h-3.5 w-3.5" /> : <BellOffIcon className="h-3.5 w-3.5" />}
-                {muted ? 'Включить уведомления' : 'Не уведомлять о сериях'}
-              </button>
+              {/* У книг новых глав не бывает — выключать нечего. */}
+              {muteLabel ? (
+                <button type="button" role="menuitem" onClick={toggleMute} className={`${itemClass} text-gray-200`}>
+                  {muted ? <BellIcon className="h-3.5 w-3.5" /> : <BellOffIcon className="h-3.5 w-3.5" />}
+                  {muteLabel}
+                </button>
+              ) : null}
               <button
                 type="button"
                 role="menuitem"

@@ -5,6 +5,7 @@ import type { WatchedEpisode } from '@/lib/types';
 import { fixPosterUrl, formatDateTime } from '@/lib/format';
 import PosterImage from '@/components/PosterImage';
 import { ClockIcon, IconBadge } from '@/components/social/icons';
+import { contentTitleHref, contentUnitLabel, localPosterKey } from '@/lib/contentLinks';
 
 export default function HistoryView({
   items,
@@ -21,7 +22,7 @@ export default function HistoryView({
           <ClockIcon className="h-7 w-7" />
         </IconBadge>
         <p className="text-sm text-gray-400">
-          История просмотра пока пуста — досмотренные серии появятся здесь.
+          История пока пуста — здесь появятся досмотренные серии, прослушанные выпуски и прочитанные главы и книги.
         </p>
       </div>
     );
@@ -32,7 +33,7 @@ export default function HistoryView({
       {items.map((ep) => (
         <Link
           key={ep.id}
-          href={`/${ep.content_type === 'cinema' ? 'cinema' : 'anime'}/${ep.shikimori_id}`}
+          href={contentTitleHref(ep.content_type, ep.shikimori_id)}
           className="card-lift flex items-center gap-3 rounded-xl bg-bg-card p-2.5 ring-1 ring-white/5 hover:ring-accent/60"
         >
           <div className="relative h-16 w-11 shrink-0 overflow-hidden rounded-lg bg-bg-soft">
@@ -41,7 +42,7 @@ export default function HistoryView({
             {ep.poster_url ? (
               <PosterImage
                 sources={[
-                  localPosters[`${ep.content_type === 'cinema' ? 'cinema' : 'anime'}:${ep.shikimori_id}`],
+                  localPosters[localPosterKey(ep.content_type, ep.shikimori_id) ?? ''],
                   fixPosterUrl(ep.poster_url),
                 ]}
                 alt=""
@@ -55,8 +56,7 @@ export default function HistoryView({
               {ep.anime_title ?? 'Без названия'}
             </span>
             <span className="text-xs text-gray-400">
-              {ep.season > 1 ? `Сезон ${ep.season}, ` : ''}
-              Серия {ep.episode}
+              {contentUnitLabel(ep.content_type, ep.season, ep.episode)}
             </span>
           </div>
           <span className="shrink-0 text-xs text-gray-400">

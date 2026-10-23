@@ -20,6 +20,14 @@ import { logEvent } from '@/lib/clientLog';
  * (Navbar читает профиль) — в самом инпуте похода за настройкой нет, иначе
  * шапка на каждой странице делала бы лишний запрос.
  */
+/** Разделы со своим поиском по ?q= (см. buildHref ниже). */
+const READING_SECTIONS = [
+  { path: '/podcasts', label: 'подкасты' },
+  { path: '/books', label: 'книги' },
+  { path: '/ranobe', label: 'ранобэ' },
+  { path: '/manga', label: 'манга' },
+] as const;
+
 export default function SearchBox({
   unified = false,
   autoFocus = false,
@@ -61,7 +69,15 @@ export default function SearchBox({
             ? 'cinema'
             : 'anime';
 
+  // В разделах чтения и подкастов шапка ищет в самом разделе: у них свой
+  // поиск (/books?q=… и т. п.), а общий /search знает только аниме и кино —
+  // на странице книг строка поиска уводила бы в аниме.
+  const section = READING_SECTIONS.find(
+    (s) => pathname === s.path || pathname.startsWith(`${s.path}/`),
+  );
+
   const buildHref = (q: string) => {
+    if (section) return `${section.path}?${new URLSearchParams({ q }).toString()}`;
     const query = new URLSearchParams({ q });
     if (searchType !== 'anime') query.set('type', searchType);
     return `/search?${query.toString()}`;
@@ -91,7 +107,9 @@ export default function SearchBox({
 
   useEffect(() => {
     const trimmed = value.trim();
-    if (trimmed.length < 2) {
+    // Подсказки /api/search/suggest — только аниме и кино; в разделе
+    // чтения они были бы не про то, поэтому там их нет.
+    if (trimmed.length < 2 || section) {
       setSuggestions([]);
       setActiveIndex(-1);
       return;
@@ -115,7 +133,7 @@ export default function SearchBox({
       clearTimeout(handle);
       controller.abort();
     };
-  }, [value, searchType]);
+  }, [value, searchType, section]);
 
   // Закрытие по клику вовне — общий хук (см. useDismissOnOutside).
   // panelRef обязателен: список подсказок живёт в <body>, и без него клик по
@@ -221,7 +239,9 @@ export default function SearchBox({
         // в aria-label — для экранного диктора контекст важнее краткости.
         placeholder="Поиск"
         aria-label={
-          searchType === 'all'
+          section
+            ? `Поиск: ${section.label}`
+            : searchType === 'all'
             ? 'Поиск по аниме, фильмам и сериалам'
             : searchType === 'cinema'
               ? 'Поиск фильмов и сериалов'

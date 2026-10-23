@@ -5,7 +5,7 @@ import { EMPTY_TRI } from '@/lib/catalogFilters';
 import { getLocalBackdropIds, localBackdropUrl } from '@/lib/backdropCacheServer';
 import type { ShikimoriAnimeShort } from '@/lib/shikimoriShared';
 import type { CinemaShort } from '@/lib/videoseed-catalog';
-import type { ContentType } from '@/lib/types';
+import type { CatalogType } from '@/lib/types';
 
 /**
  * Чтение персональных рекомендаций и hero для главной (см. план редизайна).
@@ -30,7 +30,7 @@ const RECOMMENDED_LIMIT = 12;
  */
 const HERO_LIMIT = 10;
 
-async function getRecommendedIds(userId: string, contentType: ContentType): Promise<number[]> {
+async function getRecommendedIds(userId: string, contentType: CatalogType): Promise<number[]> {
   try {
     const supabase = createClient();
     const { data, error } = await supabase
@@ -64,7 +64,7 @@ async function getRecommendedIds(userId: string, contentType: ContentType): Prom
  * отмеченный «Просмотрено» через «+» прямо в этом блоке, висел бы в нём до
  * следующей ночи.
  */
-async function getExcludedIds(userId: string, contentType: ContentType): Promise<Set<number>> {
+async function getExcludedIds(userId: string, contentType: CatalogType): Promise<Set<number>> {
   try {
     const supabase = createClient();
     const [{ data: listRows, error: listError }, { data: progressRows }] = await Promise.all([
@@ -135,7 +135,7 @@ export async function getRecommendedCinema(userId: string | null): Promise<Cinem
 
 export interface HeroData {
   id: number;
-  contentType: ContentType;
+  contentType: CatalogType;
   title: string;
   description: string | null;
   year: number | null;
@@ -271,7 +271,7 @@ async function getCinemaHeroDetails(
 
 /** Топ по популярности как id-список — фоллбэк-пул для гостя (тот же
  *  источник, что и у карточек, см. getRecommendedAnime/Cinema). */
-async function getPopularIds(contentType: ContentType): Promise<number[]> {
+async function getPopularIds(contentType: CatalogType): Promise<number[]> {
   if (contentType === 'anime') {
     const page = await getAnimeCatalogFromIndex({
       genresInclude: [],
@@ -317,7 +317,7 @@ async function getPopularIds(contentType: ContentType): Promise<number[]> {
  */
 export async function getHeroPicks(
   userId: string | null,
-  contentType: ContentType,
+  contentType: CatalogType,
 ): Promise<HeroData[]> {
   try {
     const recommendedIds = userId ? await getRecommendedIds(userId, contentType) : [];

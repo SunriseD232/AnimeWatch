@@ -57,11 +57,14 @@ export default async function UserPage({ params }: { params: { id: string } }) {
   const person = toPublicUser(id, profile);
   const canSee = (level: Visibility) => level === 'everyone' || (level === 'friends' && state === 'friends');
   const localPosters = await getLocalPosterMap([
-    ...list.map((i) => ({ kind: i.contentType, id: i.shikimoriId })),
-    ...ratings.map((r) => ({
-      kind: r.contentType === 'cinema' ? ('cinema' as const) : ('anime' as const),
-      id: r.shikimoriId,
-    })),
+    // Копии обложек есть только у аниме и кино; id других типов совпал бы
+    // с чужим аниме.
+    ...list
+      .filter((i) => i.contentType === 'anime' || i.contentType === 'cinema')
+      .map((i) => ({ kind: i.contentType as 'anime' | 'cinema', id: i.shikimoriId })),
+    ...ratings
+      .filter((r) => r.contentType === 'anime' || r.contentType === 'cinema')
+      .map((r) => ({ kind: r.contentType as 'anime' | 'cinema', id: r.shikimoriId })),
   ]);
   const posters = Object.fromEntries(localPosters);
 
