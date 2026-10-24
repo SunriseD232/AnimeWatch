@@ -189,8 +189,9 @@ const MIN_TAG_TITLES = 5;
  * база (manga_catalog_facets / ranobe_catalog_facets, book_genre_counts),
  * код кэширует на 6 часов: каталог меняется раз в неделю.
  *
- * Названия с запятой отбрасываются: значения группы в адресе разделены
- * запятыми (lib/catalogFilters.ts), и такой пункт нельзя было бы выбрать.
+ * Названия с «|» отбрасываются: этим знаком разделены значения группы в
+ * адресе (listSeparator в lib/catalogFilters.ts), и такой пункт нельзя было
+ * бы выбрать. Запятые — можно: «Самиздат, сетевая литература».
  * Никогда не бросает — пустые списки, и панель просто не рисует группу.
  */
 export async function getReadingFacets(kind: ReadingKind): Promise<ReadingFacetOptions> {
@@ -200,7 +201,7 @@ export async function getReadingFacets(kind: ReadingKind): Promise<ReadingFacetO
       getCachedJson<ReadingFacetOptions>(key, 6 * 60 * 60, async (): Promise<ReadingFacetOptions> => {
         const toOptions = (rows: { name: string }[]): FilterOptionDef[] =>
           rows
-            .filter((row) => row.name && !row.name.includes(','))
+            .filter((row) => row.name && !row.name.includes('|'))
             .map((row) => ({ value: row.name, label: row.name }));
 
         if (kind === 'books') {

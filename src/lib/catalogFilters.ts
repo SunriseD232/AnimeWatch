@@ -125,8 +125,18 @@ export function parseView(value: string | null | undefined): CatalogView {
 
 type Params = Pick<URLSearchParams, 'get'>;
 
-function splitList(value: string | null | undefined): string[] {
-  return (value ?? '').split(',').filter(Boolean);
+/**
+ * Разделитель значений группы в адресе. У названий — «|», а не запятая:
+ * самый частый жанр книг — «Самиздат, сетевая литература», и по запятой он
+ * распадался бы на два несуществующих. Названия с «|» в справочник не
+ * попадают (lib/readingCatalog.ts).
+ */
+export function listSeparator(group: TriGroupDef): string {
+  return group.names ? '|' : ',';
+}
+
+function splitList(value: string | null | undefined, separator: string): string[] {
+  return (value ?? '').split(separator).filter(Boolean);
 }
 
 /**
@@ -184,8 +194,8 @@ export function parseFilters(params: Params, config: CatalogFilterConfig): Catal
   const tri: Record<string, TriState> = {};
   for (const g of config.tri) {
     tri[g.key] = {
-      include: keepValid(splitList(params.get(g.param)), g),
-      exclude: keepValid(splitList(params.get(g.paramExclude)), g),
+      include: keepValid(splitList(params.get(g.param), listSeparator(g)), g),
+      exclude: keepValid(splitList(params.get(g.paramExclude), listSeparator(g)), g),
     };
   }
 
@@ -217,8 +227,8 @@ export function buildQuery(
 
   for (const g of config.tri) {
     const state = filters.tri[g.key] ?? EMPTY_TRI;
-    if (state.include.length > 0) params.set(g.param, state.include.join(','));
-    if (state.exclude.length > 0) params.set(g.paramExclude, state.exclude.join(','));
+    if (state.include.length > 0) params.set(g.param, state.include.join(listSeparator(g)));
+    if (state.exclude.length > 0) params.set(g.paramExclude, state.exclude.join(listSeparator(g)));
   }
 
   for (const r of config.ranges) {
