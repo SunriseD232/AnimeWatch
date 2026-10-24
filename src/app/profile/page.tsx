@@ -10,10 +10,15 @@ import { normalizeQuality } from '@/lib/playerQuality';
 import type { UserListItem, WatchedEpisode } from '@/lib/types';
 import { getLocalPosterMap } from '@/lib/posterCacheServer';
 import { getPrivacy, getUserRatings, listFriendships, toPublicUser } from '@/lib/social/server';
+import { getFeedbackInbox, getUserFeedback } from '@/lib/feedbackServer';
 
 export const metadata = { title: 'Профиль — MediaWatch' };
 
-export default async function ProfilePage({ searchParams }: { searchParams: { tab?: string } }) {
+export default async function ProfilePage({
+  searchParams,
+}: {
+  searchParams: { tab?: string; thread?: string; section?: string };
+}) {
   const supabase = createClient();
   const {
     data: { user },
@@ -77,6 +82,11 @@ export default async function ProfilePage({ searchParams }: { searchParams: { ta
   const isAdmin = isAdminEmail(user.email);
   const relayEnabled = isAdmin ? await getVpsRelayEnabled(true) : false;
   const kodikPlayerEnabled = isAdmin ? await getKodikPlayerEnabled(true) : false;
+  // Обратная связь (миграция 0066): свои обращения всем, ящик — админу.
+  const [feedback, inbox] = await Promise.all([
+    getUserFeedback(user.id),
+    isAdmin ? getFeedbackInbox() : Promise.resolve([]),
+  ]);
 
   return (
     <div className="flex flex-col gap-8">
@@ -114,6 +124,10 @@ export default async function ProfilePage({ searchParams }: { searchParams: { ta
         relayEnabled={relayEnabled}
         kodikPlayerEnabled={kodikPlayerEnabled}
         code={isAdmin ? getTodaysSignupCode() : null}
+        feedback={feedback}
+        inbox={inbox}
+        initialThreadId={searchParams.thread ?? null}
+        initialFeedbackSection={searchParams.section ?? null}
       />
     </div>
   );

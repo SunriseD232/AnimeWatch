@@ -15,6 +15,8 @@ import FriendsPanel from '@/components/social/FriendsPanel';
 import MyComments from '@/components/social/MyComments';
 import PrivacySettings from '@/components/social/PrivacySettings';
 import RatingsView from '@/components/social/RatingsView';
+import FeedbackPanel from '@/components/FeedbackPanel';
+import type { FeedbackThreadView } from '@/lib/feedback';
 import { SlidingPill, useSlidingPill } from '@/components/useSlidingPill';
 import type { FriendEntry, PrivacySettings as Privacy, TitleRating } from '@/lib/social/types';
 import type { UserListItem, WatchedEpisode } from '@/lib/types';
@@ -44,11 +46,40 @@ interface Props {
   relayEnabled: boolean;
   kodikPlayerEnabled: boolean;
   code: string | null;
+  /** Свои обращения (миграция 0066) — вкладка «Обратная связь». */
+  feedback: FeedbackThreadView[];
+  /** Все обращения — вкладка «Обращения», только админу. */
+  inbox: FeedbackThreadView[];
+  /** ?thread= — какую переписку открыть (сюда ведут уведомления). */
+  initialThreadId?: string | null;
+  /** ?section= — раздел в новом обращении (из плашки «раздел новый»). */
+  initialFeedbackSection?: string | null;
 }
 
-type Tab = 'list' | 'history' | 'ratings' | 'comments' | 'friends' | 'settings' | 'admin' | 'code';
+type Tab =
+  | 'list'
+  | 'history'
+  | 'ratings'
+  | 'comments'
+  | 'friends'
+  | 'settings'
+  | 'feedback'
+  | 'inbox'
+  | 'admin'
+  | 'code';
 
-const TAB_VALUES: Tab[] = ['list', 'history', 'ratings', 'comments', 'friends', 'settings', 'admin', 'code'];
+const TAB_VALUES: Tab[] = [
+  'list',
+  'history',
+  'ratings',
+  'comments',
+  'friends',
+  'settings',
+  'feedback',
+  'inbox',
+  'admin',
+  'code',
+];
 
 type SettingsSection = 'ui' | 'player' | 'privacy' | 'password';
 
@@ -96,6 +127,10 @@ export default function ProfileTabs({
   relayEnabled,
   kodikPlayerEnabled,
   code,
+  feedback,
+  inbox,
+  initialThreadId = null,
+  initialFeedbackSection = null,
 }: Props) {
   const incoming = friendships.filter((f) => f.state === 'incoming').length;
   const requestedSection = SETTINGS_SECTION_VALUES.find((s) => s === initialTab);
@@ -120,8 +155,11 @@ export default function ProfileTabs({
     // было восемь вкладок, и на телефоне они занимали три строки над
     // содержимым, которое человек пришёл смотреть.
     { value: 'settings', label: 'Настройки' },
+    // Обратная связь — всем: из плашки «раздел новый» и при любом сбое.
+    { value: 'feedback', label: 'Обратная связь', badge: feedback.filter((t) => t.unread).length },
     ...(isAdmin
       ? [
+          { value: 'inbox' as Tab, label: 'Обращения', badge: inbox.filter((t) => t.unread).length },
           { value: 'admin' as Tab, label: 'Администратор' },
           { value: 'code' as Tab, label: 'Код' },
         ]
@@ -218,6 +256,17 @@ export default function ProfileTabs({
         </div>
       )}
       {tab === 'code' && isAdmin && <SignupCodeCard code={code} />}
+      {tab === 'feedback' && (
+        <FeedbackPanel
+          mode="user"
+          initialThreads={feedback}
+          initialThreadId={initialThreadId}
+          initialSection={initialFeedbackSection}
+        />
+      )}
+      {tab === 'inbox' && isAdmin && (
+        <FeedbackPanel mode="admin" initialThreads={inbox} initialThreadId={initialThreadId} />
+      )}
     </section>
   );
 }

@@ -59,7 +59,8 @@ const SECTION_LABELS: Record<Section, string> = {
   episodes: 'Новинки',
   friends: 'Друзья',
   replies: 'Ответы',
-  system: 'Система',
+  // Служебные вехи админам и ответы по обратной связи всем (миграция 0066).
+  system: 'Сообщения',
 };
 
 function sectionOf(n: AppNotification): Section {
@@ -80,7 +81,7 @@ const EMPTY_TEXT: Record<Section, string> = {
     'Новых серий, глав и выпусков нет. Уведомления приходят по тайтлам со статусом «Смотрю», «Читаю» или «Слушаю».',
   friends: 'Заявок в друзья нет.',
   replies: 'Ответов на ваши комментарии пока нет.',
-  system: 'Системных уведомлений нет.',
+  system: 'Сообщений нет.',
 };
 
 /**
@@ -496,12 +497,25 @@ function EpisodeRow({ n, onOpen }: { n: EpisodeNotification; onOpen: () => void 
 }
 
 function SystemRow({ n, onOpen }: { n: SystemNotification; onOpen: () => void }) {
+  const className = ['relative flex w-full gap-3 px-4 py-3 pr-10 text-left transition hover:bg-white/5', n.read_at ? 'opacity-60' : ''].join(' ');
+  // С адресом (ответ по обратной связи, миграция 0066) — ссылка в переписку.
+  if (n.href) {
+    return (
+      <Link href={n.href} onClick={onOpen} className={className}>
+        <SystemRowBody n={n} />
+      </Link>
+    );
+  }
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className={['relative flex w-full gap-3 px-4 py-3 pr-10 text-left transition hover:bg-white/5', n.read_at ? 'opacity-60' : ''].join(' ')}
-    >
+    <button type="button" onClick={onOpen} className={className}>
+      <SystemRowBody n={n} />
+    </button>
+  );
+}
+
+function SystemRowBody({ n }: { n: SystemNotification }) {
+  return (
+    <>
       <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-amber-500/15 text-amber-300">
         <AlertIcon className="h-5 w-5" />
       </div>
@@ -511,7 +525,7 @@ function SystemRow({ n, onOpen }: { n: SystemNotification; onOpen: () => void })
         <p className="mt-0.5 text-[11px] text-gray-400">{timeAgo(n.created_at)}</p>
       </div>
       <UnreadDot read={!!n.read_at} />
-    </button>
+    </>
   );
 }
 

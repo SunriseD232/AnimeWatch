@@ -152,7 +152,8 @@ export interface EpisodeNotification {
   read_at: string | null;
 }
 
-/** Системное уведомление (таблица system_notifications) — только админам. */
+/** Системное уведомление (таблица system_notifications): служебные вехи
+ *  админам и ответы по обратной связи всем (миграция 0066). */
 export interface SystemNotification {
   kind: 'system';
   id: string;
@@ -160,6 +161,8 @@ export interface SystemNotification {
   key: string;
   title: string;
   message: string;
+  /** Куда ведёт по нажатию (переписка обратной связи); нет — только текст. */
+  href?: string | null;
   created_at: string;
   read_at: string | null;
 }

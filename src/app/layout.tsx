@@ -9,6 +9,7 @@ import PresenceHeartbeat from '@/components/PresenceHeartbeat';
 import NativeAuthBridge from '@/components/NativeAuthBridge';
 import OfflineSyncTrigger from '@/components/OfflineSyncTrigger';
 import { PipPlayerHost } from '@/components/pip/PipPlayerHost';
+import NewSectionNotice from '@/components/NewSectionNotice';
 import AudioPlayerProvider from '@/components/audio/AudioPlayerProvider';
 import { WatchPartyProvider } from '@/components/party/WatchPartyProvider';
 import ThemeScript from '@/components/ThemeScript';
@@ -94,6 +95,8 @@ export default function RootLayout({
           {/* Звук (подкасты, аудиокниги) переживает переходы между страницами
               так же, как видео в PipPlayerHost: полоска внизу и окно. */}
           <AudioPlayerProvider>
+            {/* Один раз на новый раздел: «может работать нестабильно — напишите нам». */}
+            <NewSectionNotice />
             {/* Заглушка повторяет геометрию шапки вместе с безопасной зоной —
                 иначе контент прыгает вверх в момент, когда шапка доезжает. */}
             <Suspense
