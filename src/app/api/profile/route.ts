@@ -5,6 +5,7 @@ import { normalizeDisplayName, validateDisplayName } from '@/lib/social/names';
 import { normalizeVisibility } from '@/lib/social/types';
 import { normalizeQuality } from '@/lib/playerQuality';
 import { toPublicUser } from '@/lib/social/server';
+import { normalizeReaderSettings } from '@/lib/mangaReaderSettings';
 
 /**
  * PATCH /api/profile — отображаемое имя и настройки приватности. Любое поле
@@ -24,7 +25,7 @@ export async function PATCH(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Войдите, чтобы изменить профиль.' }, { status: 401 });
 
   const body = await request.json().catch(() => null);
-  const patch: Record<string, string | number | boolean | null> = {
+  const patch: Record<string, string | number | boolean | object | null> = {
     user_id: user.id,
     updated_at: new Date().toISOString(),
   };
@@ -63,6 +64,11 @@ export async function PATCH(request: NextRequest) {
   }
   if (body?.unifiedSearch !== undefined) {
     patch.unified_search = !!body.unifiedSearch;
+  }
+  if (body?.mangaReader !== undefined) {
+    // Через normalizeReaderSettings: в базу попадает только полный и
+    // корректный объект, что бы ни прислал клиент (миграция 0062).
+    patch.manga_reader = normalizeReaderSettings(body.mangaReader);
   }
   // Только в одну сторону: подсказку «загляните в профиль» закрывают, а
   // вернуть её обратно пользователю незачем (миграция 0047).

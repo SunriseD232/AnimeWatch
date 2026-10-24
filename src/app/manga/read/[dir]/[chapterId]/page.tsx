@@ -3,6 +3,7 @@ import { decodeSegment } from '@/lib/routeParams';
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import MangaReader from '@/components/manga/MangaReader';
+import { normalizeReaderSettings, type MangaReaderSettings } from '@/lib/mangaReaderSettings';
 import {
   getMangaChapterById,
   getMangaDetails,
@@ -260,13 +261,23 @@ export default async function MangaReaderPage({
     data: { user },
   } = await getCachedUser();
 
+  let readerSettings: MangaReaderSettings | null = null;
+
   if (user) {
-    const { data } = await supabase
-      .from('watch_progress')
-      .select('*')
-      .eq('content_type', 'manga')
-      .eq('shikimori_id', details.id)
-      .maybeSingle();
+    // Прогресс и настройки читалки (миграция 0062) — параллельно: это два
+    // независимых запроса, и страница главы ждёт оба.
+    const [{ data }, { data: profileRow }] = await Promise.all([
+      supabase
+        .from('watch_progress')
+        .select('*')
+        .eq('content_type', 'manga')
+        .eq('shikimori_id', details.id)
+        .maybeSingle(),
+      supabase.from('profiles').select('manga_reader').eq('user_id', user.id).maybeSingle(),
+    ]);
+    readerSettings = profileRow?.manga_reader
+      ? normalizeReaderSettings(profileRow.manga_reader)
+      : null;
 
     const progress = (data as WatchProgress | null) ?? null;
     const locator =
@@ -324,6 +335,8 @@ export default async function MangaReaderPage({
       initialScrollPercent={initialScrollPercent}
       source={source}
       chapterKey={chapterKey}
+      readerSettings={readerSettings}
+      signedIn={!!user}
     />
   );
 }
