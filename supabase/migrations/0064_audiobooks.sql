@@ -119,7 +119,10 @@ declare
   n_processed integer := 0;
   n_matched integer := 0;
   r record;
-  best record;
+  -- Не record: у строки без автора поиска нет, и обращение к полям
+  -- неприсвоенной записи PL/pgSQL считает ошибкой.
+  best_id bigint;
+  best_score real;
 begin
   for r in
     select a.id, a.title, a.authors
@@ -129,7 +132,8 @@ begin
      limit greatest(lim, 1)
   loop
     n_processed := n_processed + 1;
-    best := null;
+    best_id := null;
+    best_score := null;
 
     if audiobook_author_key(r.authors) is not null then
       -- Кандидаты — по триграммам названия (индекс book_index_title_trgm_idx),
@@ -138,7 +142,7 @@ begin
       select b.book_id,
              case when audiobook_norm_title(b.title) = audiobook_norm_title(r.title) then 1.0
                   else similarity(audiobook_norm_title(b.title), audiobook_norm_title(r.title)) end as score
-        into best
+        into best_id, best_score
         from book_index b
        -- Без пояснений в скобках: «… (Аудиоспектакль)» иначе не дотягивал бы
        -- до порога сходства с названием книги.
@@ -151,11 +155,11 @@ begin
     end if;
 
     update audiobook_index
-       set book_id = best.book_id,
-           match_confidence = best.score,
+       set book_id = best_id,
+           match_confidence = best_score,
            matched_at = now()
      where id = r.id;
-    if best.book_id is not null then
+    if best_id is not null then
       n_matched := n_matched + 1;
     end if;
   end loop;
