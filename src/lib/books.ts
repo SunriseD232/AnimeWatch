@@ -780,29 +780,39 @@ let probe: { at: number; up: boolean } | null = null;
 let probing: Promise<boolean> | null = null;
 
 /**
- * Отвечает ли Флибуста — одна короткая проверка на оба зеркала сразу
- * (6 с), ответ помним минуту. Нужна, чтобы при лежащей Флибусте не ждать
- * минуту таймаутов на каждую книгу (fetchFromMirrors: 2 прохода × 2
- * зеркала × 15 с) и сразу идти в запасной источник, и чтобы карточка книги
- * честно сказала, что источник недоступен (24.10.2026 Флибуста лежала
- * целиком: ни с VPS, ни через туннель, ни с домашнего компьютера).
+ * Маленькие устойчивые книги (Пушкин, 6–10 КБ) — ими проверяем, что
+ * Флибуста отдаёт файлы. Проверять каталог (/opds) нельзя: 24.10.2026 он
+ * отвечал за 0,3 с, а файлы книг не отдавались вовсе (15 с и обрыв), и
+ * проверка по каталогу говорила «работает» — крон запаса и карточки ждали
+ * минуту таймаутов на каждой книге.
+ */
+const PROBE_BOOKS = [218955, 169125];
+
+/**
+ * Отдаёт ли Флибуста файлы книг — короткая проверка на обоих зеркалах сразу
+ * (8 с), ответ помним минуту. Нужна, чтобы при лежащей Флибусте не ждать
+ * таймаутов на каждую книгу (fetchFromMirrors: 2 прохода × 2 зеркала ×
+ * 15 с) и сразу идти в запасной источник, и чтобы карточка честно сказала,
+ * что источник недоступен.
  */
 export async function isFlibustaUp(): Promise<boolean> {
   if (probe && Date.now() - probe.at < PROBE_TTL_MS) return probe.up;
   if (probing) return probing;
   probing = (async () => {
-    const attempts = MIRRORS.map(async (base) => {
-      const res = await fetch(`${base}/opds`, {
-        headers: { 'User-Agent': USER_AGENT, Accept: 'application/atom+xml' },
-        signal: AbortSignal.timeout(6_000),
-        cache: 'no-store',
-        // @ts-expect-error -- dispatcher — опция undici, не входит в типы lib.dom fetch.
-        dispatcher: vlessDispatcher(),
-      });
-      await res.arrayBuffer().catch(() => undefined);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return true;
-    });
+    const attempts = MIRRORS.flatMap((base) =>
+      PROBE_BOOKS.map(async (bookId) => {
+        const res = await fetch(`${base}/b/${bookId}/fb2`, {
+          headers: { 'User-Agent': USER_AGENT },
+          signal: AbortSignal.timeout(8_000),
+          cache: 'no-store',
+          // @ts-expect-error -- dispatcher — опция undici, не входит в типы lib.dom fetch.
+          dispatcher: vlessDispatcher(),
+        });
+        const body = await res.arrayBuffer();
+        if (!res.ok || !looksLikeBook(body, 'fb2')) throw new Error(`HTTP ${res.status}`);
+        return true;
+      }),
+    );
     const up = await Promise.any(attempts).catch(() => false);
     probe = { at: Date.now(), up };
     return up;
@@ -810,6 +820,12 @@ export async function isFlibustaUp(): Promise<boolean> {
     probing = null;
   });
   return probing;
+}
+
+/** Файл не скачался, хотя проверка говорила «работает», — минуту больше
+ *  не ждём Флибусту: следующие книги сразу идут в запасной источник. */
+function markFlibustaDown(): void {
+  probe = { at: Date.now(), up: false };
 }
 
 // ─────────────────────────── Файл книги ───────────────────────────
@@ -888,6 +904,8 @@ export async function fetchBookFile(
         return { body, contentType: hit.res.headers.get('content-type') ?? contentType, source: 'flibusta' };
       }
       console.warn(`[books] ${id}.${format}: Флибуста вернула не файл книги (${body.byteLength} байт)`);
+    } else {
+      markFlibustaDown();
     }
   }
 
