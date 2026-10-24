@@ -4,7 +4,7 @@ import { singleFlight } from '@/lib/singleFlight';
 import { taxonNames } from '@/lib/catalogTaxonomy';
 import { decodeHtmlEntities } from '@/lib/sources/text';
 import { wordSearchFilter } from '@/lib/indexSearch';
-import { signImageUrl } from '@/lib/extract/proxy';
+import { signImageUrlWithHeaders } from '@/lib/extract/proxy';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
@@ -207,7 +207,9 @@ function signCover(raw: string | null): string | null {
   const absolute = absoluteCoverUrl(raw);
   if (!absolute) return null;
   try {
-    return signImageUrl(absolute);
+    // Referer — как у манги (lib/manga.ts, signMedia): общее с Remanga
+    // хранилище картинок с 24.10.2026 отвечает 403 без него.
+    return signImageUrlWithHeaders(absolute, { Referer: `${SITE_BASE}/` });
   } catch {
     return absolute;
   }

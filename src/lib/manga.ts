@@ -3,7 +3,7 @@ import { singleFlight } from '@/lib/singleFlight';
 import { taxonNames } from '@/lib/catalogTaxonomy';
 import { decodeHtmlEntities } from '@/lib/sources/text';
 import { wordSearchFilter } from '@/lib/indexSearch';
-import { signImageUrl } from '@/lib/extract/proxy';
+import { signImageUrlWithHeaders } from '@/lib/extract/proxy';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
@@ -190,12 +190,17 @@ function absoluteMediaUrl(raw: string | null): string | null {
  * Подпись обложки/страницы через /api/proxy/raw. Без секрета (локальная
  * сборка без .env) отдаём прямой адрес: картинка может не загрузиться, но
  * заглушка из-за отсутствующего секрета — хуже.
+ *
+ * С Referer сайта: хранилище страниц глав (img.reimg2.org) с 24.10.2026
+ * отвечает 403 на запрос без него — главы открывались пустыми, с одними
+ * подписями картинок. С Referer remanga.org отдаёт 200, и с адреса VPS, и
+ * через туннель (проверено).
  */
 function signMedia(raw: string | null): string | null {
   const absolute = absoluteMediaUrl(raw);
   if (!absolute) return null;
   try {
-    return signImageUrl(absolute);
+    return signImageUrlWithHeaders(absolute, { Referer: `${SITE_BASE}/` });
   } catch {
     return absolute;
   }
