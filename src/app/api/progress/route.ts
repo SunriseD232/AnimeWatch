@@ -33,14 +33,15 @@ export async function POST(request: NextRequest) {
   const seasonRaw = Number(body.season);
   const season = Number.isFinite(seasonRaw) && seasonRaw >= 1 ? seasonRaw : 1;
   const position = Number(body.position_seconds);
-  // Все шесть типов (миграция 0053 расширила constraint). Незнакомое значение
+  // Все семь типов (0053 расширила constraint, 0064 добавила аудиокниги). Незнакомое значение
   // по-прежнему падает в 'anime' — так же, как было до книг: молча.
   const contentType: ContentType =
     body.content_type === 'cinema' ||
     body.content_type === 'podcast' ||
     body.content_type === 'book' ||
     body.content_type === 'manga' ||
-    body.content_type === 'ranobe'
+    body.content_type === 'ranobe' ||
+    body.content_type === 'audiobook'
       ? body.content_type
       : 'anime';
   // Источник (flibusta/remanga/…) — только у книг/манги/ранобэ. Пишем как

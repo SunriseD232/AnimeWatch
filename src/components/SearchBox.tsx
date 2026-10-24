@@ -21,7 +21,10 @@ import { logEvent } from '@/lib/clientLog';
  * шапка на каждой странице делала бы лишний запрос.
  */
 /** Разделы со своим поиском по ?q= (см. buildHref ниже). */
-const OWN_SEARCH_SECTIONS = [{ path: '/podcasts', label: 'подкасты' }] as const;
+const OWN_SEARCH_SECTIONS = [
+  { path: '/podcasts', label: 'подкасты' },
+  { path: '/audiobooks', label: 'аудиокниги' },
+] as const;
 
 /** Разделы чтения: их ищет общий /search (вкладки «Читать»), type — их
  *  вкладка там. */
@@ -81,8 +84,8 @@ export default function SearchBox({
             ? 'cinema'
             : 'anime';
 
-  // В подкастах шапка ищет в самом разделе: у них свой поиск
-  // (/podcasts?q=…), на /search их нет.
+  // В подкастах и аудиокнигах шапка ищет в самом разделе: у них свой
+  // поиск (/podcasts?q=…, /audiobooks?q=…), на /search их нет.
   const section = OWN_SEARCH_SECTIONS.find(
     (s) => pathname === s.path || pathname.startsWith(`${s.path}/`),
   );

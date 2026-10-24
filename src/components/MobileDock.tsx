@@ -23,7 +23,7 @@ import { homeHref, modeFromPathname } from '@/lib/mode';
  * показывает, где пользователь прямо сейчас.
  */
 /** Разделы со своей страницей-каталогом (см. catalogHref ниже). */
-const READING_SECTIONS = ['/podcasts', '/books', '/ranobe', '/manga'];
+const READING_SECTIONS = ['/podcasts', '/audiobooks', '/books', '/ranobe', '/manga'];
 
 export default function MobileDock({
   cookieMode,

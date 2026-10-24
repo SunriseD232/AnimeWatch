@@ -9,7 +9,8 @@
 
 import type { CatalogFilterConfig, FilterOptionDef } from '@/lib/catalogFilters';
 
-export type ReadingKind = 'manga' | 'ranobe' | 'books';
+/** Каталоги с общим каркасом: три раздела чтения и аудиокниги (0064). */
+export type ReadingKind = 'manga' | 'ranobe' | 'books' | 'audiobooks';
 
 export const READING_PARAM = {
   genres: 'genres',
@@ -26,6 +27,8 @@ export const READING_PARAM = {
   ratingTo: 'rating_to',
   chaptersFrom: 'chapters_from',
   chaptersTo: 'chapters_to',
+  hoursFrom: 'hours_from',
+  hoursTo: 'hours_to',
 } as const;
 
 /**
@@ -52,7 +55,27 @@ const BOOK_SORTS: readonly FilterOptionDef[] = [
   { value: 'name', label: 'По алфавиту' },
 ];
 
-export type ReadingSort = 'popularity' | 'rating' | 'new' | 'old' | 'chapters' | 'added' | 'name';
+/** Аудиокниги: рейтинга у knigavuhe нет, года издания тоже — популярность
+ *  по прослушиваниям, «недавно добавленные» по id (растёт с каждой новой
+ *  книгой), длительность — чтобы найти короткое на вечер или длинное. */
+const AUDIOBOOK_SORTS: readonly FilterOptionDef[] = [
+  { value: 'popularity', label: 'По популярности' },
+  { value: 'added', label: 'Недавно добавленные' },
+  { value: 'longest', label: 'Сначала длинные' },
+  { value: 'shortest', label: 'Сначала короткие' },
+  { value: 'name', label: 'По алфавиту' },
+];
+
+export type ReadingSort =
+  | 'popularity'
+  | 'rating'
+  | 'new'
+  | 'old'
+  | 'chapters'
+  | 'added'
+  | 'longest'
+  | 'shortest'
+  | 'name';
 
 export const READING_DEFAULT_SORT: ReadingSort = 'popularity';
 
@@ -162,6 +185,35 @@ export const READING_FILTER_CONFIG: Record<ReadingKind, CatalogFilterConfig> = {
     sorts: BOOK_SORTS,
     defaultSort: READING_DEFAULT_SORT,
   },
+  audiobooks: {
+    tri: [
+      {
+        key: 'genres',
+        title: 'Жанры',
+        param: READING_PARAM.genres,
+        paramExclude: READING_PARAM.genresExclude,
+        layout: 'list',
+        names: true,
+        searchable: true,
+      },
+    ],
+    ranges: [
+      {
+        key: 'hours',
+        title: 'Длительность, часов',
+        fromField: 'hoursFrom',
+        toField: 'hoursTo',
+        fromParam: READING_PARAM.hoursFrom,
+        toParam: READING_PARAM.hoursTo,
+        min: 0,
+        max: 500,
+        fromPlaceholder: 'от',
+        toPlaceholder: 'до',
+      },
+    ],
+    sorts: AUDIOBOOK_SORTS,
+    defaultSort: READING_DEFAULT_SORT,
+  },
 };
 
 export function parseReadingSort(kind: ReadingKind, value: string | null | undefined): ReadingSort {
@@ -174,6 +226,7 @@ export const READING_CATALOG_META: Record<ReadingKind, { title: string; path: st
   manga: { title: 'Каталог манги', path: '/manga/catalog', section: '/manga' },
   ranobe: { title: 'Каталог ранобэ', path: '/ranobe/catalog', section: '/ranobe' },
   books: { title: 'Каталог книг', path: '/books/catalog', section: '/books' },
+  audiobooks: { title: 'Каталог аудиокниг', path: '/audiobooks/catalog', section: '/audiobooks' },
 };
 
 /**

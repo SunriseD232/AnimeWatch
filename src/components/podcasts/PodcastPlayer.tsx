@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import PosterImage from '@/components/PosterImage';
+import { SkipButton } from '@/components/audiobooks/AudiobookPlayer';
 import { useProgressSaver } from '@/hooks/useProgressSaver';
 import { formatTime } from '@/lib/format';
 import type { PodcastEpisode } from '@/lib/podcastShared';
@@ -118,28 +119,35 @@ export default function PodcastPlayer({
     else el.pause();
   }, []);
 
-  // Пробел — воспроизведение/пауза, стрелки — ±15 с. Не перехватываем, когда
+  // ±10 секунд — кнопками и стрелками (24.10.2026: тот же шаг, что у
+  // аудиокниг; раньше стрелки перематывали на 15 с, а кнопок не было).
+  const skip = useCallback((delta: number) => {
+    const el = audioRef.current;
+    if (!el) return;
+    const end = Number.isFinite(el.duration) ? el.duration : Infinity;
+    el.currentTime = Math.max(0, Math.min(end, el.currentTime + delta));
+  }, []);
+
+  // Пробел — воспроизведение/пауза, стрелки — ±10 с. Не перехватываем, когда
   // фокус в поле ввода или на кнопке/ссылке (иначе ломаем Tab-навигацию).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && /input|textarea|select/i.test(target.tagName)) return;
-      const el = audioRef.current;
-      if (!el) return;
       if (e.code === 'Space') {
         e.preventDefault();
         toggle();
       } else if (e.code === 'ArrowRight') {
         e.preventDefault();
-        el.currentTime = Math.min(el.duration || Infinity, el.currentTime + 15);
+        skip(10);
       } else if (e.code === 'ArrowLeft') {
         e.preventDefault();
-        el.currentTime = Math.max(0, el.currentTime - 15);
+        skip(-10);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [toggle]);
+  }, [toggle, skip]);
 
   const shown = scrubbing ?? current;
   const total = duration ?? episode.durationSeconds;
@@ -256,6 +264,8 @@ export default function PodcastPlayer({
           </span>
         )}
 
+        <SkipButton seconds={-10} onClick={() => skip(-10)} />
+
         <button
           type="button"
           onClick={toggle}
@@ -273,6 +283,8 @@ export default function PodcastPlayer({
             </svg>
           )}
         </button>
+
+        <SkipButton seconds={10} onClick={() => skip(10)} />
 
         {next ? (
           <Link

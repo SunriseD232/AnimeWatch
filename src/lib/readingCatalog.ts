@@ -7,6 +7,7 @@ import { fromIndexRow as mangaFromRow } from '@/lib/manga';
 import { fromIndexRow as ranobeFromRow } from '@/lib/ranobe';
 import { triValues, type CatalogFilters, type FilterOptionDef } from '@/lib/catalogFilters';
 import type { BookSummary } from '@/lib/bookShared';
+import type { AudiobookSummary } from '@/lib/audiobookShared';
 import type { MangaSummary } from '@/lib/mangaShared';
 import type { RanobeSummary } from '@/lib/ranobeShared';
 import type { ReadingKind, ReadingSort } from '@/lib/readingFilters';
@@ -75,8 +76,22 @@ function applyRange(q: Query, column: string, from: number | null, to: number | 
 
 /** Порядок выдачи; id — последним ключом, чтобы страницы не повторяли и не
  *  теряли записи. */
+const TABLE: Record<ReadingKind, string> = {
+  manga: 'manga_index',
+  ranobe: 'ranobe_index',
+  books: 'book_index',
+  audiobooks: 'audiobook_index',
+};
+
+const ID_COLUMN: Record<ReadingKind, string> = {
+  manga: 'title_id',
+  ranobe: 'title_id',
+  books: 'book_id',
+  audiobooks: 'id',
+};
+
 function applySort(q: Query, kind: ReadingKind, sort: ReadingSort): Query {
-  const id = kind === 'books' ? 'book_id' : 'title_id';
+  const id = ID_COLUMN[kind];
   const popularity = kind === 'books' ? 'downloads' : 'views';
   const desc = { ascending: false, nullsFirst: false };
   const asc = { ascending: true, nullsFirst: false };
@@ -91,6 +106,10 @@ function applySort(q: Query, kind: ReadingKind, sort: ReadingSort): Query {
       return q.order('chapters_count', desc).order(id, asc);
     case 'added':
       return q.order(id, desc);
+    case 'longest':
+      return q.order('duration_seconds', desc).order(id, asc);
+    case 'shortest':
+      return q.order('duration_seconds', asc).order(id, asc);
     case 'name':
       return q.order('title', asc).order(id, asc);
     default:
@@ -107,7 +126,7 @@ async function queryCatalog(
   page: number,
   pageSize: number,
 ): Promise<{ rows: Record<string, unknown>[]; hasMore: boolean } | null> {
-  const table = kind === 'books' ? 'book_index' : kind === 'manga' ? 'manga_index' : 'ranobe_index';
+  const table = TABLE[kind];
   const from = (Math.max(1, page) - 1) * pageSize;
 
   try {
@@ -115,9 +134,21 @@ async function queryCatalog(
 
     const genres = triValues(filters, 'genres');
     q = applyTri(q, 'genres', genres.include, genres.exclude, true);
-    q = applyRange(q, 'year', filters.range.yearFrom ?? null, filters.range.yearTo ?? null);
+    if (kind !== 'audiobooks') {
+      q = applyRange(q, 'year', filters.range.yearFrom ?? null, filters.range.yearTo ?? null);
+    }
 
-    if (kind !== 'books') {
+    if (kind === 'audiobooks') {
+      // Часы в адресе, секунды в базе; «до 5 часов» включает 5 ч 59 мин.
+      const hoursFrom = filters.range.hoursFrom ?? null;
+      const hoursTo = filters.range.hoursTo ?? null;
+      q = applyRange(
+        q,
+        'duration_seconds',
+        hoursFrom != null ? hoursFrom * 3600 : null,
+        hoursTo != null ? (hoursTo + 1) * 3600 - 1 : null,
+      );
+    } else if (kind !== 'books') {
       const tags = triValues(filters, 'tags');
       const kinds = triValues(filters, 'kinds');
       const statuses = triValues(filters, 'statuses');
@@ -176,6 +207,36 @@ export async function getBookCatalogFiltered(
   return res && { items: res.rows.map(bookFromRow), hasMore: res.hasMore };
 }
 
+/** Строка audiobook_index → карточка. */
+export function audiobookFromRow(row: Record<string, unknown>): AudiobookSummary {
+  const list = (value: unknown) => (Array.isArray(value) ? (value as string[]) : []);
+  const num = (value: unknown) => (value == null ? null : Number(value));
+  return {
+    id: Number(row.id),
+    slug: String(row.slug ?? ''),
+    title: String(row.title ?? 'Без названия'),
+    authors: list(row.authors),
+    readers: list(row.readers),
+    genres: list(row.genres),
+    annotation: (row.annotation as string | null) ?? null,
+    durationSeconds: num(row.duration_seconds),
+    coverUrl: (row.cover_url as string | null) ?? null,
+    views: num(row.views),
+    likes: num(row.likes),
+    bookId: num(row.book_id),
+  };
+}
+
+export async function getAudiobookCatalogFiltered(
+  filters: CatalogFilters,
+  sort: ReadingSort,
+  page: number,
+  pageSize: number,
+): Promise<ReadingCatalogPage<AudiobookSummary> | null> {
+  const res = await queryCatalog('audiobooks', filters, sort, page, pageSize);
+  return res && { items: res.rows.map(audiobookFromRow), hasMore: res.hasMore };
+}
+
 // ───────────────────────── Справочники для панели ─────────────────────────
 
 export type ReadingFacetOptions = Record<string, FilterOptionDef[]>;
@@ -208,6 +269,15 @@ export async function getReadingFacets(kind: ReadingKind): Promise<ReadingFacetO
           const { data, error } = await createServiceClient().rpc('book_genre_counts', { lim: 1000 });
           if (error) throw new Error(error.message);
           const rows = ((data ?? []) as { genre: string }[]).map((row) => ({ name: row.genre }));
+          return { genres: toOptions(rows) };
+        }
+
+        if (kind === 'audiobooks') {
+          const { data, error } = await createServiceClient().rpc('audiobook_catalog_facets');
+          if (error) throw new Error(error.message);
+          const rows = ((data ?? []) as { name: string }[])
+            .slice()
+            .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
           return { genres: toOptions(rows) };
         }
 

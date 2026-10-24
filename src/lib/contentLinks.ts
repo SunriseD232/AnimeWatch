@@ -25,6 +25,8 @@ export function contentTitleHref(type: ContentType, id: number): string {
       return `/manga/id/${id}`;
     case 'ranobe':
       return `/ranobe/id/${id}`;
+    case 'audiobook':
+      return `/audiobooks/${id}`;
     default:
       return `/anime/${id}`;
   }
@@ -43,6 +45,9 @@ export function contentResumeHref(progress: WatchProgress): string {
       return `/podcasts/listen/${id}/${progress.episode}`;
     case 'book':
       return `/books/read/${id}`;
+    case 'audiobook':
+      // Плеер на странице книги сам продолжит с сохранённой главы и места.
+      return `/audiobooks/${id}`;
     case 'manga': {
       // Канонический idx (каноническая ось) важнее старого chapterId Remanga.
       const key = Number(locator?.idx ?? locator?.chapterId);
@@ -72,6 +77,8 @@ export function contentUnitLabel(type: ContentType, season: number, episode: num
     case 'book':
       // В историю книга попадает, только когда дочитана (lib/readingProgress.ts).
       return 'Прочитана';
+    case 'audiobook':
+      return `Часть ${episode}`;
     default:
       return `${season > 1 ? `Сезон ${season}, ` : ''}Серия ${episode}`;
   }
@@ -90,6 +97,8 @@ export function contentTypeLabel(type: ContentType): string {
       return 'Манга';
     case 'ranobe':
       return 'Ранобэ';
+    case 'audiobook':
+      return 'Аудиокнига';
     default:
       return 'Аниме';
   }

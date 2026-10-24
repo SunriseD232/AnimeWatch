@@ -25,6 +25,7 @@ const TYPE_TABS: { value: ContentType; label: string }[] = [
   { value: 'book', label: 'Книги' },
   { value: 'ranobe', label: 'Ранобэ' },
   { value: 'manga', label: 'Манга' },
+  { value: 'audiobook', label: 'Аудиокниги' },
 ];
 
 /** Аниме и кино — всегда; остальные вкладки появляются, когда в разделе
@@ -40,6 +41,7 @@ const EMPTY_TARGET: Record<ContentType, { href: string; label: string }> = {
   book: { href: '/books', label: 'Найти что почитать →' },
   ranobe: { href: '/ranobe', label: 'Найти что почитать →' },
   manga: { href: '/manga', label: 'Найти что почитать →' },
+  audiobook: { href: '/audiobooks', label: 'Найти что послушать →' },
 };
 
 function filtersFor(type: ContentType): { value: UserListStatus | 'all'; label: string }[] {

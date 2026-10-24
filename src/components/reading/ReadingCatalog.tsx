@@ -9,6 +9,7 @@ import Pagination from '@/components/Pagination';
 import BookCard from '@/components/books/BookCard';
 import MangaCard from '@/components/manga/MangaCard';
 import RanobeCard from '@/components/ranobe/RanobeCard';
+import AudiobookCard from '@/components/audiobooks/AudiobookCard';
 import { buildQuery, hasAnyFilter, parseFilters, type CatalogFilters } from '@/lib/catalogFilters';
 import {
   READING_CATALOG_META,
@@ -18,6 +19,7 @@ import {
   type ReadingSort,
 } from '@/lib/readingFilters';
 import {
+  getAudiobookCatalogFiltered,
   getBookCatalogFiltered,
   getMangaCatalogFiltered,
   getRanobeCatalogFiltered,
@@ -129,6 +131,14 @@ export async function ReadingCatalogResults({
       hasMore = data.hasMore;
       cards = data.items.map((ranobe, i) => <RanobeCard key={ranobe.id} ranobe={ranobe} priority={i < 6} />);
     }
+  } else if (kind === 'audiobooks') {
+    const data = await getAudiobookCatalogFiltered(filters, sort, page, PAGE_SIZE);
+    if (data) {
+      hasMore = data.hasMore;
+      cards = data.items.map((audiobook, i) => (
+        <AudiobookCard key={audiobook.id} audiobook={audiobook} priority={i < 6} />
+      ));
+    }
   } else {
     const data = await getBookCatalogFiltered(filters, sort, page, PAGE_SIZE);
     if (data) {
@@ -147,7 +157,7 @@ export async function ReadingCatalogResults({
         {page > 1
           ? 'Дальше ничего нет.'
           : hasAnyFilter(filters)
-            ? 'По этим фильтрам ничего не нашлось. Попробуйте ослабить условия: убрать часть жанров или тегов, расширить годы или рейтинг.'
+            ? 'По этим фильтрам ничего не нашлось. Попробуйте ослабить условия: убрать часть жанров или тегов, расширить диапазоны.'
             : 'Каталог ещё наполняется.'}
       </Notice>
     );

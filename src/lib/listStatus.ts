@@ -43,7 +43,7 @@ const LISTEN_LABELS: Record<UserListStatus, string> = {
 
 function labelsFor(type: ContentType): Record<UserListStatus, string> {
   if (type === 'book' || type === 'manga' || type === 'ranobe') return READ_LABELS;
-  if (type === 'podcast') return LISTEN_LABELS;
+  if (type === 'podcast' || type === 'audiobook') return LISTEN_LABELS;
   return LIST_STATUS_LABELS;
 }
 
@@ -63,7 +63,7 @@ export function listMuteLabel(type: ContentType, muted: boolean): string | null 
       ? 'главах'
       : type === 'podcast'
         ? 'выпусках'
-        : type === 'book'
+        : type === 'book' || type === 'audiobook'
           ? null
           : 'сериях';
   if (!unit) return null;

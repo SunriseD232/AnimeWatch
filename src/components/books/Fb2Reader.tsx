@@ -26,6 +26,7 @@ export default function Fb2Reader({
   annotation,
   chapters,
   initialPercent,
+  initialTextFraction = null,
 }: {
   id: number;
   title: string;
@@ -35,8 +36,12 @@ export default function Fb2Reader({
   annotation: string | null;
   chapters: { href: string; title: string; depth: number }[];
   initialPercent: number;
+  /** Открыть с доли текста (место из аудиокниги, lib/syncOffers.ts) — точнее
+   *  доли прокрутки: картинки и заголовки её искажают. */
+  initialTextFraction?: number | null;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const percentRef = useRef(initialPercent);
 
@@ -45,12 +50,36 @@ export default function Fb2Reader({
 
   // Восстановление позиции — после первой отрисовки, когда scrollHeight уже
   // известен. smooth здесь не нужен: это не переход, а возврат на место.
+  // Доля текста (из аудиокниги) главнее доли прокрутки.
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || initialPercent <= 0) return;
+    if (!el) return;
+    if (initialTextFraction != null && contentRef.current) {
+      scrollToTextFraction(el, contentRef.current, initialTextFraction);
+      return;
+    }
+    if (initialPercent <= 0) return;
     const max = el.scrollHeight - el.clientHeight;
     if (max > 0) el.scrollTop = max * Math.min(1, initialPercent);
-  }, [initialPercent]);
+  }, [initialPercent, initialTextFraction]);
+
+  /** Что уходит в прогресс: доля текста до первой видимой строки — общая
+   *  единица с EPUB и аудиокнигой (lib/bookAudioSync.ts) — и доля прокрутки
+   *  для старых записей. */
+  const snapshot = () => {
+    const el = scrollRef.current;
+    const content = contentRef.current;
+    const textFraction = el && content ? textFractionAtScroll(el, content) : null;
+    return {
+      percent: textFraction ?? percentRef.current,
+      locator: {
+        scrollPercent: percentRef.current,
+        ...(textFraction != null ? { textFraction } : {}),
+      },
+    };
+  };
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -65,14 +94,7 @@ export default function Fb2Reader({
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
         saveTimerRef.current = null;
-        saveReadingProgress({
-          id,
-          title,
-          coverUrl,
-          source,
-          percent: percentRef.current,
-          locator: { scrollPercent: percentRef.current },
-        });
+        saveReadingProgress({ id, title, coverUrl, source, ...snapshotRef.current() });
       }, 2000);
     };
 
@@ -82,14 +104,7 @@ export default function Fb2Reader({
     // дописать отдельно. keepalive внутри saveReadingProgress позволяет
     // запросу пережить выгрузку страницы.
     const flush = () => {
-      saveReadingProgress({
-        id,
-        title,
-        coverUrl,
-        source,
-        percent: percentRef.current,
-        locator: { scrollPercent: percentRef.current },
-      });
+      saveReadingProgress({ id, title, coverUrl, source, ...snapshotRef.current() });
     };
     window.addEventListener('beforeunload', flush);
     window.addEventListener('pagehide', flush);
@@ -99,14 +114,7 @@ export default function Fb2Reader({
       window.removeEventListener('beforeunload', flush);
       window.removeEventListener('pagehide', flush);
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveReadingProgress({
-        id,
-        title,
-        coverUrl,
-        source,
-        percent: percentRef.current,
-        locator: { scrollPercent: percentRef.current },
-      });
+      saveReadingProgress({ id, title, coverUrl, source, ...snapshotRef.current() });
     };
   }, [id, title, coverUrl, source]);
 
@@ -187,7 +195,7 @@ export default function Fb2Reader({
                 dangerouslySetInnerHTML={{ __html: annotation }}
               />
             ) : null}
-            <div className="fb2-content" dangerouslySetInnerHTML={{ __html: html }} />
+            <div ref={contentRef} className="fb2-content" dangerouslySetInnerHTML={{ __html: html }} />
           </div>
         </div>
       </div>
@@ -197,4 +205,62 @@ export default function Fb2Reader({
       </p>
     </div>
   );
+}
+
+// ───────────── Доля текста ↔ прокрутка (синхронизация с аудиокнигой) ─────────────
+
+/** Текстовые узлы книги с накопленной длиной до каждого. Пробелы схлопнуты,
+ *  как и в серверной карте текста (lib/bookTextMap.ts), — иначе доли
+ *  разъехались бы на отступах разметки. */
+function textIndex(content: HTMLElement): { nodes: Text[]; starts: number[]; total: number } {
+  const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  const starts: number[] = [];
+  let total = 0;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const length = (node.textContent ?? '').replace(/\s+/g, ' ').length;
+    if (length === 0) continue;
+    nodes.push(node as Text);
+    starts.push(total);
+    total += length;
+  }
+  return { nodes, starts, total };
+}
+
+function nodeTop(node: Text): number {
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  return range.getBoundingClientRect().top;
+}
+
+/** Доля текста до первой строки, видимой сверху. Двоичный поиск: книга —
+ *  десятки тысяч узлов, мерить каждый на каждой прокрутке дорого. */
+function textFractionAtScroll(scroller: HTMLElement, content: HTMLElement): number | null {
+  const { nodes, starts, total } = textIndex(content);
+  if (total === 0) return null;
+  const top = scroller.getBoundingClientRect().top;
+  let lo = 0;
+  let hi = nodes.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (nodeTop(nodes[mid]) < top) lo = mid + 1;
+    else hi = mid;
+  }
+  return Math.max(0, Math.min(1, starts[lo] / total));
+}
+
+function scrollToTextFraction(scroller: HTMLElement, content: HTMLElement, fraction: number): void {
+  const { nodes, starts, total } = textIndex(content);
+  if (total === 0) return;
+  const target = Math.max(0, Math.min(1, fraction)) * total;
+  let lo = 0;
+  let hi = nodes.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (starts[mid] <= target) lo = mid;
+    else hi = mid - 1;
+  }
+  const delta = nodeTop(nodes[lo]) - scroller.getBoundingClientRect().top;
+  // Строка чуть ниже верхнего края: так видно и предыдущую фразу.
+  scroller.scrollTop += delta - 48;
 }

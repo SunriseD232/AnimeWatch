@@ -8,7 +8,7 @@
  * внешний id источника, а сам источник — в отдельной колонке `source`
  * (у ReManga и Renovels свои числовые id, без неё они бы столкнулись).
  */
-export type ContentType = 'anime' | 'cinema' | 'podcast' | 'book' | 'manga' | 'ranobe';
+export type ContentType = 'anime' | 'cinema' | 'podcast' | 'book' | 'manga' | 'ranobe' | 'audiobook';
 
 /**
  * Типы контента, у которых есть каталог с постерами и подборками (аниме,
@@ -20,7 +20,7 @@ export type ContentType = 'anime' | 'cinema' | 'podcast' | 'book' | 'manga' | 'r
  * был ровно этими двумя, и после добавления подкастов компилятор сам показал
  * все места, где подразумевался каталог, а не любой контент.
  */
-export type CatalogType = Exclude<ContentType, 'podcast' | 'book' | 'manga' | 'ranobe'>;
+export type CatalogType = Exclude<ContentType, 'podcast' | 'book' | 'manga' | 'ranobe' | 'audiobook'>;
 
 /**
  * Единица позиции внутри юнита (watch_progress.unit, миграция 0053).

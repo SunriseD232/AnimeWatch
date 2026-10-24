@@ -15,7 +15,8 @@ export interface JobStateRef {
     | 'ranobe_index_state'
     | 'manga_index_state'
     | 'source_link_state'
-    | 'book_storage_state';
+    | 'book_storage_state'
+    | 'audiobook_index_state';
   startedColumn: string;
   finishedColumn: string;
   /** Колонка-ключ строки состояния. По умолчанию `id`. */
@@ -148,9 +149,31 @@ export const JOBS = {
     // До 8 сортировок по 1000 страниц Renovels (см. lib/ranobeIndex.ts).
     maxRunMs: 150 * 60 * 1000,
   },
+  'reindex-audiobooks': {
+    label: 'Новинки аудиокниг',
+    duration: '~1 минута',
+    state: {
+      table: 'audiobook_index_state',
+      startedColumn: 'last_run_started_at',
+      finishedColumn: 'last_run_finished_at',
+    },
+    maxRunMs: 20 * 60 * 1000,
+  },
+  'reindex-audiobooks-full': {
+    label: 'Полный обход аудиокниг',
+    duration: '~1–1,5 часа',
+    state: {
+      table: 'audiobook_index_state',
+      startedColumn: 'last_run_started_at',
+      finishedColumn: 'last_run_finished_at',
+    },
+    // ~6,5 тыс. страниц с паузой 300 мс плюс сопоставление с книгами.
+    maxRunMs: 180 * 60 * 1000,
+  },
   'reindex-mangalib': {
     label: 'Каталог MangaLib: склейка с Remanga',
-    duration: '~10 минут',
+    // Обход по жанрам и тегам для фильтров каталога (0063) — около часа.
+    duration: '~1 час',
     state: {
       table: 'source_link_state',
       startedColumn: 'last_run_started_at',

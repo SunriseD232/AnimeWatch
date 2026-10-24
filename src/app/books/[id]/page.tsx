@@ -6,6 +6,8 @@ import type { Metadata } from 'next';
 import PosterImage from '@/components/PosterImage';
 import { BOOK_FORMAT_LABEL } from '@/lib/bookShared';
 import { getBookById } from '@/lib/books';
+import { getAudiobooksForBook } from '@/lib/audiobooks';
+import AudiobookCard from '@/components/audiobooks/AudiobookCard';
 import { listSavedBooks } from '@/lib/bookStorage';
 import SaveBookButton from '@/components/books/SaveBookButton';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
@@ -44,9 +46,11 @@ export default async function BookPage({ params }: { params: { id: string } }) {
   if (!Number.isSafeInteger(id) || id <= 0) notFound();
 
   const supabase = createClient();
+  // Озвучки — сразу, параллельно с книгой: они берутся из своего индекса
+  // по паре book_id (миграция 0064) и от пользователя не зависят.
   const [book, {
     data: { user },
-  }] = await Promise.all([getBookById(id), getCachedUser()]);
+  }, narrations] = await Promise.all([getBookById(id), getCachedUser(), getAudiobooksForBook(id)]);
   if (!book) notFound();
 
   let progress: WatchProgress | null = null;
@@ -208,6 +212,24 @@ export default async function BookPage({ params }: { params: { id: string } }) {
           <p className="whitespace-pre-line text-sm leading-relaxed text-gray-300">
             {book.annotation}
           </p>
+        </section>
+      ) : null}
+
+      {narrations.length > 0 ? (
+        <section className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold">Слушать аудиокнигу</h2>
+            <p className="text-sm text-gray-400">
+              {narrations.length > 1 ? 'Озвучки разных чтецов.' : 'Озвучка с knigavuhe.'} Место в
+              книге и в записи переносится: начнёте слушать — плеер предложит продолжить с того места,
+              где вы остановились в тексте.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {narrations.map((item) => (
+              <AudiobookCard key={item.id} audiobook={item} />
+            ))}
+          </div>
         </section>
       ) : null}
     </div>

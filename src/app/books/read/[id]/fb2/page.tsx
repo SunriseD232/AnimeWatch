@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import Fb2Reader from '@/components/books/Fb2Reader';
+import SyncBanner from '@/components/books/SyncBanner';
+import { getBookOffer, parseSyncFraction } from '@/lib/syncOffers';
 import { fetchBookFile, getBookById } from '@/lib/books';
 import { parseFb2Zip } from '@/lib/fb2';
 import { createClient, getCachedUser } from '@/lib/supabase/server';
@@ -22,7 +24,14 @@ export const maxDuration = 60;
  * если книга начата в EPUB-читателе: тогда точность до страницы теряется, но
  * место остаётся тем же.
  */
-export default async function BookFb2Page({ params }: { params: { id: string } }) {
+export default async function BookFb2Page({
+  params,
+  searchParams,
+}: {
+  params: { id: string };
+  /** ?from=0.342 — открыть с доли текста (место из аудиокниги). */
+  searchParams: { from?: string };
+}) {
   const id = Number(params.id);
   if (!Number.isSafeInteger(id) || id <= 0) notFound();
 
@@ -92,7 +101,15 @@ export default async function BookFb2Page({ params }: { params: { id: string } }
     );
   }
 
-  return (
+  // Место из аудиокниги — долей текста; предложение — только когда в
+  // адресе места ещё нет (иначе плашка висела бы после перехода).
+  const from = parseSyncFraction(searchParams.from);
+  const offer = user && from == null ? await getBookOffer(id, progress) : null;
+  const savedText = Number(
+    locator && typeof locator === 'object' ? locator.textFraction : Number.NaN,
+  );
+
+  const reader = (
     <Fb2Reader
       key={book.id}
       id={book.id}
@@ -103,6 +120,22 @@ export default async function BookFb2Page({ params }: { params: { id: string } }
       annotation={parsed.annotation}
       chapters={parsed.chapters}
       initialPercent={initialPercent}
+      initialTextFraction={from ?? (Number.isFinite(savedText) ? savedText : null)}
     />
+  );
+
+  if (!offer) return reader;
+  return (
+    <div className="flex flex-col gap-3">
+      <SyncBanner
+        text={offer.text}
+        baseHref={`/books/read/${id}/fb2`}
+        fraction={offer.fraction}
+        audiobookId={offer.audiobookId}
+        chapterIndex={offer.chapterIndex}
+        position={offer.position}
+      />
+      {reader}
+    </div>
   );
 }
