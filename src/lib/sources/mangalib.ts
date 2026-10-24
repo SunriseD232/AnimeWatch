@@ -404,9 +404,14 @@ function listItem(raw: unknown): MangaLibListItem | null {
  */
 export async function fetchMangaLibCatalogPage(
   page: number,
+  filter: { genre?: number; tag?: number } = {},
 ): Promise<{ items: MangaLibListItem[]; hasNext: boolean } | null> {
+  // Фильтр по жанру/тегу — для обхода по жанрам (lib/mangalibCatalog.ts):
+  // сами жанры список не отдаёт, fields[]=genres он отклоняет с 422.
+  const by =
+    (filter.genre ? `&genres[]=${filter.genre}` : '') + (filter.tag ? `&tags[]=${filter.tag}` : '');
   const json = await apiJson(
-    `/manga?site_id[]=1&sort_by=created_at&sort_type=desc&page=${page}`,
+    `/manga?site_id[]=1&sort_by=created_at&sort_type=desc&page=${page}${by}`,
   );
   if (!json) return null;
   const items = asArray(json.data)
@@ -414,6 +419,37 @@ export async function fetchMangaLibCatalogPage(
     .filter((item): item is MangaLibListItem => item !== null);
   const meta = asObject(json.meta);
   return { items, hasNext: meta?.has_next_page === true };
+}
+
+export interface MangaLibTaxon {
+  id: number;
+  name: string;
+}
+
+/**
+ * Справочник жанров и тегов MangaLib (/constants; 24.10.2026 — 57 жанров и
+ * 631 тег). Только те, что показываются на самом MangaLib (site_ids
+ * содержит 1). null — источник не ответил.
+ */
+export async function fetchMangaLibTaxonomy(): Promise<{
+  genres: MangaLibTaxon[];
+  tags: MangaLibTaxon[];
+} | null> {
+  const json = await apiJson('/constants?fields[]=genres&fields[]=tags');
+  const data = json ? asObject(json.data) : null;
+  if (!data) return null;
+  const list = (value: unknown): MangaLibTaxon[] =>
+    asArray(value)
+      .map((raw) => {
+        const obj = asObject(raw);
+        const id = obj ? asNumber(obj.id) : null;
+        const name = obj ? asText(obj.name) : null;
+        const sites = obj ? asArray(obj.site_ids).map(asNumber) : [];
+        if (id == null || !name || (sites.length > 0 && !sites.includes(1))) return null;
+        return { id, name };
+      })
+      .filter((item): item is MangaLibTaxon => item !== null);
+  return { genres: list(data.genres), tags: list(data.tags) };
 }
 
 /** Описание MangaLib — документ ProseMirror; собираем текст по абзацам. */

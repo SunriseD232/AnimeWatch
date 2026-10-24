@@ -65,6 +65,15 @@ export interface TriGroupDef {
    * «это положительное число».
    */
   numeric?: boolean;
+  /**
+   * Значения — названия из базы (жанры и теги каталогов чтения, миграция
+   * 0063): у трёх источников свои id, и общий ключ — только название.
+   * Список допустимых тоже приходит из базы, поэтому проверка — по форме:
+   * непустая строка разумной длины, не больше MAX_NAMES штук.
+   */
+  names?: boolean;
+  /** Поле поиска над списком — у тегов чтения их сотни. */
+  searchable?: boolean;
 }
 
 export interface RangeGroupDef {
@@ -125,7 +134,16 @@ function splitList(value: string | null | undefined): string[] {
  * приходят из адресной строки, то есть от кого угодно, и уезжают дальше в
  * SQL-запрос к индексу или в запрос к чужому API.
  */
+/** Сколько названий принимать в одной группе: каждое — условие в запросе. */
+const MAX_NAMES = 20;
+const MAX_NAME_LENGTH = 80;
+
 function keepValid(values: string[], group: TriGroupDef): string[] {
+  if (group.names) {
+    return [...new Set(values.map((v) => v.trim()))]
+      .filter((v) => v.length > 0 && v.length <= MAX_NAME_LENGTH)
+      .slice(0, MAX_NAMES);
+  }
   if (group.numeric) {
     return values.filter((v) => /^\d+$/.test(v) && Number(v) > 0);
   }

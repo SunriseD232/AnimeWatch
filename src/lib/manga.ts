@@ -1,5 +1,6 @@
 import { getCachedJson } from '@/lib/cache/apiCache';
 import { singleFlight } from '@/lib/singleFlight';
+import { taxonNames } from '@/lib/catalogTaxonomy';
 import { decodeHtmlEntities } from '@/lib/sources/text';
 import { wordSearchFilter } from '@/lib/indexSearch';
 import { signImageUrl } from '@/lib/extract/proxy';
@@ -333,6 +334,9 @@ export function normalizeManga(item: unknown): MangaSummary | null {
     votes: asInt(obj.total_votes) ?? asInt(obj.count_rating),
     views: asInt(obj.total_views),
     chaptersCount: asInt(obj.count_chapters),
+    genres: taxonNames(obj.genres),
+    // «Категории» у Remanga/Renovels — это теги.
+    tags: taxonNames(obj.categories),
     coverUrl: coverOf(obj),
     sourceUrl: `${SITE_BASE}/manga/${encodeURIComponent(dir)}/main`,
   };
@@ -769,6 +773,8 @@ export interface MangaIndexRow {
   chapters_count: number | null;
   cover_url: string | null;
   source_url: string;
+  genres?: string[];
+  tags?: string[];
   rank?: number | null;
   in_catalog?: boolean;
   updated_at: string;
@@ -793,13 +799,17 @@ export function mangaIndexRow(
     chapters_count: manga.chaptersCount,
     cover_url: manga.coverUrl,
     source_url: manga.sourceUrl,
+    // Только если источник их прислал: иначе upsert записал бы пустые
+    // списки поверх собранных полным обходом.
+    ...(manga.genres ? { genres: manga.genres } : {}),
+    ...(manga.tags ? { tags: manga.tags } : {}),
     rank: overrides.rank ?? null,
     in_catalog: overrides.inCatalog ?? false,
     updated_at: overrides.updatedAt ?? new Date().toISOString(),
   };
 }
 
-function fromIndexRow(row: Record<string, unknown>): MangaSummary {
+export function fromIndexRow(row: Record<string, unknown>): MangaSummary {
   return {
     id: Number(row.title_id),
     dir: String(row.dir ?? ''),
@@ -815,6 +825,8 @@ function fromIndexRow(row: Record<string, unknown>): MangaSummary {
     chaptersCount: row.chapters_count == null ? null : Number(row.chapters_count),
     coverUrl: (row.cover_url as string | null) ?? null,
     sourceUrl: String(row.source_url ?? ''),
+    genres: Array.isArray(row.genres) ? (row.genres as string[]) : [],
+    tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
   };
 }
 

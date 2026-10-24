@@ -51,7 +51,14 @@ export default async function MangaPage({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <h1 className="text-xl font-bold">Манга</h1>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h1 className="text-xl font-bold">Манга</h1>
+          {/* Полный каталог с фильтрами по жанрам, тегам, году и рейтингу —
+              отдельной страницей, как у кино (components/reading/ReadingCatalog). */}
+          <Link href="/manga/catalog" className="text-sm font-medium text-accent-text hover:underline">
+            Каталог с фильтрами →
+          </Link>
+        </div>
         <p className="text-sm text-gray-400">
           Манга, манхва и маньхуа со всех регионов. Бесплатные главы читаются
           прямо на сайте — вертикальной лентой, с оглавлением и сохранением

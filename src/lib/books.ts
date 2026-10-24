@@ -545,7 +545,7 @@ function toIndexRow(book: BookSummary): BookIndexRow {
   };
 }
 
-function fromIndexRow(row: Record<string, unknown>): BookSummary {
+export function fromIndexRow(row: Record<string, unknown>): BookSummary {
   return {
     id: Number(row.book_id),
     title: String(row.title ?? 'Без названия'),

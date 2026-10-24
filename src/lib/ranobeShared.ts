@@ -37,6 +37,10 @@ export interface RanobeSummary {
   coverUrl: string | null;
   /** Страница тайтла у источника — только для атрибуции. */
   sourceUrl: string;
+  /** Жанры и теги — для фильтров каталога (миграция 0063). undefined —
+   *  источник их в этом ответе не прислал (живой поиск), а не «их нет». */
+  genres?: string[];
+  tags?: string[];
 }
 
 /** Полная карточка: то, что даёт живой /api/titles/{dir}/. */

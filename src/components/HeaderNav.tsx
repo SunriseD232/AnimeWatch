@@ -1,5 +1,6 @@
 'use client';
 
+import { readingCatalogHref } from '@/lib/readingFilters';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Suspense, type ReactNode } from 'react';
@@ -59,7 +60,11 @@ function HeaderNavView({ mode }: { mode: ContentType }) {
   const pathname = usePathname();
 
   const isHome = pathname === '/' || pathname === '/cinema';
-  const isCatalog = pathname === '/catalog' || pathname === '/cinema/catalog';
+  // В разделах чтения — их каталог с фильтрами (lib/readingFilters.ts),
+  // иначе из манги значок уводил в каталог аниме.
+  const readingCatalog = readingCatalogHref(pathname);
+  const isCatalog =
+    pathname === '/catalog' || pathname === '/cinema/catalog' || pathname === readingCatalog;
 
   return (
     <div className="hidden shrink-0 items-center gap-0.5 md:flex">
@@ -68,7 +73,7 @@ function HeaderNavView({ mode }: { mode: ContentType }) {
         <path d="M5.5 9v10a1 1 0 0 0 1 1H10v-5.5h4V20h3.5a1 1 0 0 0 1-1V9" />
       </NavItem>
       <NavItem
-        href={mode === 'cinema' ? '/cinema/catalog' : '/catalog'}
+        href={readingCatalog ?? (mode === 'cinema' ? '/cinema/catalog' : '/catalog')}
         label="Каталог"
         active={isCatalog}
         iconOnly

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Checkbox from '@/components/Checkbox';
 import TriStateCheckbox from '@/components/catalog/TriStateCheckbox';
 import { EMPTY_TRI, type FilterOptionDef, type RangeGroupDef, type TriGroupDef } from '@/lib/catalogFilters';
@@ -87,10 +88,27 @@ export function TriGroupBody({
 }) {
   const { pending, toggle } = useCatalogFilters();
   const state = pending.tri[def.key] ?? EMPTY_TRI;
+  const [query, setQuery] = useState('');
+
+  // Поиск по списку (def.searchable): ё = е, регистр не важен. Выбранные
+  // пункты видны всегда — иначе снять фильтр можно было бы, только стерев
+  // запрос.
+  const needle = searchKey(query);
+  const shown = needle
+    ? options.filter(
+        (o) =>
+          searchKey(o.label).includes(needle) ||
+          state.include.includes(o.value) ||
+          state.exclude.includes(o.value),
+      )
+    : options;
 
   const items = (
     <div className="flex flex-col gap-0.5">
-      {options.map((o) => (
+      {shown.length === 0 ? (
+        <p className="px-1 py-2 text-xs text-gray-500">Ничего не нашлось.</p>
+      ) : null}
+      {shown.map((o) => (
         <TriStateCheckbox
           key={o.value}
           label={o.label}
@@ -108,7 +126,25 @@ export function TriGroupBody({
   );
 
   if (def.layout !== 'list') return items;
-  return <div className="max-h-[300px] overflow-y-auto pr-1">{items}</div>;
+  const list = <div className="max-h-[300px] overflow-y-auto pr-1">{items}</div>;
+  if (!def.searchable) return list;
+  return (
+    <div className="flex flex-col gap-2">
+      <input
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Найти"
+        aria-label={`${def.title}: поиск`}
+        className={INPUT_CLS}
+      />
+      {list}
+    </div>
+  );
+}
+
+function searchKey(text: string): string {
+  return text.trim().toLocaleLowerCase('ru-RU').replace(/ё/g, 'е');
 }
 
 /**

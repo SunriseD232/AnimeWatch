@@ -1,8 +1,10 @@
 import { createServiceClient } from '@/lib/supabase/service';
+import { taxonName } from '@/lib/catalogTaxonomy';
 import {
   MANGALIB_DIR_PREFIX,
   MANGALIB_KEY_OFFSET,
   fetchMangaLibCatalogPage,
+  fetchMangaLibTaxonomy,
   mangaLibCover,
   mangaLibSiteUrl,
   type MangaLibListItem,
@@ -21,6 +23,11 @@ import {
  *     id MangaLib, dir = «ml-» + slug_url. Описание, жанры и главы карточка
  *     берёт у MangaLib (getMangaDetails → getMangaLibDetails).
  *
+ * Жанры и теги своих карточек (фильтры каталога, миграция 0063) — обходом
+ * списка с фильтром по каждому жанру и тегу: в самом списке их нет, а
+ * fields[]=genres MangaLib отклоняет. Это ~4–6 тыс. запросов против 18 тыс.
+ * к карточкам по одной (24.10.2026, решение — обход по жанрам).
+ *
  * Пара — только однозначная: одно и то же нормализованное название (рус.,
  * англ. или оригинальное) ведёт ровно к одному тайтлу Remanga, и год, если он
  * известен у обоих, расходится не больше чем на год. Сомнительное лучше
@@ -32,6 +39,8 @@ const CHUNK = 500;
 const READ_PAGE = 1000;
 /** Повторы страницы каталога, если MangaLib не ответил. */
 const RETRY_DELAYS_MS = [5_000, 15_000, 45_000];
+/** Предохранитель обхода по одному жанру: весь каталог — ~700 страниц. */
+const MAX_TAXON_PAGES = 800;
 /** Строка состояния в source_link_state. */
 const STATE_JOB = 'mangalib-catalog';
 
@@ -39,8 +48,68 @@ export interface MangaLibSyncResult {
   titles: number;
   matched: number;
   ownCards: number;
+  /** Своих карточек, которым проставлены жанры/теги; null — обход по
+   *  жанрам не удался, и жанры не менялись. */
+  taxonomyCards: number | null;
   requests: number;
   durationMs: number;
+}
+
+interface Taxa {
+  genres: string[];
+  tags: string[];
+}
+
+/** Страница каталога с повторами; null — источник так и не ответил. */
+async function fetchPageWithRetry(
+  page: number,
+  filter: { genre?: number; tag?: number },
+  counter: { requests: number },
+) {
+  let res = await fetchMangaLibCatalogPage(page, filter);
+  counter.requests++;
+  for (const delay of RETRY_DELAYS_MS) {
+    if (res) break;
+    await sleep(delay);
+    res = await fetchMangaLibCatalogPage(page, filter);
+    counter.requests++;
+  }
+  return res;
+}
+
+/**
+ * id тайтла MangaLib → его жанры и теги. null — справочник или какая-то
+ * страница не пришли: тогда жанры не пишем вовсе. Неполный обход стёр бы
+ * жанры у тайтлов, до которых не дошёл, а старые лучше, чем пустые.
+ */
+async function collectTaxonomy(counter: { requests: number }): Promise<Map<number, Taxa> | null> {
+  const taxonomy = await fetchMangaLibTaxonomy();
+  counter.requests++;
+  if (!taxonomy || taxonomy.genres.length === 0) return null;
+
+  const byTitle = new Map<number, Taxa>();
+  const passes: { list: { id: number; name: string }[]; field: keyof Taxa }[] = [
+    { list: taxonomy.genres, field: 'genres' },
+    { list: taxonomy.tags, field: 'tags' },
+  ];
+  for (const { list, field } of passes) {
+    for (const taxon of list) {
+      const name = taxonName(taxon.name);
+      if (!name) continue;
+      const filter = field === 'genres' ? { genre: taxon.id } : { tag: taxon.id };
+      for (let page = 1; page <= MAX_TAXON_PAGES; page++) {
+        const res = await fetchPageWithRetry(page, filter, counter);
+        if (!res) return null;
+        for (const item of res.items) {
+          const entry = byTitle.get(item.id) ?? { genres: [], tags: [] };
+          if (!entry[field].includes(name)) entry[field].push(name);
+          byTitle.set(item.id, entry);
+        }
+        if (!res.hasNext || res.items.length === 0) break;
+      }
+    }
+  }
+  return byTitle;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -132,16 +201,9 @@ export async function syncMangaLibCatalog(): Promise<MangaLibSyncResult> {
   try {
     // ── 1. Весь каталог MangaLib ──
     const items = new Map<number, MangaLibListItem>();
-    let requests = 0;
+    const counter = { requests: 0 };
     for (let page = 1; ; page++) {
-      let res = await fetchMangaLibCatalogPage(page);
-      requests++;
-      for (const delay of RETRY_DELAYS_MS) {
-        if (res) break;
-        await sleep(delay);
-        res = await fetchMangaLibCatalogPage(page);
-        requests++;
-      }
+      const res = await fetchPageWithRetry(page, {}, counter);
       if (!res) throw new Error(`MangaLib не отдал страницу ${page} каталога — обход прерван`);
       for (const item of res.items) items.set(item.id, item);
       if (!res.hasNext || res.items.length === 0) break;
@@ -149,6 +211,9 @@ export async function syncMangaLibCatalog(): Promise<MangaLibSyncResult> {
     if (items.size < MIN_SANE) {
       throw new Error(`MangaLib отдал всего ${items.size} тайтлов — каталог не меняю`);
     }
+
+    // ── 1б. Жанры и теги — обходом по каждому жанру и тегу ──
+    const taxa = await collectTaxonomy(counter);
 
     // ── 2. Склейка с Remanga ──
     const names = await loadRemangaNames();
@@ -197,6 +262,10 @@ export async function syncMangaLibCatalog(): Promise<MangaLibSyncResult> {
           source_url: mangaLibSiteUrl(item.slugUrl),
           in_catalog: true,
           updated_at: nowIso,
+          // Обход по жанрам не удался — поля нет в строке, и upsert оставит
+          // прежние жанры (см. collectTaxonomy). Тогда его нет ни в одной
+          // строке пачки: колонки пачки PostgREST берёт общими для всех.
+          ...(taxa ? { genres: taxa.get(item.id)?.genres ?? [], tags: taxa.get(item.id)?.tags ?? [] } : {}),
         });
       }
     }
@@ -228,7 +297,10 @@ export async function syncMangaLibCatalog(): Promise<MangaLibSyncResult> {
       titles: items.size,
       matched,
       ownCards: ownRows.length,
-      requests,
+      taxonomyCards: taxa
+        ? ownRows.filter((row) => ((row as { genres?: string[] }).genres ?? []).length > 0).length
+        : null,
+      requests: counter.requests,
       durationMs: Date.now() - startedAt.getTime(),
     };
   } catch (err) {

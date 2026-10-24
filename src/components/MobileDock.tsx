@@ -1,5 +1,6 @@
 'use client';
 
+import { readingCatalogHref } from '@/lib/readingFilters';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ContentType } from '@/lib/types';
@@ -35,14 +36,18 @@ export default function MobileDock({
   const pathname = usePathname();
   const isCinema = pathname.startsWith('/cinema');
 
-  // В разделах чтения и подкастов «Каталог» — сама страница раздела: там и
-  // витрина, и поиск. Иначе с /manga он уводил бы в каталог аниме.
+  // В разделах чтения «Каталог» — их каталог с фильтрами (lib/readingFilters.ts),
+  // в подкастах — сама страница раздела: там и витрина, и поиск. Иначе с
+  // /manga он уводил бы в каталог аниме.
   const section = READING_SECTIONS.find(
     (path) => pathname === path || pathname.startsWith(`${path}/`),
   );
-  const catalogHref = section ?? (isCinema ? '/cinema/catalog' : '/catalog');
+  const readingCatalog = readingCatalogHref(pathname);
+  const catalogHref = readingCatalog ?? section ?? (isCinema ? '/cinema/catalog' : '/catalog');
   const isCatalog =
-    pathname === '/catalog' || pathname === '/cinema/catalog' || pathname === section;
+    pathname === '/catalog' ||
+    pathname === '/cinema/catalog' ||
+    pathname === catalogHref;
   const isProfile = pathname.startsWith('/profile');
   const isHome = pathname === '/' || pathname === '/cinema';
 

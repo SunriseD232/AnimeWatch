@@ -51,7 +51,14 @@ export default async function RanobePage({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <h1 className="text-xl font-bold">Ранобэ</h1>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h1 className="text-xl font-bold">Ранобэ</h1>
+          {/* Полный каталог с фильтрами по жанрам, тегам, году и рейтингу —
+              отдельной страницей, как у кино (components/reading/ReadingCatalog). */}
+          <Link href="/ranobe/catalog" className="text-sm font-medium text-accent-text hover:underline">
+            Каталог с фильтрами →
+          </Link>
+        </div>
         <p className="text-sm text-gray-400">
           Корейские, китайские, японские и авторские романы. Читать можно прямо на сайте —
           с оглавлением, тёмной темой и сохранением места. Платные главы источника отмечены,

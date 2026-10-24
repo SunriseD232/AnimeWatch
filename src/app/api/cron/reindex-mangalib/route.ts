@@ -5,14 +5,16 @@ import { syncMangaLibCatalog } from '@/lib/mangalibCatalog';
  * GET /api/cron/reindex-mangalib — еженедельная синхронизация каталога
  * MangaLib (lib/mangalibCatalog.ts): склейка с Remanga и карточки для того,
  * чего у Remanga нет. Идёт после полного обхода Remanga — склеивать есть с
- * чем. ~690 страниц с паузой 300 мс — около 10 минут.
+ * чем. ~690 страниц с паузой 300 мс — около 10 минут, плюс
+ * обход по жанрам и тегам для фильтров каталога (несколько тысяч страниц,
+ * около часа) — отсюда maxDuration с запасом, как у полных обходов.
  *
  * Защита — Authorization: Bearer CRON_SECRET. Исход — в source_link_state
  * (job = 'mangalib-catalog'), видно на /admin/status; туда же пишет причину
  * сам syncMangaLibCatalog.
  */
 export const dynamic = 'force-dynamic';
-export const maxDuration = 3600;
+export const maxDuration = 9000;
 
 export async function GET(request: NextRequest) {
   const auth = request.headers.get('authorization');
