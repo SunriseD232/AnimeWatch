@@ -5,7 +5,8 @@ import { notFound } from 'next/navigation';
 import PosterImage from '@/components/PosterImage';
 import { formatTime } from '@/lib/format';
 import { getPodcastDetails, regionLabel } from '@/lib/podcasts';
-import { getCachedUser } from '@/lib/supabase/server';
+import { createClient, getCachedUser } from '@/lib/supabase/server';
+import EpisodeMark, { type EpisodeMarkState } from '@/components/podcasts/EpisodeMark';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +34,37 @@ export default async function PodcastPage({ params }: { params: { id: string } }
     getListEntry('podcast', id),
   ]);
   if (!podcast) notFound();
+
+  // Метки выпусков (24.10.2026, миграция 0065): «прослушан» — из
+  // watched_episodes, «в процессе» и «в планах» — из episode_marks.
+  const marks = new Map<number, EpisodeMarkState>();
+  if (user) {
+    const supabase = createClient();
+    const [{ data: done }, { data: marked }] = await Promise.all([
+      supabase.from('watched_episodes').select('episode').eq('content_type', 'podcast').eq('shikimori_id', id),
+      supabase
+        .from('episode_marks')
+        .select('episode, status, position_seconds, duration_seconds')
+        .eq('content_type', 'podcast')
+        .eq('shikimori_id', id),
+    ]);
+    for (const row of (marked ?? []) as {
+      episode: number;
+      status: string;
+      position_seconds: number | null;
+      duration_seconds: number | null;
+    }[]) {
+      if (row.status === 'planned') {
+        marks.set(row.episode, { status: 'planned' });
+      } else {
+        const total = Number(row.duration_seconds ?? 0);
+        const percent = total > 0 ? Math.round((Number(row.position_seconds ?? 0) / total) * 100) : null;
+        marks.set(row.episode, { status: 'in_progress', percent });
+      }
+    }
+    // Прослушанный главнее: метка «в процессе» могла не успеть сняться.
+    for (const row of (done ?? []) as { episode: number }[]) marks.set(row.episode, { status: 'done' });
+  }
 
   // Свежие сверху, но index при этом не пересчитываем — он исторический.
   const newestFirst = [...podcast.episodes].reverse();
@@ -118,11 +150,11 @@ export default async function PodcastPage({ params }: { params: { id: string } }
         ) : (
           <ol className="flex flex-col divide-y divide-white/5 overflow-hidden rounded-2xl bg-bg-card ring-1 ring-inset ring-white/5">
             {newestFirst.map((ep) => (
-              <li key={ep.index}>
+              <li key={ep.index} className="flex items-center gap-2 pr-2 transition hover:bg-bg-soft">
                 <Link
                   href={`/podcasts/listen/${id}/${ep.index}`}
                   prefetch={false}
-                  className="press flex items-center gap-3 p-3 transition hover:bg-bg-soft"
+                  className="press flex min-w-0 flex-1 items-center gap-3 p-3"
                 >
                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-bg-soft text-xs tabular-nums text-gray-400">
                     {ep.index}
@@ -155,6 +187,14 @@ export default async function PodcastPage({ params }: { params: { id: string } }
                     ) : null}
                   </span>
                 </Link>
+                <EpisodeMark
+                  podcastId={id}
+                  podcastTitle={podcast.title}
+                  artworkUrl={podcast.artworkUrl}
+                  episode={ep.index}
+                  initial={marks.get(ep.index) ?? { status: 'none' }}
+                  isAuthed={!!user}
+                />
               </li>
             ))}
           </ol>

@@ -9,6 +9,7 @@ import PresenceHeartbeat from '@/components/PresenceHeartbeat';
 import NativeAuthBridge from '@/components/NativeAuthBridge';
 import OfflineSyncTrigger from '@/components/OfflineSyncTrigger';
 import { PipPlayerHost } from '@/components/pip/PipPlayerHost';
+import AudioPlayerProvider from '@/components/audio/AudioPlayerProvider';
 import { WatchPartyProvider } from '@/components/party/WatchPartyProvider';
 import ThemeScript from '@/components/ThemeScript';
 import ThemeSync from '@/components/ThemeSync';
@@ -90,6 +91,9 @@ export default function RootLayout({
               страницами так же, как плеер, — поэтому снаружи PipPlayerHost. */}
           <WatchPartyProvider>
           <PipPlayerHost>
+          {/* Звук (подкасты, аудиокниги) переживает переходы между страницами
+              так же, как видео в PipPlayerHost: полоска внизу и окно. */}
+          <AudioPlayerProvider>
             {/* Заглушка повторяет геометрию шапки вместе с безопасной зоной —
                 иначе контент прыгает вверх в момент, когда шапка доезжает. */}
             <Suspense
@@ -110,6 +114,7 @@ export default function RootLayout({
           <main className="mx-auto max-w-7xl px-3 pb-[calc(4.75rem+env(safe-area-inset-bottom))] pt-6 sm:px-4 md:pb-6">
               {children}
             </main>
+          </AudioPlayerProvider>
           </PipPlayerHost>
           </WatchPartyProvider>
         </ToastProvider>

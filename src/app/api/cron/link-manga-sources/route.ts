@@ -12,6 +12,11 @@ import type { SourceTitleKey } from '@/lib/sources/types';
  *
  * Пишет только title_sources (корни тайтлов). Канонические главы строятся
  * лениво — при первом открытии карточки/читателя (см. lib/sources/resolve.ts).
+ *
+ * Порядок (с 24.10.2026, миграция 0065) — next_manga_link_batch: сначала
+ * тайтлы, которые читают и держат в списках, потом по популярности; уже
+ * искавшийся тайтл — не раньше чем через 30 дней. Раньше шли курсором по id:
+ * сначала старое и малоизвестное, круг — около месяца.
  */
 
 export const dynamic = 'force-dynamic';
@@ -26,6 +31,19 @@ interface MangaRow {
   original_title: string | null;
   alternative_title: string | null;
   year: number | null;
+}
+
+/** Попытка поиска тайтла — в source_link_attempts (миграция 0065): по ней
+ *  next_*_link_batch не возвращает тайтл 30 дней. */
+async function recordAttempt(
+  supabase: ReturnType<typeof createServiceClient>,
+  job: 'manga' | 'ranobe',
+  titleKey: number,
+  found: boolean,
+): Promise<void> {
+  await supabase
+    .from('source_link_attempts')
+    .upsert({ job, title_key: titleKey, found, attempted_at: new Date().toISOString() }, { onConflict: 'job,title_key' });
 }
 
 export async function GET(request: NextRequest) {
@@ -55,12 +73,7 @@ export async function GET(request: NextRequest) {
     const titlesDone =
       state && typeof state.titles_done === 'number' ? state.titles_done : 0;
 
-    const { data, error } = await supabase
-      .from('manga_index')
-      .select('title_id, title, original_title, alternative_title, year')
-      .order('title_id', { ascending: true })
-      .gt('title_id', cursor)
-      .limit(BATCH_SIZE);
+    const { data, error } = await supabase.rpc('next_manga_link_batch', { lim: BATCH_SIZE });
 
     if (error) throw new Error(error.message);
 
@@ -82,9 +95,14 @@ export async function GET(request: NextRequest) {
 
       try {
         const matches = await ensureTitleSources(key);
-        if (matches.length > 0) matched += 1;
+        // Находка — дополнительный источник: Remanga и MangaLib тайтл знает
+        // и без этой задачи (свой индекс и еженедельная склейка).
+        const found = matches.some((m) => m.source !== 'remanga' && m.source !== 'mangalib');
+        if (found) matched += 1;
         else unmatched += 1;
+        await recordAttempt(supabase, 'manga', key.titleKey, found);
       } catch {
+        // Сетевой сбой — попытку не записываем: тайтл вернётся в следующую порцию.
         unmatched += 1;
       }
     }

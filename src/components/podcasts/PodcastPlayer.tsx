@@ -1,38 +1,28 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useRef } from 'react';
 import PosterImage from '@/components/PosterImage';
-import { SkipButton } from '@/components/audiobooks/AudiobookPlayer';
-import { useProgressSaver } from '@/hooks/useProgressSaver';
-import { formatTime } from '@/lib/format';
+import AudioControls, { SKIP_SECONDS, type AudioControlsActions, type AudioControlsState } from '@/components/audio/AudioControls';
+import { useAudioPlayer, type AudioSession } from '@/components/audio/AudioPlayerProvider';
 import type { PodcastEpisode } from '@/lib/podcastShared';
 
 /**
- * Плеер подкаста. Свой <audio>, без внешних виджетов: единственное, что
- * нужно от подкаста, — воспроизведение файла, а родной <audio> умеет это
- * лучше любого встраивания, при этом не тянет чужих скриптов и работает в
- * PWA/офлайне так же, как остальные плееры сайта.
+ * Плеер выпуска подкаста — пульт общего плеера (AudioPlayerProvider).
  *
- * Почему не <video>: аудиофайлы подкастов почти всегда mp3/m4a, и <audio>
- * даёт на мобильных правильную обработку фонового воспроизведения и экрана
- * блокировки, чего <video> с чёрным прямоугольником не даёт.
+ * Звук живёт в корневом layout, а не здесь (24.10.2026): уход со страницы
+ * больше не обрывает выпуск — он продолжается в полоске внизу. Эта
+ * страница либо управляет общим плеером (играет этот же выпуск), либо
+ * показывает свой выпуск, и «Слушать» переключает общий плеер на него.
  *
- * Источник — уже подписанная ссылка нашего /api/proxy/raw (см.
- * lib/podcasts.ts → podcastAudioUrl). Прокси решает три вещи сразу: смешанный
- * контент из http-фидов, хотлинк-запреты части CDN и приватность (реальный
- * адрес фида наружу не уходит). Range/206 прокси уже поддерживает, поэтому
- * перемотка работает, а на диске не оседает ни байта.
+ * Источник — подписанные ссылки нашего /api/proxy/raw (lib/podcasts.ts →
+ * podcastAudioUrl): смешанный контент http-фидов, хотлинк-запреты CDN,
+ * приватность. Подписаны все выпуски — чтобы из полоски внизу можно было
+ * включить следующий, не заходя на его страницу.
  *
- * Прогресс пишет общий useProgressSaver — тот же, что у аниме и кино: у
- * подкаста нет сезонов и озвучек (season не передаём, translation_* = null),
- * а номер эпизода в watch_progress.episode — это index в фиде (см.
- * lib/podcasts.ts). Для своего подкаста watch_progress хранит ОДНУ строку —
- * позицию текущего эпизода; завершённые уходят в watched_episodes.
- *
- * Автовоспроизведения следующего эпизода здесь намеренно НЕТ. У сериала
- * «следующая серия» очевидна, у подкаста — нет: выпуски не связаны сюжетом, и
- * человек часто слушает не подряд. Дослушал — увидит список и выберет сам.
+ * Прогресс и место в каждом выпуске сохраняет общий плеер. Автоперехода к
+ * следующему выпуску нет: выпуски не связаны сюжетом.
  */
 export default function PodcastPlayer({
   podcastId,
@@ -41,162 +31,126 @@ export default function PodcastPlayer({
   episode,
   episodes,
   isAuthed,
-  /** Позиция в секундах, с которой продолжить (watch_progress), 0 — с начала. */
+  /** Позиция в секундах, с которой продолжить, 0 — с начала. */
   startPosition = 0,
 }: {
   podcastId: number;
   podcastTitle: string;
   artworkUrl: string | null;
   episode: PodcastEpisode;
-  /** Все эпизоды — только для навигации «предыдущий/следующий» и списка. */
+  /** Все выпуски с подписанными audioUrl — для «предыдущий/следующий». */
   episodes: PodcastEpisode[];
   isAuthed: boolean;
   startPosition?: number;
 }) {
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const playingRef = useRef(false);
-  const positionRef = useRef(0);
-  const durationRef = useRef<number | null>(null);
+  const audio = useAudioPlayer();
+  const router = useRouter();
 
-  const [playing, setPlaying] = useState(false);
-  const [current, setCurrent] = useState(startPosition);
-  const [duration, setDuration] = useState<number | null>(
-    episode.durationSeconds > 0 ? episode.durationSeconds : null,
-  );
-  const [rate, setRate] = useState(1);
-  // Ползунок тянется с опережением самого звука: иначе на медленной сети
-  // ручка «отпрыгивает» назад, пока браузер догоняет буферизацию.
-  const [scrubbing, setScrubbing] = useState<number | null>(null);
-
-  const index = episodes.findIndex((e) => e.index === episode.index);
-  const prev = index > 0 ? episodes[index - 1] : null;
-  const next = index >= 0 && index < episodes.length - 1 ? episodes[index + 1] : null;
-
-  const save = useProgressSaver({
-    contentType: 'podcast',
-    shikimoriId: podcastId,
-    animeTitle: podcastTitle,
-    posterUrl: artworkUrl,
-    isAuthed,
-    getState: () => ({
-      position: positionRef.current,
-      duration: durationRef.current,
-      translationId: null,
-      translationTitle: null,
-      episode: episode.index,
+  const session: AudioSession = useMemo(
+    () => ({
+      kind: 'podcast',
+      id: podcastId,
+      title: podcastTitle,
+      subtitle: null,
+      coverUrl: artworkUrl,
+      tracks: episodes.map((e) => ({
+        index: e.index,
+        title: e.title,
+        url: e.audioUrl,
+        durationSeconds: e.durationSeconds,
+        imageUrl: e.imageUrl,
+      })),
+      pageHref: `/podcasts/listen/${podcastId}`,
+      isAuthed,
+      autoAdvance: false,
     }),
-    playingRef,
-  });
+    [podcastId, podcastTitle, artworkUrl, episodes, isAuthed],
+  );
 
-  // Стартовая позиция: ставим после метаданных. durationchange/sec-loaded
-  // раньше времени дали бы скачок в 0 — а server offset приходит
-  // application/octet-stream + Accept-Ranges, и duration появляется не сразу.
-  useEffect(() => {
-    const el = audioRef.current;
-    if (!el || startPosition <= 0) return;
-    const seek = () => {
-      // Не улетаем за конец: сохранённая позиция может быть больше реальной
-      // длительности, если фид когда-то отдавал другой файл.
-      const d = Number.isFinite(el.duration) ? el.duration : null;
-      el.currentTime = d && startPosition > d - 5 ? 0 : startPosition;
-    };
-    if (el.readyState >= 1) seek();
-    else el.addEventListener('loadedmetadata', seek, { once: true });
-  }, [startPosition, episode.index]);
+  const hrefOf = (index: number) => `/podcasts/listen/${podcastId}/${index}`;
+  const position = episodes.findIndex((e) => e.index === episode.index);
+  const prev = position > 0 ? episodes[position - 1] : null;
+  const next = position >= 0 && position < episodes.length - 1 ? episodes[position + 1] : null;
 
-  // Смена эпизода (переход по «следующий») — начинаем с нуля.
-  useEffect(() => {
-    positionRef.current = 0;
-    setCurrent(0);
-    setDuration(episode.durationSeconds > 0 ? episode.durationSeconds : null);
-    durationRef.current = null;
-  }, [episode.index, episode.durationSeconds]);
+  const isThis = audio.isActive('podcast', podcastId) && audio.track?.index === episode.index;
+  const otherPlaying = audio.session && !isThis ? audio.track : null;
 
-  const toggle = useCallback(() => {
-    const el = audioRef.current;
-    if (!el) return;
-    if (el.paused) void el.play();
-    else el.pause();
-  }, []);
+  // Этот выпуск играет — пульт общего плеера; «пред./след.» ещё и ведут
+  // на страницу того выпуска, чтобы страница не расходилась со звуком.
+  // Не играет — свой выпуск: «Слушать» и перемотка включают его.
+  const state: AudioControlsState = isThis
+    ? audio.state
+    : {
+        ...audio.state,
+        playing: false,
+        current: startPosition,
+        duration: episode.durationSeconds,
+        hasPrev: !!prev,
+        hasNext: !!next,
+      };
 
-  // ±10 секунд — кнопками и стрелками (24.10.2026: тот же шаг, что у
-  // аудиокниг; раньше стрелки перематывали на 15 с, а кнопок не было).
-  const skip = useCallback((delta: number) => {
-    const el = audioRef.current;
-    if (!el) return;
-    const end = Number.isFinite(el.duration) ? el.duration : Infinity;
-    el.currentTime = Math.max(0, Math.min(end, el.currentTime + delta));
-  }, []);
+  const actions: AudioControlsActions = isThis
+    ? {
+        ...audio.actions,
+        prev: () => {
+          if (!prev) return;
+          audio.actions.prev();
+          router.push(hrefOf(prev.index));
+        },
+        next: () => {
+          if (!next) return;
+          audio.actions.next();
+          router.push(hrefOf(next.index));
+        },
+      }
+    : {
+        ...audio.actions,
+        toggle: () => audio.start(session, episode.index, startPosition, true),
+        seek: (seconds) => audio.start(session, episode.index, seconds, false),
+        skip: (delta) => audio.start(session, episode.index, Math.max(0, startPosition + delta), false),
+        prev: () => {
+          if (prev) router.push(hrefOf(prev.index));
+        },
+        next: () => {
+          if (next) router.push(hrefOf(next.index));
+        },
+      };
 
-  // Пробел — воспроизведение/пауза, стрелки — ±10 с. Не перехватываем, когда
-  // фокус в поле ввода или на кнопке/ссылке (иначе ломаем Tab-навигацию).
+  // Пробел — пауза, стрелки — ±10 с. Не в полях ввода и не на кнопках.
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      if (target && /input|textarea|select/i.test(target.tagName)) return;
+      if (target && /input|textarea|select|button/i.test(target.tagName)) return;
       if (e.code === 'Space') {
         e.preventDefault();
-        toggle();
+        actionsRef.current.toggle();
       } else if (e.code === 'ArrowRight') {
         e.preventDefault();
-        skip(10);
+        actionsRef.current.skip(SKIP_SECONDS);
       } else if (e.code === 'ArrowLeft') {
         e.preventDefault();
-        skip(-10);
+        actionsRef.current.skip(-SKIP_SECONDS);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [toggle, skip]);
-
-  const shown = scrubbing ?? current;
-  const total = duration ?? episode.durationSeconds;
-  const percent = total > 0 ? (shown / total) * 100 : 0;
+  }, []);
 
   return (
     <div className="flex flex-col gap-4">
-      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-      <audio
-        ref={audioRef}
-        src={episode.audioUrl}
-        preload="metadata"
-        // crossOrigin не ставим: файл идёт с нашего же домена через прокси,
-        // и лишний CORS-заголовок тут только мешает кэшу.
-        onPlay={() => {
-          playingRef.current = true;
-          setPlaying(true);
-        }}
-        onPause={() => {
-          playingRef.current = false;
-          setPlaying(false);
-        }}
-        onEnded={() => {
-          playingRef.current = false;
-          setPlaying(false);
-          save();
-        }}
-        onTimeUpdate={(e) => {
-          const t = e.currentTarget.currentTime;
-          positionRef.current = t;
-          setCurrent(t);
-        }}
-        onLoadedMetadata={(e) => {
-          const d = e.currentTarget.duration;
-          if (Number.isFinite(d)) {
-            durationRef.current = d;
-            setDuration(d);
-          }
-        }}
-        onRateChange={(e) => setRate(e.currentTarget.playbackRate)}
-      />
+      {otherPlaying ? (
+        <p className="rounded-xl bg-white/5 px-3 py-2 text-xs text-gray-400">
+          Сейчас играет: {otherPlaying.title}
+          {audio.session && audio.session.id !== podcastId ? ` — ${audio.session.title}` : ''}. «Слушать»
+          здесь переключит на этот выпуск.
+        </p>
+      ) : null}
 
       <div className="flex items-start gap-4">
         <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-bg-soft sm:h-24 sm:w-24">
-          <PosterImage
-            sources={[episode.imageUrl, artworkUrl]}
-            alt=""
-            className="h-full w-full object-cover"
-          />
+          <PosterImage sources={[episode.imageUrl, artworkUrl]} alt="" className="h-full w-full object-cover" />
         </div>
         <div className="flex min-w-0 flex-col gap-1">
           <p className="line-clamp-2 text-sm font-semibold leading-snug">{episode.title}</p>
@@ -212,117 +166,22 @@ export default function PodcastPlayer({
         </div>
       </div>
 
-      {/* Полоса перемотки. input[type=range] с Appearance на accent — так
-          трек и ползунок наследуют акцент текущей темы без отдельного CSS. */}
-      <div className="flex items-center gap-3">
-        <span className="w-12 shrink-0 text-right text-xs tabular-nums text-gray-400">
-          {formatTime(shown)}
-        </span>
-        <input
-          type="range"
-          min={0}
-          max={total > 0 ? total : 100}
-          step={1}
-          value={shown}
-          aria-label="Позиция воспроизведения"
-          onChange={(e) => {
-            const value = Number(e.target.value);
-            setScrubbing(value);
-          }}
-          onPointerUp={() => {
-            const el = audioRef.current;
-            if (el && scrubbing != null) el.currentTime = scrubbing;
-            setScrubbing(null);
-          }}
-          onKeyUp={() => setScrubbing(null)}
-          style={{
-            // Залитая часть до ручки — акцентом; после — нейтральным.
-            background: `linear-gradient(to right, rgb(var(--accent)) ${percent}%, rgb(var(--bg-soft)) ${percent}%)`,
-          }}
-          className="h-1.5 w-full cursor-pointer appearance-none rounded-full [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-white"
-        />
-        <span className="w-12 shrink-0 text-xs tabular-nums text-gray-400">
-          {total > 0 ? formatTime(total) : '—:—'}
-        </span>
-      </div>
+      <AudioControls state={state} actions={actions} prevLabel="Предыдущий выпуск" nextLabel="Следующий выпуск" />
 
-      <div className="flex flex-wrap items-center gap-3">
-        {prev ? (
-          <Link
-            href={`/podcasts/listen/${podcastId}/${prev.index}`}
-            className="press rounded-full bg-bg-soft px-3 py-2 text-sm ring-1 ring-white/10 hover:text-white"
-            title={prev.title}
-          >
-            ← Пред.
-          </Link>
-        ) : (
-          <span
-            aria-disabled="true"
-            className="rounded-full bg-bg-card/50 px-3 py-2 text-sm text-gray-400"
-          >
-            ← Пред.
-          </span>
-        )}
-
-        <SkipButton seconds={-10} onClick={() => skip(-10)} />
-
-        <button
-          type="button"
-          onClick={toggle}
-          className="press grid h-14 w-14 place-items-center rounded-full bg-accent text-accent-fg"
-          aria-label={playing ? 'Пауза' : 'Слушать'}
-        >
-          {playing ? (
-            <svg viewBox="0 0 24 24" aria-hidden="true" className="h-6 w-6 fill-current">
-              <rect x="6" y="5" width="4" height="14" rx="1.2" />
-              <rect x="14" y="5" width="4" height="14" rx="1.2" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" aria-hidden="true" className="h-6 w-6 fill-current">
-              <path d="M7.5 5.6v12.8a1.2 1.2 0 0 0 1.84 1.02l10.05-6.4a1.2 1.2 0 0 0 0-2.04L9.34 4.58A1.2 1.2 0 0 0 7.5 5.6Z" />
-            </svg>
-          )}
-        </button>
-
-        <SkipButton seconds={10} onClick={() => skip(10)} />
-
-        {next ? (
-          <Link
-            href={`/podcasts/listen/${podcastId}/${next.index}`}
-            className="press rounded-full bg-bg-soft px-3 py-2 text-sm ring-1 ring-white/10 hover:text-white"
-            title={next.title}
-          >
-            След. →
-          </Link>
-        ) : (
-          <span
-            aria-disabled="true"
-            className="rounded-full bg-bg-card/50 px-3 py-2 text-sm text-gray-400"
-          >
-            След. →
-          </span>
-        )}
-
-        <div className="ml-auto flex items-center gap-1 rounded-full bg-bg-soft p-1 ring-1 ring-white/10">
-          {[1, 1.25, 1.5, 2].map((r) => (
-            <button
-              key={r}
-              type="button"
-              onClick={() => {
-                const el = audioRef.current;
-                if (el) el.playbackRate = r;
-              }}
-              aria-pressed={rate === r}
-              className={[
-                'press rounded-full px-2.5 py-1 text-xs font-medium tabular-nums transition',
-                rate === r ? 'bg-accent text-accent-fg' : 'text-gray-300 hover:text-white',
-              ].join(' ')}
-            >
-              {r}×
-            </button>
-          ))}
+      {prev || next ? (
+        <div className="flex flex-wrap gap-2 text-xs text-gray-400">
+          {prev ? (
+            <Link href={hrefOf(prev.index)} className="hover:text-white" title={prev.title}>
+              ← {prev.title}
+            </Link>
+          ) : null}
+          {next ? (
+            <Link href={hrefOf(next.index)} className="ml-auto hover:text-white" title={next.title}>
+              {next.title} →
+            </Link>
+          ) : null}
         </div>
-      </div>
+      ) : null}
 
       {!isAuthed ? (
         <p className="text-xs text-gray-400">

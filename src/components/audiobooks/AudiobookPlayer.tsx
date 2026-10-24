@@ -1,14 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useProgressSaver } from '@/hooks/useProgressSaver';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import AudioControls, { SKIP_SECONDS, type AudioControlsActions, type AudioControlsState } from '@/components/audio/AudioControls';
+import { useAudioPlayer, type AudioSession } from '@/components/audio/AudioPlayerProvider';
 import { formatTime } from '@/lib/format';
 import type { AudiobookChapter } from '@/lib/audiobookShared';
-
-/** Шаг кнопок перемотки и стрелок — 10 секунд: у аудиокниги «прослушал
- *  фразу — вернуть» важнее, чем быстрый проход, как у подкастов (24.10.2026). */
-const SKIP_SECONDS = 10;
-const RATES = [0.75, 1, 1.25, 1.5, 2];
 
 export interface AudiobookSyncOffer {
   /** «В книге вы остановились на 34 %». */
@@ -23,21 +19,18 @@ export interface AudiobookSyncOffer {
 type RefineState = 'idle' | 'working' | 'refined' | 'approx';
 
 /**
- * Плеер аудиокниги. Основа — плеер подкастов (PodcastPlayer): свой <audio>,
- * прогресс через общий useProgressSaver. Отличия:
+ * Плеер аудиокниги — пульт общего плеера (AudioPlayerProvider): звук живёт
+ * в корневом layout, и уход со страницы его не обрывает (24.10.2026).
  *
- *   • главы идут подряд: дослушал главу — сама включается следующая. У
- *     подкаста выпуски не связаны, у книги — связаны;
- *   • звук — прямо с knigavuhe (трафик не идёт через наш сервер). Не
- *     загрузился — один раз переключаемся на ту же главу через наш прокси
- *     (chapter.fallbackUrl) с того же места;
- *   • кнопки −10 / +10 секунд и управление с экрана блокировки (Media
- *     Session): на телефоне аудиокнигу слушают с погашенным экраном;
- *   • подсказка синхронизации с книгой (lib/bookAudioSync.ts): если в
- *     книге человек ушёл дальше, плеер предлагает продолжить оттуда — не
- *     прыгает молча, место по оценке может быть неточным.
+ *   • части идут подряд: дослушал — включается следующая (autoAdvance);
+ *   • звук — прямо с knigavuhe, не загрузился — тот же файл через наш
+ *     прокси (fallbackUrl) с того же места; это делает общий плеер;
+ *   • −10 / +10, скорость, громкость, экран блокировки;
+ *   • подсказка синхронизации с книгой (lib/syncOffers.ts): «Продолжить
+ *     отсюда» сразу ставит оценку этапа 1 и в фоне уточняет место по речи
+ *     (этап 2); не прыгаем молча — решает человек.
  *
- * В watch_progress: episode — номер главы, position — секунда в ней.
+ * В watch_progress: episode — номер части, position — секунда в ней.
  */
 export default function AudiobookPlayer({
   audiobookId,
@@ -60,120 +53,91 @@ export default function AudiobookPlayer({
   startPosition?: number;
   syncOffer?: AudiobookSyncOffer | null;
 }) {
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const playingRef = useRef(false);
-  const positionRef = useRef(startPosition);
-  const durationRef = useRef<number | null>(null);
-  /** Куда встать, когда загрузятся метаданные новой главы. */
-  const pendingSeekRef = useRef<number>(startPosition);
-  /** Продолжать играть после смены главы (автопереход, выбор из списка). */
-  const resumeRef = useRef(false);
-
-  const initial = Math.min(Math.max(1, startChapter), chapters.length);
-  const [chapterNo, setChapterNo] = useState(initial);
-  // Для асинхронного уточнения: текущая часть на момент ответа сервера.
-  const chapterNoRef = useRef(initial);
-  chapterNoRef.current = chapterNo;
-  const [useFallback, setUseFallback] = useState(false);
-  const [playing, setPlaying] = useState(false);
-  const [current, setCurrent] = useState(startPosition);
-  const [duration, setDuration] = useState<number | null>(null);
-  const [rate, setRate] = useState(1);
-  const [scrubbing, setScrubbing] = useState<number | null>(null);
-  const [failed, setFailed] = useState(false);
+  const audio = useAudioPlayer();
   const [offer, setOffer] = useState(syncOffer);
   const [refine, setRefine] = useState<RefineState>('idle');
 
-  const chapter = chapters[chapterNo - 1];
-  const src = chapter ? (useFallback ? chapter.fallbackUrl : chapter.url) : '';
-
-  const save = useProgressSaver({
-    contentType: 'audiobook',
-    shikimoriId: audiobookId,
-    animeTitle: title,
-    posterUrl: coverUrl,
-    isAuthed,
-    getState: () => ({
-      position: positionRef.current,
-      duration: durationRef.current ?? chapter?.durationSeconds ?? null,
-      translationId: null,
-      translationTitle: null,
-      episode: chapterNo,
+  const session: AudioSession = useMemo(
+    () => ({
+      kind: 'audiobook',
+      id: audiobookId,
+      title,
+      subtitle: authors.join(', ') || null,
+      coverUrl,
+      tracks: chapters.map((c) => ({
+        index: c.index,
+        title: c.title,
+        url: c.url,
+        fallbackUrl: c.fallbackUrl,
+        durationSeconds: c.durationSeconds,
+      })),
+      pageHref: `/audiobooks/${audiobookId}`,
+      isAuthed,
+      autoAdvance: true,
     }),
-    playingRef,
-  });
-
-  const goToChapter = useCallback(
-    (no: number, position = 0, keepPlaying = playingRef.current) => {
-      if (no < 1 || no > chapters.length) return;
-      save();
-      pendingSeekRef.current = position;
-      resumeRef.current = keepPlaying;
-      positionRef.current = position;
-      durationRef.current = null;
-      setCurrent(position);
-      setDuration(null);
-      setFailed(false);
-      setUseFallback(false);
-      setChapterNo(no);
-    },
-    [chapters.length, save],
+    [audiobookId, title, authors, coverUrl, chapters, isAuthed],
   );
 
-  const skip = useCallback((delta: number) => {
-    const el = audioRef.current;
-    if (!el) return;
-    const end = Number.isFinite(el.duration) ? el.duration : Infinity;
-    el.currentTime = Math.max(0, Math.min(end, el.currentTime + delta));
-  }, []);
+  const active = audio.isActive('audiobook', audiobookId);
+  const firstChapter = Math.min(Math.max(1, startChapter), Math.max(1, chapters.length));
+  const chapterNo = active && audio.track ? audio.track.index : firstChapter;
+  const chapter = chapters[chapterNo - 1];
 
-  const toggle = useCallback(() => {
-    const el = audioRef.current;
-    if (!el) return;
-    if (el.paused) void el.play().catch(() => undefined);
-    else el.pause();
-  }, []);
+  /** Встать на часть с секунды: в общем плеере, загрузив книгу, если играла
+   *  не она. */
+  const goToChapter = (no: number, position = 0, play?: boolean) => {
+    if (no < 1 || no > chapters.length) return;
+    if (active) audio.goTo(no, position, play);
+    else audio.start(session, no, position, play ?? false);
+  };
 
-  // Клавиши: пробел — пауза, стрелки — ±10 с. Не перехватываем в полях
-  // ввода и на кнопках (иначе ломается навигация с клавиатуры).
+  // Для асинхронного уточнения: где мы на момент ответа сервера.
+  const whereRef = useRef({ chapter: chapterNo, position: active ? audio.state.current : startPosition });
+  whereRef.current = { chapter: chapterNo, position: active ? audio.state.current : startPosition };
+
+  const state: AudioControlsState = active
+    ? audio.state
+    : {
+        ...audio.state,
+        playing: false,
+        current: startPosition,
+        duration: chapter?.durationSeconds ?? 0,
+        hasPrev: firstChapter > 1,
+        hasNext: firstChapter < chapters.length,
+      };
+
+  const actions: AudioControlsActions = active
+    ? audio.actions
+    : {
+        ...audio.actions,
+        toggle: () => audio.start(session, firstChapter, startPosition, true),
+        seek: (seconds) => audio.start(session, firstChapter, seconds, false),
+        skip: (delta) => audio.start(session, firstChapter, Math.max(0, startPosition + delta), false),
+        prev: () => audio.start(session, firstChapter - 1, 0, false),
+        next: () => audio.start(session, firstChapter + 1, 0, false),
+      };
+
+  // Пробел — пауза, стрелки — ±10 с. Не в полях ввода и не на кнопках.
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && /input|textarea|select|button/i.test(target.tagName)) return;
       if (e.code === 'Space') {
         e.preventDefault();
-        toggle();
+        actionsRef.current.toggle();
       } else if (e.code === 'ArrowRight') {
         e.preventDefault();
-        skip(SKIP_SECONDS);
+        actionsRef.current.skip(SKIP_SECONDS);
       } else if (e.code === 'ArrowLeft') {
         e.preventDefault();
-        skip(-SKIP_SECONDS);
+        actionsRef.current.skip(-SKIP_SECONDS);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [toggle, skip]);
-
-  // Экран блокировки и гарнитура: название, обложка, ±10 с, главы.
-  useEffect(() => {
-    if (typeof navigator === 'undefined' || !('mediaSession' in navigator) || !chapter) return;
-    const session = navigator.mediaSession;
-    try {
-      session.metadata = new MediaMetadata({
-        title: chapter.title,
-        artist: authors.join(', '),
-        album: title,
-        artwork: coverUrl ? [{ src: coverUrl }] : [],
-      });
-      session.setActionHandler('seekbackward', () => skip(-SKIP_SECONDS));
-      session.setActionHandler('seekforward', () => skip(SKIP_SECONDS));
-      session.setActionHandler('previoustrack', chapterNo > 1 ? () => goToChapter(chapterNo - 1) : null);
-      session.setActionHandler('nexttrack', chapterNo < chapters.length ? () => goToChapter(chapterNo + 1) : null);
-    } catch {
-      // Старые браузеры знают не все действия — обходимся без них.
-    }
-  }, [chapter, chapterNo, chapters.length, authors, title, coverUrl, skip, goToChapter]);
+  }, []);
 
   /**
    * Этап 2: оценка этапа 1 сразу, точное место — когда сервер распознает
@@ -189,11 +153,10 @@ export default function AudiobookPlayer({
         body: JSON.stringify({ audiobookId, direction: 'toAudio', fraction: target.fraction }),
       });
       const data = (await res.json()) as { status?: string; chapterIndex?: number; position?: number };
-      const stillNear =
-        chapterNoRef.current === target.chapterIndex &&
-        Math.abs(positionRef.current - target.position) < 120;
+      const here = whereRef.current;
+      const stillNear = here.chapter === target.chapterIndex && Math.abs(here.position - target.position) < 120;
       if (data.status === 'refined' && data.chapterIndex && data.position != null && stillNear) {
-        goToChapter(data.chapterIndex, data.position, playingRef.current);
+        audio.goTo(data.chapterIndex, data.position);
         setRefine('refined');
       } else {
         setRefine('approx');
@@ -211,65 +174,8 @@ export default function AudiobookPlayer({
     );
   }
 
-  const shown = scrubbing ?? current;
-  const total = duration ?? chapter.durationSeconds;
-  const percent = total > 0 ? (shown / total) * 100 : 0;
-
   return (
     <div className="flex flex-col gap-4">
-      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-      <audio
-        ref={audioRef}
-        src={src}
-        preload="metadata"
-        onPlay={() => {
-          playingRef.current = true;
-          setPlaying(true);
-        }}
-        onPause={() => {
-          playingRef.current = false;
-          setPlaying(false);
-        }}
-        onEnded={() => {
-          playingRef.current = false;
-          setPlaying(false);
-          save();
-          // Следующая глава — сама: книга слушается подряд.
-          if (chapterNo < chapters.length) goToChapter(chapterNo + 1, 0, true);
-        }}
-        onTimeUpdate={(e) => {
-          const t = e.currentTarget.currentTime;
-          positionRef.current = t;
-          setCurrent(t);
-        }}
-        onLoadedMetadata={(e) => {
-          const el = e.currentTarget;
-          if (Number.isFinite(el.duration)) {
-            durationRef.current = el.duration;
-            setDuration(el.duration);
-          }
-          const seek = pendingSeekRef.current;
-          // Не за конец главы: сохранённое место могло быть из другой записи.
-          if (seek > 0) el.currentTime = Number.isFinite(el.duration) && seek > el.duration - 3 ? 0 : seek;
-          pendingSeekRef.current = 0;
-          el.playbackRate = rate;
-          if (resumeRef.current) void el.play().catch(() => undefined);
-          resumeRef.current = false;
-        }}
-        onError={() => {
-          // Прямая ссылка не загрузилась — пробуем через наш прокси с того же
-          // места; не загрузилась и она — честно говорим.
-          if (!useFallback && chapter.fallbackUrl !== chapter.url) {
-            pendingSeekRef.current = positionRef.current;
-            resumeRef.current = playingRef.current;
-            setUseFallback(true);
-          } else {
-            setFailed(true);
-          }
-        }}
-        onRateChange={(e) => setRate(e.currentTarget.playbackRate)}
-      />
-
       {offer ? (
         <div className="flex flex-col gap-2 rounded-2xl bg-accent/10 p-3 text-sm ring-1 ring-inset ring-accent/30 sm:flex-row sm:items-center">
           <p className="flex-1 text-gray-100">{offer.text}</p>
@@ -306,6 +212,12 @@ export default function AudiobookPlayer({
         </p>
       ) : null}
 
+      {audio.session && !active ? (
+        <p className="rounded-xl bg-white/5 px-3 py-2 text-xs text-gray-400">
+          Сейчас играет: {audio.track?.title} — {audio.session.title}. «Слушать» здесь переключит на эту книгу.
+        </p>
+      ) : null}
+
       <div className="flex flex-col gap-1">
         <p className="text-xs text-gray-400">
           Часть {chapterNo} из {chapters.length}
@@ -313,91 +225,8 @@ export default function AudiobookPlayer({
         <p className="line-clamp-2 text-sm font-semibold leading-snug">{chapter.title}</p>
       </div>
 
-      <div className="flex items-center gap-3">
-        <span className="w-14 shrink-0 text-right text-xs tabular-nums text-gray-400">{formatTime(shown)}</span>
-        <input
-          type="range"
-          min={0}
-          max={total > 0 ? total : 100}
-          step={1}
-          value={shown}
-          aria-label="Позиция в главе"
-          onChange={(e) => setScrubbing(Number(e.target.value))}
-          onPointerUp={() => {
-            const el = audioRef.current;
-            if (el && scrubbing != null) el.currentTime = scrubbing;
-            setScrubbing(null);
-          }}
-          onKeyUp={() => setScrubbing(null)}
-          style={{
-            background: `linear-gradient(to right, rgb(var(--accent)) ${percent}%, rgb(var(--bg-soft)) ${percent}%)`,
-          }}
-          className="h-1.5 w-full cursor-pointer appearance-none rounded-full [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white"
-        />
-        <span className="w-14 shrink-0 text-xs tabular-nums text-gray-400">
-          {total > 0 ? formatTime(total) : '—:—'}
-        </span>
-      </div>
+      <AudioControls state={state} actions={actions} prevLabel="Предыдущая часть" nextLabel="Следующая часть" />
 
-      <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-        <RoundButton label="Предыдущая часть" disabled={chapterNo <= 1} onClick={() => goToChapter(chapterNo - 1)}>
-          <path d="M6 5v14M18 6l-9 6 9 6V6z" />
-        </RoundButton>
-        <SkipButton seconds={-SKIP_SECONDS} onClick={() => skip(-SKIP_SECONDS)} />
-        <button
-          type="button"
-          onClick={toggle}
-          className="press grid h-14 w-14 place-items-center rounded-full bg-accent text-accent-fg"
-          aria-label={playing ? 'Пауза' : 'Слушать'}
-        >
-          {playing ? (
-            <svg viewBox="0 0 24 24" aria-hidden="true" className="h-6 w-6 fill-current">
-              <rect x="6" y="5" width="4" height="14" rx="1.2" />
-              <rect x="14" y="5" width="4" height="14" rx="1.2" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" aria-hidden="true" className="h-6 w-6 fill-current">
-              <path d="M7.5 5.6v12.8a1.2 1.2 0 0 0 1.84 1.02l10.05-6.4a1.2 1.2 0 0 0 0-2.04L9.34 4.58A1.2 1.2 0 0 0 7.5 5.6Z" />
-            </svg>
-          )}
-        </button>
-        <SkipButton seconds={SKIP_SECONDS} onClick={() => skip(SKIP_SECONDS)} />
-        <RoundButton
-          label="Следующая часть"
-          disabled={chapterNo >= chapters.length}
-          onClick={() => goToChapter(chapterNo + 1)}
-        >
-          <path d="M18 5v14M6 6l9 6-9 6V6z" />
-        </RoundButton>
-
-        <div className="flex items-center gap-1 rounded-full bg-bg-soft p-1 ring-1 ring-white/10 sm:ml-auto">
-          {RATES.map((r) => (
-            <button
-              key={r}
-              type="button"
-              onClick={() => {
-                const el = audioRef.current;
-                if (el) el.playbackRate = r;
-                setRate(r);
-              }}
-              aria-pressed={rate === r}
-              className={[
-                'press rounded-full px-2 py-1 text-xs font-medium tabular-nums transition',
-                rate === r ? 'bg-accent text-accent-fg' : 'text-gray-300 hover:text-white',
-              ].join(' ')}
-            >
-              {r}×
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {failed ? (
-        <p className="text-xs text-red-300">
-          Эта часть не загружается ни напрямую, ни через наш сервер. Попробуйте следующую часть или
-          откройте книгу позже.
-        </p>
-      ) : null}
       {!isAuthed ? (
         <p className="text-xs text-gray-400">
           Войдите, чтобы место сохранялось и книга появилась в «Продолжить слушать».
@@ -432,68 +261,5 @@ export default function AudiobookPlayer({
         </ol>
       </details>
     </div>
-  );
-}
-
-function RoundButton({
-  label,
-  disabled,
-  onClick,
-  children,
-}: {
-  label: string;
-  disabled: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={label}
-      title={label}
-      className="press grid h-10 w-10 place-items-center rounded-full bg-bg-soft text-gray-200 ring-1 ring-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40"
-    >
-      <svg
-        viewBox="0 0 24 24"
-        aria-hidden="true"
-        className="h-4 w-4 fill-none stroke-current"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        {children}
-      </svg>
-    </button>
-  );
-}
-
-/** Кнопка «−10» / «+10»: круговая стрелка с числом внутри, как в системных
- *  плеерах. Экспортируется — та же кнопка у подкастов. */
-export function SkipButton({ seconds, onClick }: { seconds: number; onClick: () => void }) {
-  const back = seconds < 0;
-  const label = `${back ? 'Назад' : 'Вперёд'} на ${Math.abs(seconds)} секунд`;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      title={label}
-      className="press relative grid h-11 w-11 place-items-center rounded-full bg-bg-soft text-gray-200 ring-1 ring-white/10 hover:text-white"
-    >
-      <svg
-        viewBox="0 0 24 24"
-        aria-hidden="true"
-        className={`h-8 w-8 fill-none stroke-current ${back ? '' : '-scale-x-100'}`}
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3" />
-        <path d="M4 3.5v3.7h3.7" />
-      </svg>
-      <span className="absolute text-[10px] font-semibold tabular-nums">{Math.abs(seconds)}</span>
-    </button>
   );
 }

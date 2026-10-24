@@ -1,8 +1,10 @@
 import { createServiceClient } from '@/lib/supabase/service';
+import { getCachedJson } from '@/lib/cache/apiCache';
 import {
   fetchOpdsPage,
   listGenres,
   listSubgenres,
+  type BookGenreLink,
 } from '@/lib/books';
 import type { BookSummary } from '@/lib/bookShared';
 
@@ -59,6 +61,18 @@ const PAGES_PER_SUBGENRE = 1;
  */
 const REQUEST_INTERVAL_MS = 700;
 
+/**
+ * Справочник жанров и поджанров Флибусты помним неделю: он почти не
+ * меняется, а `/opds/genres` — самая тяжёлая лента Флибусты. 24.10.2026 она
+ * отвечала 504 через 50 секунд, обход остался без жанров, набрал 80 книг
+ * новинок и витрина не обновилась. С запомненным справочником сбой ленты
+ * жанров обход больше не останавливает.
+ */
+const GENRES_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+/** Подряд упавших страниц новинок — дальше не идём: Флибуста лежит. */
+const MAX_FAILED_IN_ROW = 5;
+
 /** Предохранитель от разрастания памяти на 2ГБ VPS. */
 const MAX_BOOKS = 8000;
 
@@ -103,6 +117,23 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Справочник жанров/поджанров из кэша, а нет — с Флибусты. Пустой ответ
+ *  (лента не пришла) не кэшируется: следующий прогон попробует снова. */
+async function cachedGenres(
+  key: string,
+  load: () => Promise<BookGenreLink[]>,
+): Promise<BookGenreLink[]> {
+  try {
+    return await getCachedJson<BookGenreLink[]>(`books:opds-genres:${key}`, GENRES_TTL_SECONDS, async () => {
+      const links = await load();
+      if (links.length === 0) throw new Error(`Флибуста не отдала ${key}`);
+      return links;
+    });
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Полная перестройка витрины. Возвращает статистику или бросает — причину
  * пишет вызывающий (крон-роут) в book_index_state.
@@ -129,21 +160,30 @@ export async function rebuildBookIndex(): Promise<BookReindexResult> {
     }
   };
 
+  // Упавшую страницу пропускаем, а не обрываем весь проход (24.10.2026
+  // Флибуста отдавала через раз): конец ленты — это пустая страница, а не
+  // ошибка. Несколько ошибок подряд — источник лежит, дальше не ходим.
+  let failedInRow = 0;
   for (let page = 0; page < NEW_PAGES && found.size < MAX_BOOKS; page++) {
     const res = await fetchOpdsPage(`/opds/new/${page}/new`);
     requests++;
-    if (!res || res.items.length === 0) break;
+    if (!res) {
+      if (++failedInRow >= MAX_FAILED_IN_ROW) break;
+      continue;
+    }
+    failedInRow = 0;
+    if (res.items.length === 0) break;
     remember(res.items);
     await sleep(REQUEST_INTERVAL_MS);
   }
 
-  const genres = (await listGenres()).slice(0, GENRE_LIMIT);
+  const genres = (await cachedGenres('/opds/genres', listGenres)).slice(0, GENRE_LIMIT);
   requests++;
 
   for (const genre of genres) {
     if (found.size >= MAX_BOOKS) break;
 
-    const subgenres = await listSubgenres(genre.path);
+    const subgenres = await cachedGenres(genre.path, () => listSubgenres(genre.path));
     requests++;
     await sleep(REQUEST_INTERVAL_MS);
 
@@ -153,6 +193,7 @@ export async function rebuildBookIndex(): Promise<BookReindexResult> {
       for (let page = 1; page <= PAGES_PER_SUBGENRE; page++) {
         const res = await fetchOpdsPage(page > 1 ? `${sub.path}/${page - 1}` : sub.path);
         requests++;
+        // Не пришла лента поджанра — к следующему поджанру, а не конец обхода.
         if (!res || res.items.length === 0) break;
         remember(res.items);
         await sleep(REQUEST_INTERVAL_MS);

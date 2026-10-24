@@ -39,22 +39,35 @@ export default async function PodcastListenPage({
 
   // Восстановление позиции: только если прогресс на ЭТОМ выпуске и не у самого
   // конца (та же логика, что у аниме/кино, см. watch/[shikimoriId]/[episode]).
+  //
+  // Сначала — метка этого выпуска (episode_marks, миграция 0065): в ней
+  // место каждого начатого выпуска, не только текущего. Нет её — строка
+  // watch_progress, если она про этот же выпуск.
   let resumeFrom = 0;
   if (user) {
     const supabase = createClient();
-    const { data } = await supabase
-      .from('watch_progress')
-      .select('*')
-      .eq('content_type', 'podcast')
-      .eq('shikimori_id', id)
-      .maybeSingle();
+    const [{ data }, { data: mark }] = await Promise.all([
+      supabase
+        .from('watch_progress')
+        .select('*')
+        .eq('content_type', 'podcast')
+        .eq('shikimori_id', id)
+        .maybeSingle(),
+      supabase
+        .from('episode_marks')
+        .select('position_seconds, duration_seconds')
+        .eq('content_type', 'podcast')
+        .eq('shikimori_id', id)
+        .eq('episode', episodeIndex)
+        .eq('status', 'in_progress')
+        .maybeSingle(),
+    ]);
     const progress = (data as WatchProgress | null) ?? null;
-    if (progress && progress.episode === episodeIndex) {
-      const pos = progress.position_seconds;
-      const dur = progress.duration_seconds;
-      const nearEnd = dur ? pos / dur > 0.9 : false;
-      if (pos >= 5 && !nearEnd) resumeFrom = Math.floor(pos);
-    }
+    const fromMark = mark?.position_seconds != null ? Number(mark.position_seconds) : null;
+    const pos = fromMark ?? (progress && progress.episode === episodeIndex ? progress.position_seconds : 0);
+    const dur = fromMark != null ? Number(mark?.duration_seconds ?? 0) : progress?.duration_seconds ?? 0;
+    const nearEnd = dur ? pos / dur > 0.9 : false;
+    if (pos >= 5 && !nearEnd) resumeFrom = Math.floor(pos);
   }
 
   return (
@@ -70,7 +83,9 @@ export default async function PodcastListenPage({
         podcastTitle={podcast.title}
         artworkUrl={podcast.artworkUrl}
         episode={{ ...episode, audioUrl: podcastAudioUrl(episode.audioUrl) }}
-        episodes={podcast.episodes}
+        // Подписаны все выпуски: из полоски внизу можно включить следующий,
+        // не заходя на его страницу. Подпись — HMAC, сотня выпусков — микросекунды.
+        episodes={podcast.episodes.map((e) => ({ ...e, audioUrl: podcastAudioUrl(e.audioUrl) }))}
         isAuthed={Boolean(user)}
         startPosition={resumeFrom}
       />

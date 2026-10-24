@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { ensureTitleSources } from '@/lib/sources/resolve';
+import { fetchOpdsPage } from '@/lib/books';
 import type { SourceMatch, SourceTitleKey } from '@/lib/sources/types';
 
 /**
@@ -10,6 +11,12 @@ import type { SourceMatch, SourceTitleKey } from '@/lib/sources/types';
  * Renovels остаётся источником глав, Флибуста — источником томов (EPUB).
  * Один вызов обрабатывает batch и возвращается; VPS-крон повторяет, пока
  * `done=false`.
+ *
+ * Порядок (с 24.10.2026, миграция 0065) — next_ranobe_link_batch: сначала
+ * читаемое и то, что в списках, потом по популярности; уже искавшийся
+ * тайтл — не раньше чем через 30 дней. Перед порцией — одна проверка, что
+ * Флибуста отвечает: лежит — прогон пропускаем, ничего не помечая (24.10.2026
+ * 51 прогон подряд при лежащей Флибусте «не нашёл» ничего и сжёг круг).
  */
 
 export const dynamic = 'force-dynamic';
@@ -25,6 +32,19 @@ interface RanobeRow {
   original_title: string | null;
   alternative_title: string | null;
   year: number | null;
+}
+
+/** Попытка поиска тайтла — в source_link_attempts (миграция 0065): по ней
+ *  next_*_link_batch не возвращает тайтл 30 дней. */
+async function recordAttempt(
+  supabase: ReturnType<typeof createServiceClient>,
+  job: 'manga' | 'ranobe',
+  titleKey: number,
+  found: boolean,
+): Promise<void> {
+  await supabase
+    .from('source_link_attempts')
+    .upsert({ job, title_key: titleKey, found, attempted_at: new Date().toISOString() }, { onConflict: 'job,title_key' });
 }
 
 export async function GET(request: NextRequest) {
@@ -54,12 +74,20 @@ export async function GET(request: NextRequest) {
     const titlesDone =
       state && typeof state.titles_done === 'number' ? state.titles_done : 0;
 
-    const { data, error } = await supabase
-      .from('ranobe_index')
-      .select('title_id, dir, title, original_title, alternative_title, year')
-      .order('title_id', { ascending: true })
-      .gt('title_id', cursor)
-      .limit(BATCH_SIZE);
+    const alive = await fetchOpdsPage('/opds/new/0/new');
+    if (!alive) {
+      await supabase
+        .from('source_link_state')
+        .update({
+          last_run_finished_at: new Date().toISOString(),
+          last_error: 'Флибуста не отвечает — прогон пропущен',
+        })
+        .eq('job', 'ranobe');
+      console.log('[link-ranobe-flibusta] Флибуста не отвечает — прогон пропущен');
+      return NextResponse.json({ ok: true, skipped: 'flibusta-down' });
+    }
+
+    const { data, error } = await supabase.rpc('next_ranobe_link_batch', { lim: BATCH_SIZE });
 
     if (error) throw new Error(error.message);
 
@@ -92,12 +120,12 @@ export async function GET(request: NextRequest) {
 
       try {
         const matches = await ensureTitleSources(key, seed);
-        if (matches.some((match) => match.source === 'flibusta')) {
-          withFlibusta += 1;
-        } else {
-          withoutFlibusta += 1;
-        }
+        const found = matches.some((match) => match.source === 'flibusta');
+        if (found) withFlibusta += 1;
+        else withoutFlibusta += 1;
+        await recordAttempt(supabase, 'ranobe', key.titleKey, found);
       } catch {
+        // Сетевой сбой — попытку не записываем: тайтл вернётся в следующую порцию.
         withoutFlibusta += 1;
       }
     }
