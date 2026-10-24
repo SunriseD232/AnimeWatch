@@ -8,6 +8,8 @@ import { XMLParser } from 'fast-xml-parser';
 import { XML_ENTITY_OPTIONS } from '@/lib/xmlLimits';
 import { vlessDispatcher } from '@/lib/net/vlessProxy';
 import { readStoredBookFile } from '@/lib/bookDisk';
+import { cachedBookFormats, readCachedBookFile, writeCachedBookFile } from '@/lib/bookCache';
+import { fetchCoollibFile, findCoollibBook } from '@/lib/sources/coollib';
 import {
   DEFAULT_BOOK_FORMAT,
   type BookChapter,
@@ -559,6 +561,7 @@ export function fromIndexRow(row: Record<string, unknown>): BookSummary {
     year: row.year == null ? null : Number(row.year),
     sourceUrl: String(row.source_url ?? ''),
     coverUrl: (row.cover_url as string | null) ?? null,
+    offline: Array.isArray(row.local_formats) && row.local_formats.length > 0,
   };
 }
 
@@ -754,51 +757,182 @@ export function bookPageUrl(id: number): string {
   return `${MIRRORS[0]}/b/${id}`;
 }
 
-/**
- * Забирает файл книги у Флибусты. Используется роутом /api/books/[id]/file,
- * который решает, отдать EPUB как есть или распаковать/сконвертировать FB2.
- */
-export async function fetchBookFile(
-  id: number,
-  format: BookFormat,
-): Promise<{ body: ArrayBuffer; contentType: string } | null> {
-  // Сначала — копия на нашем диске (книги, сохранённые на сервере, миграция
-  // 0058): она отдаётся, даже когда Флибуста лежит. Проверять сигнатуру не
-  // нужно — на диск попадает только то, что уже прошло проверку ниже.
-  const stored = await readStoredBookFile(id, format);
-  if (stored) {
-    return {
-      body: stored,
-      contentType: format === 'epub' ? 'application/epub+zip' : 'application/octet-stream',
-    };
-  }
+/** Откуда пришёл файл книги — для честных подписей и логов. */
+export type BookFileSource = 'saved' | 'cache' | 'flibusta' | 'coollib';
 
-  const hit = await fetchFromMirrors(`/b/${id}/${format}`);
-  if (!hit) return null;
-  const body = await hit.res.arrayBuffer();
-
-  // Флибуста на несуществующую книгу отвечает не 404, а HTML-страницей с
-  // кодом 200. Прокси по content-type её пропустит, и epub.js получит мусор
-  // вместо архива с невнятной ошибкой. Проверяем сигнатуру до отдачи.
+/** Не файл книги (HTML-заглушка «нет книги» с кодом 200 и т. п.). */
+function looksLikeBook(body: ArrayBuffer, format: BookFormat): boolean {
   const bytes = new Uint8Array(body);
   const isZip =
     bytes.length > 4 &&
     bytes[0] === 0x50 && // P
     bytes[1] === 0x4b && // K
     (bytes[2] === 3 || bytes[2] === 5 || bytes[2] === 7);
-  const head = new TextDecoder().decode(bytes.subarray(0, 512)).trimStart();
-  const isXml = head.startsWith('<');
+  const isXml = new TextDecoder().decode(bytes.subarray(0, 512)).trimStart().startsWith('<');
+  return format === 'epub' ? isZip : isZip || isXml;
+}
 
-  if (format === 'epub' ? !isZip : !isZip && !isXml) {
-    console.warn(
-      `[books] ${id}.${format}: источник вернул не файл книги ` +
-        `(${hit.res.headers.get('content-type') ?? 'без типа'}, ${bytes.length} байт)`,
-    );
-    return null;
+// ─────────────────────────── Доступность Флибусты ───────────────────────────
+
+/** Сколько помнить ответ проверки: чаще раза в минуту Флибуста не оживает. */
+const PROBE_TTL_MS = 60_000;
+let probe: { at: number; up: boolean } | null = null;
+let probing: Promise<boolean> | null = null;
+
+/**
+ * Отвечает ли Флибуста — одна короткая проверка на оба зеркала сразу
+ * (6 с), ответ помним минуту. Нужна, чтобы при лежащей Флибусте не ждать
+ * минуту таймаутов на каждую книгу (fetchFromMirrors: 2 прохода × 2
+ * зеркала × 15 с) и сразу идти в запасной источник, и чтобы карточка книги
+ * честно сказала, что источник недоступен (24.10.2026 Флибуста лежала
+ * целиком: ни с VPS, ни через туннель, ни с домашнего компьютера).
+ */
+export async function isFlibustaUp(): Promise<boolean> {
+  if (probe && Date.now() - probe.at < PROBE_TTL_MS) return probe.up;
+  if (probing) return probing;
+  probing = (async () => {
+    const attempts = MIRRORS.map(async (base) => {
+      const res = await fetch(`${base}/opds`, {
+        headers: { 'User-Agent': USER_AGENT, Accept: 'application/atom+xml' },
+        signal: AbortSignal.timeout(6_000),
+        cache: 'no-store',
+        // @ts-expect-error -- dispatcher — опция undici, не входит в типы lib.dom fetch.
+        dispatcher: vlessDispatcher(),
+      });
+      await res.arrayBuffer().catch(() => undefined);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return true;
+    });
+    const up = await Promise.any(attempts).catch(() => false);
+    probe = { at: Date.now(), up };
+    return up;
+  })().finally(() => {
+    probing = null;
+  });
+  return probing;
+}
+
+// ─────────────────────────── Файл книги ───────────────────────────
+
+/** Неудачный поиск в КулЛибе повторяем не раньше чем через столько. */
+const COOLLIB_RECHECK_MS = 14 * 24 * 60 * 60 * 1000;
+
+interface CoollibState {
+  id: number | null;
+  formats: BookFormat[];
+  checkedAt: string | null;
+}
+
+/**
+ * Книга в КулЛибе: из каталога (book_index.coollib_*), а не проверяли или
+ * проверяли давно — поиском, с записью результата. null — нет.
+ */
+export async function coollibFor(bookId: number): Promise<CoollibState | null> {
+  const supabase = createServiceClient();
+  const { data: row } = await supabase
+    .from('book_index')
+    .select('title, author, coollib_id, coollib_formats, coollib_checked_at')
+    .eq('book_id', bookId)
+    .maybeSingle();
+  if (!row) return null;
+  const known: CoollibState = {
+    id: row.coollib_id == null ? null : Number(row.coollib_id),
+    formats: (row.coollib_formats ?? []) as BookFormat[],
+    checkedAt: (row.coollib_checked_at as string | null) ?? null,
+  };
+  const fresh = known.checkedAt && Date.now() - new Date(known.checkedAt).getTime() < COOLLIB_RECHECK_MS;
+  if (known.id != null || fresh) return known.id != null ? known : null;
+
+  const found = await findCoollibBook(String(row.title ?? ''), (row.author as string | null) ?? null);
+  // undefined — КулЛиб не ответил: ничего не записываем, спросим в другой раз.
+  if (found === undefined) return null;
+  const checkedAt = new Date().toISOString();
+  await supabase
+    .from('book_index')
+    .update({ coollib_id: found?.id ?? null, coollib_formats: found?.formats ?? [], coollib_checked_at: checkedAt })
+    .eq('book_id', bookId);
+  return found ? { id: found.id, formats: found.formats, checkedAt } : null;
+}
+
+/**
+ * Файл книги — из первого места, где он есть (24.10.2026):
+ *   1. сохранённый пользователем на сервере (lib/bookDisk.ts, миграция 0058);
+ *   2. кэш на диске (lib/bookCache.ts): всё, что уже открывали, и запас
+ *      популярного (крон prefetch-books);
+ *   3. Флибуста — если отвечает (isFlibustaUp), иначе её не ждём;
+ *   4. КулЛиб — запасной источник, поиск по названию и автору.
+ * Скачанное с Флибусты или КулЛиба кладём в кэш: в следующий сбой книга
+ * откроется. Используется роутом /api/books/[id]/file и кроном запаса.
+ */
+export async function fetchBookFile(
+  id: number,
+  format: BookFormat,
+  options: { skipFallback?: boolean } = {},
+): Promise<{ body: ArrayBuffer; contentType: string; source: BookFileSource } | null> {
+  const contentType = format === 'epub' ? 'application/epub+zip' : 'application/octet-stream';
+
+  const stored = await readStoredBookFile(id, format);
+  if (stored) return { body: stored, contentType, source: 'saved' };
+
+  const cached = await readCachedBookFile(id, format);
+  if (cached) return { body: cached, contentType, source: 'cache' };
+
+  if (await isFlibustaUp()) {
+    const hit = await fetchFromMirrors(`/b/${id}/${format}`);
+    if (hit) {
+      const body = await hit.res.arrayBuffer();
+      // Флибуста на несуществующую книгу отвечает не 404, а HTML-страницей с
+      // кодом 200 — проверяем сигнатуру до отдачи и до кэша.
+      if (looksLikeBook(body, format)) {
+        await writeCachedBookFile(id, format, body);
+        return { body, contentType: hit.res.headers.get('content-type') ?? contentType, source: 'flibusta' };
+      }
+      console.warn(`[books] ${id}.${format}: Флибуста вернула не файл книги (${body.byteLength} байт)`);
+    }
   }
 
-  return {
-    body,
-    contentType: hit.res.headers.get('content-type') ?? 'application/octet-stream',
-  };
+  if (options.skipFallback) return null;
+  const coollib = await coollibFor(id);
+  if (coollib?.id != null && coollib.formats.includes(format)) {
+    const body = await fetchCoollibFile(coollib.id, format);
+    if (body) {
+      await writeCachedBookFile(id, format, body);
+      return { body, contentType, source: 'coollib' };
+    }
+  }
+  return null;
+}
+
+// ─────────────────────────── Доступность книги ───────────────────────────
+
+export interface BookAvailability {
+  /** Откуда откроется: наш диск, Флибуста, КулЛиб или ниоткуда. */
+  source: 'local' | 'flibusta' | 'coollib' | 'none';
+  /** Каким форматом открывать: EPUB, а нет его — FB2 (читалка FB2). */
+  format: BookFormat | null;
+  flibustaUp: boolean;
+}
+
+/**
+ * Откроется ли книга прямо сейчас и откуда — для карточки (24.10.2026: при
+ * лежащей Флибусте «Читать» вела в читалку с ошибкой). КулЛиб ищем только
+ * когда Флибуста не отвечает и своей копии нет: поиск — запрос к чужому
+ * сайту, и на каждом открытии карточки он не нужен.
+ */
+export async function getBookAvailability(id: number, saved: boolean): Promise<BookAvailability> {
+  const [cachedFormats, flibustaUp] = await Promise.all([cachedBookFormats(id), isFlibustaUp()]);
+  const local = new Set<BookFormat>(cachedFormats);
+  if (saved) local.add('epub');
+  if (local.size > 0) {
+    return { source: 'local', format: local.has('epub') ? 'epub' : 'fb2', flibustaUp };
+  }
+  if (flibustaUp) return { source: 'flibusta', format: 'epub', flibustaUp };
+  const coollib = await coollibFor(id).catch(() => null);
+  if (coollib?.id != null && coollib.formats.length > 0) {
+    // FB2, даже если в каталоге КулЛиба указан EPUB: EPUB у них собирается
+    // не для всех книг, и ссылка отвечает 404 (проверено на «Мастере и
+    // Маргарите», 24.10.2026), а FB2 отдаётся всегда.
+    return { source: 'coollib', format: coollib.formats.includes('fb2') ? 'fb2' : 'epub', flibustaUp };
+  }
+  return { source: 'none', format: null, flibustaUp };
 }

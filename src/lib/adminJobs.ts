@@ -149,6 +149,13 @@ export const JOBS = {
     // До 8 сортировок по 1000 страниц Renovels (см. lib/ranobeIndex.ts).
     maxRunMs: 150 * 60 * 1000,
   },
+  'prefetch-books': {
+    label: 'Запас популярных книг на диске',
+    duration: 'до ~25 минут',
+    // Своей строки состояния нет: итог — в ответе и в логе крона.
+    state: null,
+    maxRunMs: 30 * 60 * 1000,
+  },
   'reindex-audiobooks': {
     label: 'Новинки аудиокниг',
     duration: '~1 минута',

@@ -57,6 +57,9 @@ export interface BookSummary {
    * ресайзить по `?w=`. null — карточка покажет заглушку с первой буквой.
    */
   coverUrl: string | null;
+  /** Файл лежит на нашем сервере (кэш, миграция 0067): откроется, даже если
+   *  Флибуста недоступна. undefined — неизвестно (живой поиск OPDS). */
+  offline?: boolean;
 }
 
 export interface BookDetails extends BookSummary {

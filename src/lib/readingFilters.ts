@@ -29,6 +29,8 @@ export const READING_PARAM = {
   chaptersTo: 'chapters_to',
   hoursFrom: 'hours_from',
   hoursTo: 'hours_to',
+  availability: 'avail',
+  availabilityExclude: 'avail_ex',
 } as const;
 
 /**
@@ -179,6 +181,19 @@ export const READING_FILTER_CONFIG: Record<ReadingKind, CatalogFilterConfig> = {
         layout: 'list',
         names: true,
         searchable: true,
+      },
+      {
+        // Откроется ли без Флибусты (24.10.2026, миграция 0067): своя копия
+        // на сервере или находка в запасной библиотеке.
+        key: 'availability',
+        title: 'Наличие',
+        param: READING_PARAM.availability,
+        paramExclude: READING_PARAM.availabilityExclude,
+        layout: 'checkboxes',
+        options: [
+          { value: 'local', label: 'Сохранены у нас' },
+          { value: 'coollib', label: 'Есть в КулЛибе' },
+        ],
       },
     ],
     ranges: [YEAR_RANGE],

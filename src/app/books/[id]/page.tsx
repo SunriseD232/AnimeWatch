@@ -5,7 +5,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import PosterImage from '@/components/PosterImage';
 import { BOOK_FORMAT_LABEL } from '@/lib/bookShared';
-import { getBookById } from '@/lib/books';
+import { getBookAvailability, getBookById } from '@/lib/books';
 import { getAudiobooksForBook } from '@/lib/audiobooks';
 import AudiobookCard from '@/components/audiobooks/AudiobookCard';
 import { listSavedBooks } from '@/lib/bookStorage';
@@ -78,6 +78,12 @@ export default async function BookPage({ params }: { params: { id: string } }) {
     savedCount = allSaved.length;
   }
 
+  // Откуда откроется книга (24.10.2026): своя копия, Флибуста, КулЛиб — или
+  // ниоткуда. При лежащей Флибусте «Читать» больше не ведёт в читалку с ошибкой.
+  const availability = await getBookAvailability(id, isSaved);
+  const readHref =
+    availability.format === 'fb2' ? `/books/read/${book.id}/fb2` : `/books/read/${book.id}`;
+
   const percent =
     progress?.progress_percent != null
       ? Math.round(Math.max(0, Math.min(1, progress.progress_percent)) * 100)
@@ -141,18 +147,39 @@ export default async function BookPage({ params }: { params: { id: string } }) {
             </div>
           ) : null}
 
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <Link
-              href={`/books/read/${book.id}`}
-              prefetch={false}
-              className="press rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-accent-fg"
-            >
-              {percent != null && percent > 0
-                ? `Продолжить · ${percent}%`
-                : 'Читать'}
-            </Link>
+          {availability.source === 'none' ? (
+            <div role="status" className="rounded-2xl bg-amber-500/10 p-3 text-sm text-amber-100 ring-1 ring-inset ring-amber-400/30">
+              Флибуста сейчас не отвечает, а копии этой книги нет ни у нас, ни в запасной библиотеке
+              (КулЛиб). Обычно Флибуста возвращается в течение нескольких часов — попробуйте позже.
+              {narrations.length > 0 ? ' А пока книгу можно послушать — озвучки ниже.' : ''}
+            </div>
+          ) : availability.source !== 'flibusta' ? (
+            <p className="text-xs text-gray-400">
+              {availability.source === 'local'
+                ? 'Книга сохранена на нашем сервере — откроется, даже если Флибуста недоступна.'
+                : 'Флибуста сейчас не отвечает — книга откроется из запасной библиотеки (КулЛиб).'}
+            </p>
+          ) : null}
 
-            {book.formats.includes('fb2') ? (
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            {availability.source !== 'none' ? (
+              <Link
+                href={readHref}
+                prefetch={false}
+                className="press rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-accent-fg"
+              >
+                {percent != null && percent > 0 ? `Продолжить · ${percent}%` : 'Читать'}
+              </Link>
+            ) : (
+              <span
+                aria-disabled="true"
+                className="rounded-full bg-bg-soft px-5 py-2.5 text-sm font-semibold text-gray-500 ring-1 ring-white/10"
+              >
+                Читать — недоступно
+              </span>
+            )}
+
+            {availability.source !== 'none' && availability.format === 'epub' && book.formats.includes('fb2') ? (
               <Link
                 href={`/books/read/${book.id}/fb2`}
                 prefetch={false}

@@ -58,6 +58,12 @@ export default function BookCard({
 
           {/* Формат — мелким бейджем поверх обложки: человеку важно знать до
               клика, откроется ли книга в читателе. */}
+          {/* Есть у нас на сервере — откроется и при лежащей Флибусте. */}
+          {book.offline ? (
+            <span className="absolute right-2 top-2 rounded-full bg-emerald-600/90 px-2 py-0.5 text-[10px] font-semibold text-white">
+              На сервере
+            </span>
+          ) : null}
           {book.formats.length > 0 ? (
             <span className="absolute bottom-2 left-2 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-200">
               {BOOK_FORMAT_LABEL[book.formats.includes('epub') ? 'epub' : 'fb2']}

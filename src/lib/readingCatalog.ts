@@ -137,6 +137,16 @@ async function queryCatalog(
     if (kind !== 'audiobooks') {
       q = applyRange(q, 'year', filters.range.yearFrom ?? null, filters.range.yearTo ?? null);
     }
+    if (kind === 'books') {
+      // «Наличие»: включить — хотя бы одно из выбранного (своя копия ИЛИ
+      // КулЛиб); исключить — ни одного.
+      const avail = triValues(filters, 'availability');
+      const cond = (v: string) => (v === 'local' ? 'local_formats.neq.{}' : 'coollib_id.not.is.null');
+      if (avail.include.length > 0) q = q.or(avail.include.map(cond).join(','));
+      for (const v of avail.exclude) {
+        q = v === 'local' ? q.eq('local_formats', '{}') : q.is('coollib_id', null);
+      }
+    }
 
     if (kind === 'audiobooks') {
       // Часы в адресе, секунды в базе; «до 5 часов» включает 5 ч 59 мин.
