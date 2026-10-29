@@ -35,9 +35,22 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const OPENROUTER_TIMEOUT_MS = 60_000;
 const OPENROUTER_CONCURRENCY = 3;
 
-const CANDIDATE_LIMIT = 50;
+// 80, а не 50: пул теперь делится на квоты по странам, и при 50 на каждую
+// страну оставалось слишком мало, чтобы модели было из чего выбирать.
+const CANDIDATE_LIMIT = 80;
 const RECOMMENDATION_LIMIT = 12;
 const WATCHED_ID_CAP = 300;
+/** Страна получает свою квоту в пуле, если на неё приходится хотя бы такая
+ *  доля истории; больше COUNTRY_MAX стран не делим — квоты станут крошечными. */
+const COUNTRY_MIN_SHARE = 0.15;
+const COUNTRY_MAX = 3;
+/** Типы («Сериалы», «Мультфильмы»…) — не вкус, а формат: тип, который занимает
+ *  не меньше TYPE_REQUIRE_SHARE истории, обязателен для кандидатов, тип реже
+ *  TYPE_EXCLUDE_SHARE — исключён. Иначе, выкинув типы из жанров, в пул
+ *  человеку, который смотрит почти одни сериалы, полезли фильмы и детские
+ *  мультики («Маша и медведь», «Лунтик» — проверено на живом пользователе). */
+const TYPE_REQUIRE_SHARE = 0.7;
+const TYPE_EXCLUDE_SHARE = 0.15;
 
 const KITSU_URL = 'https://kitsu.io/api/edge/mappings';
 const KITSU_IDS_PER_REQUEST = 20;
@@ -95,9 +108,64 @@ async function getActiveUserIds(supabase: SupabaseService): Promise<string[]> {
   return [...ids];
 }
 
+/** Справочники раздела: имена жанров и стран для промпта и id жанров-«типов».
+ *  В cinema_genres рядом с жанрами лежат типы (kind='type': «Сериалы»,
+ *  «Мультфильмы»…). В профиль вкуса их пускать нельзя: «Сериалы» у любого,
+ *  кто смотрит сериалы, оказывается жанром №1, а overlaps по нему пропускает
+ *  в пул вообще любой популярный сериал — так подборка и выродилась в
+ *  американские процедуралы по общей популярности. */
+interface Dictionaries {
+  genreNames: Map<number, string>;
+  typeGenreIds: Set<number>;
+  countryNames: Map<number, string>;
+}
+
+const GENRE_TABLE: Record<CatalogType, string> = { anime: 'anime_genres', cinema: 'cinema_genres' };
+
+async function getDictionaries(
+  supabase: SupabaseService,
+  contentType: CatalogType,
+): Promise<Dictionaries> {
+  const [{ data: genres, error: genresError }, countries] = await Promise.all([
+    supabase.from(GENRE_TABLE[contentType]).select('*'),
+    contentType === 'cinema'
+      ? supabase.from('cinema_countries').select('id, name')
+      : Promise.resolve({ data: [] as { id: number; name: string }[], error: null }),
+  ]);
+  if (genresError) {
+    console.error(`[recommendationsEngine] справочник жанров ${contentType} не прочитался:`, genresError.message);
+  }
+
+  const genreNames = new Map<number, string>();
+  const typeGenreIds = new Set<number>();
+  for (const g of (genres ?? []) as { id: number; name: string; russian?: string | null; kind?: string }[]) {
+    genreNames.set(g.id, g.russian || g.name);
+    if (g.kind === 'type') typeGenreIds.add(g.id);
+  }
+
+  const countryNames = new Map<number, string>();
+  for (const c of (countries.data ?? []) as { id: number; name: string }[]) countryNames.set(c.id, c.name);
+
+  return { genreNames, typeGenreIds, countryNames };
+}
+
+/** Строка истории для промпта: модель должна видеть не только «что», но и
+ *  «как»: досмотренное и брошенное после первой серии — противоположные
+ *  сигналы, а раньше оба приходили ей одинаковым названием в общем списке. */
+interface HistoryEntry {
+  title: string;
+  status: string;
+  at: string;
+}
+
+interface CountryQuota {
+  id: number;
+  share: number;
+}
+
 interface UserHistory {
   /** Что человек уже так или иначе трогал — по этим тайтлам считаем его
-   *  вкус (жанры) и по ним же не повторяемся в промпте. */
+   *  вкус (жанры, страны). */
   watchedIds: number[];
   /**
    * Что НЕЛЬЗЯ предлагать: посмотрел, смотрит, пересматривает, бросил или
@@ -107,36 +175,104 @@ interface UserHistory {
    */
   excludedIds: number[];
   genreIds: number[];
-  watchedTitles: string[];
+  /** Доли стран в истории (только кино: у anime_index стран нет). По ним
+   *  пул кандидатов делится на квоты, иначе общая популярность вытесняет
+   *  всё неамериканское — у человека с половиной русских сериалов в истории
+   *  в пуле из 50 не было ни одного русского. */
+  countryQuotas: CountryQuota[];
+  /** Обязательные и запрещённые типы (см. TYPE_REQUIRE_SHARE). */
+  requiredTypeIds: number[];
+  excludedTypeIds: number[];
+  entries: HistoryEntry[];
 }
 
-/** История одного пользователя по одному разделу: что смотрел/запланировал
- *  (для исключения из кандидатов) и какие жанры смотрел чаще всего (для
- *  смещения пула кандидатов в сторону его вкуса). */
+const LIST_STATUS_LABEL: Record<string, string> = {
+  completed: 'посмотрел',
+  watching: 'смотрит',
+  rewatching: 'пересматривает',
+  planned: 'хочет посмотреть',
+  dropped: 'бросил',
+  on_hold: 'отложил',
+};
+
+/** Сколько человек реально посмотрел по watch_progress — словами для модели. */
+function describeProgress(p: {
+  season: number | null;
+  episode: number | null;
+  position_seconds: number | null;
+  duration_seconds: number | null;
+}): string {
+  const episode = p.episode ?? 1;
+  const season = p.season ?? 1;
+  if (season > 1 || episode > 1) {
+    return `дошёл до ${season > 1 ? `${season} сезона, ` : ''}${episode} серии`;
+  }
+  if (p.duration_seconds && p.position_seconds) {
+    const pct = Math.round((p.position_seconds / p.duration_seconds) * 100);
+    if (pct >= 90) return 'досмотрел';
+    return `посмотрел ${pct}% первой серии/фильма`;
+  }
+  return 'только открыл первую серию/фильм';
+}
+
+/** История одного пользователя по одному разделу: что исключить из
+ *  кандидатов, какие жанры и страны он смотрит, и полный список со
+ *  статусами для промпта. */
 async function getUserHistory(
   supabase: SupabaseService,
   userId: string,
   contentType: CatalogType,
+  dicts: Dictionaries,
 ): Promise<UserHistory> {
   const [{ data: wp }, { data: ul }] = await Promise.all([
     supabase
       .from('watch_progress')
-      .select('shikimori_id, anime_title')
+      .select('shikimori_id, anime_title, season, episode, position_seconds, duration_seconds, updated_at')
       .eq('user_id', userId)
       .eq('content_type', contentType),
     supabase
       .from('user_list')
-      .select('shikimori_id, anime_title, status')
+      .select('shikimori_id, anime_title, status, created_at')
       .eq('user_id', userId)
       .eq('content_type', contentType),
   ]);
 
-  const progressRows = (wp ?? []) as { shikimori_id: number; anime_title: string }[];
-  const listRows = (ul ?? []) as { shikimori_id: number; anime_title: string; status: string }[];
+  const progressRows = (wp ?? []) as {
+    shikimori_id: number;
+    anime_title: string;
+    season: number | null;
+    episode: number | null;
+    position_seconds: number | null;
+    duration_seconds: number | null;
+    updated_at: string;
+  }[];
+  const listRows = (ul ?? []) as { shikimori_id: number; anime_title: string; status: string; created_at: string }[];
 
-  const rows = [...progressRows, ...listRows];
-  const watchedIds = [...new Set(rows.map((r) => r.shikimori_id))].slice(0, WATCHED_ID_CAP);
-  const watchedTitles = [...new Set(rows.map((r) => r.anime_title).filter(Boolean))].slice(0, 40);
+  // Один тайтл — одна строка: статус из списка (его поставил сам человек) +
+  // фактический прогресс, если он есть. Свежее — первым, чтобы при обрезке
+  // по WATCHED_ID_CAP терялось старое, а не случайное (раньше порядок был
+  // произвольным порядком выдачи базы, и 5 из 45 названий у живого
+  // пользователя просто не доходили до модели).
+  const byId = new Map<number, HistoryEntry>();
+  for (const p of progressRows) {
+    byId.set(p.shikimori_id, { title: p.anime_title, status: describeProgress(p), at: p.updated_at });
+  }
+  for (const l of listRows) {
+    const label = LIST_STATUS_LABEL[l.status] ?? l.status;
+    const prev = byId.get(l.shikimori_id);
+    byId.set(l.shikimori_id, {
+      title: l.anime_title || prev?.title || '',
+      status: prev ? `${label}; ${prev.status}` : label,
+      at: prev && prev.at > l.created_at ? prev.at : l.created_at,
+    });
+  }
+
+  const sorted = [...byId.entries()]
+    .filter(([, e]) => e.title)
+    .sort((a, b) => (a[1].at < b[1].at ? 1 : -1))
+    .slice(0, WATCHED_ID_CAP);
+  const watchedIds = sorted.map(([id]) => id);
+  const entries = sorted.map(([, e]) => e);
 
   // Запланированное не исключаем: человек сам сказал, что хочет это
   // посмотреть, — значит оно уместно и в подборке. Убираем только то, что он
@@ -149,77 +285,172 @@ async function getUserHistory(
     ]),
   ].slice(0, WATCHED_ID_CAP);
 
-  if (watchedIds.length === 0) {
-    return { watchedIds: [], excludedIds: [], genreIds: [], watchedTitles: [] };
-  }
+  const empty = {
+    watchedIds,
+    excludedIds,
+    genreIds: [],
+    countryQuotas: [],
+    requiredTypeIds: [],
+    excludedTypeIds: [],
+    entries,
+  };
+  if (watchedIds.length === 0) return empty;
 
   const batchId = await getActiveBatchId(supabase, contentType);
-  if (!batchId) return { watchedIds, excludedIds, genreIds: [], watchedTitles };
+  if (!batchId) return empty;
 
-  const { data: rowsWithGenres } = await supabase
+  const { data: rowsWithTags } = await supabase
     .from(TABLE[contentType])
-    .select('genre_ids')
+    .select(contentType === 'cinema' ? 'genre_ids, country_ids' : 'genre_ids')
     .eq('batch_id', batchId)
     .in(ID_COLUMN[contentType], watchedIds);
 
+  const tagged = (rowsWithTags ?? []) as unknown as { genre_ids: number[] | null; country_ids?: number[] | null }[];
+
   const genreCount = new Map<number, number>();
-  for (const r of rowsWithGenres ?? []) {
-    for (const g of (r as { genre_ids: number[] | null }).genre_ids ?? []) {
+  const countryCount = new Map<number, number>();
+  const typeCount = new Map<number, number>();
+  for (const r of tagged) {
+    for (const g of r.genre_ids ?? []) {
+      if (dicts.typeGenreIds.has(g)) {
+        typeCount.set(g, (typeCount.get(g) ?? 0) + 1);
+        continue;
+      }
       genreCount.set(g, (genreCount.get(g) ?? 0) + 1);
     }
+    for (const c of r.country_ids ?? []) countryCount.set(c, (countryCount.get(c) ?? 0) + 1);
   }
   const genreIds = [...genreCount.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8)
     .map(([id]) => id);
 
-  return { watchedIds, excludedIds, genreIds, watchedTitles };
+  const countryQuotas = tagged.length === 0
+    ? []
+    : [...countryCount.entries()]
+        .map(([id, n]) => ({ id, share: n / tagged.length }))
+        .filter((c) => c.share >= COUNTRY_MIN_SHARE)
+        .sort((a, b) => b.share - a.share)
+        .slice(0, COUNTRY_MAX);
+
+  const typeShare = (id: number) => (tagged.length === 0 ? 0 : (typeCount.get(id) ?? 0) / tagged.length);
+  const typeIds = tagged.length === 0 ? [] : [...dicts.typeGenreIds];
+  const requiredTypeIds = typeIds.filter((id) => typeShare(id) >= TYPE_REQUIRE_SHARE);
+  const excludedTypeIds = typeIds.filter((id) => typeShare(id) < TYPE_EXCLUDE_SHARE);
+
+  return { watchedIds, excludedIds, genreIds, countryQuotas, requiredTypeIds, excludedTypeIds, entries };
 }
 
 interface Candidate {
   id: number;
   title: string;
+  year: number | null;
+  genreIds: number[];
+  countryIds: number[];
 }
 
-/** Пул кандидатов: по вкусу (пересечение жанров), без просмотренного и
- *  начатого, топ по популярности — НЕ весь каталог, только то, что реально
- *  пойдёт в промпт модели. Запланированное остаётся в пуле: см. excludedIds
- *  в UserHistory. */
-async function getCandidatePool(
+const YEAR_COLUMN: Record<CatalogType, string> = { anime: 'aired_year', cinema: 'year' };
+
+/** Один запрос пула: жанры (overlaps), опционально одна страна, без
+ *  исключённого и уже набранного, по популярности. */
+async function queryPool(
   supabase: SupabaseService,
   contentType: CatalogType,
-  excludedIds: number[],
-  genreIds: number[],
+  batchId: string,
+  opts: {
+    skipIds: number[];
+    genreIds: number[];
+    requiredTypeIds: number[];
+    excludedTypeIds: number[];
+    countryId?: number;
+    limit: number;
+  },
 ): Promise<Candidate[]> {
-  const batchId = await getActiveBatchId(supabase, contentType);
-  if (!batchId) return [];
-
+  if (opts.limit <= 0) return [];
   const idCol = ID_COLUMN[contentType];
   const titleCol = TITLE_COLUMN[contentType];
+  const yearCol = YEAR_COLUMN[contentType];
+  const cols = `${idCol}, ${titleCol}, ${yearCol}, genre_ids${contentType === 'cinema' ? ', country_ids' : ''}`;
 
-  let query = supabase
-    .from(TABLE[contentType])
-    .select(`${idCol}, ${titleCol}`)
-    .eq('batch_id', batchId);
+  let query = supabase.from(TABLE[contentType]).select(cols).eq('batch_id', batchId);
 
-  if (genreIds.length > 0) query = query.overlaps('genre_ids', genreIds);
-  if (excludedIds.length > 0) query = query.not(idCol, 'in', `(${excludedIds.join(',')})`);
+  if (opts.genreIds.length > 0) query = query.overlaps('genre_ids', opts.genreIds);
+  if (opts.requiredTypeIds.length > 0) query = query.contains('genre_ids', opts.requiredTypeIds);
+  if (opts.excludedTypeIds.length > 0) {
+    query = query.not('genre_ids', 'ov', `{${opts.excludedTypeIds.join(',')}}`);
+  }
+  if (opts.countryId !== undefined) query = query.contains('country_ids', [opts.countryId]);
+  if (opts.skipIds.length > 0) query = query.not(idCol, 'in', `(${opts.skipIds.join(',')})`);
 
   query =
     contentType === 'anime'
       ? query.order('popularity_rank', { ascending: true, nullsFirst: false })
       : query.order('popularity', { ascending: false, nullsFirst: false });
 
-  const { data, error } = await query.limit(CANDIDATE_LIMIT);
+  const { data, error } = await query.limit(opts.limit);
   if (error) {
     console.error(`[recommendationsEngine] пул кандидатов ${contentType} не прочитался:`, error.message);
     return [];
   }
-  if (!data) return [];
 
-  return (data as unknown as Record<string, unknown>[])
-    .map((r) => ({ id: Number(r[idCol]), title: (r[titleCol] as string | null) ?? '' }))
+  return ((data ?? []) as unknown as Record<string, unknown>[])
+    .map((r) => ({
+      id: Number(r[idCol]),
+      title: (r[titleCol] as string | null) ?? '',
+      year: (r[yearCol] as number | null) ?? null,
+      genreIds: (r.genre_ids as number[] | null) ?? [],
+      countryIds: (r.country_ids as number[] | null) ?? [],
+    }))
     .filter((c) => Number.isFinite(c.id) && c.title !== '');
+}
+
+/** Пул кандидатов: по вкусу (пересечение жанров), без просмотренного и
+ *  начатого — НЕ весь каталог, только то, что реально пойдёт в промпт
+ *  модели. Если в истории заметны страны, пул делится на квоты по их долям
+ *  (остаток — из любых стран), чтобы общая популярность не вытесняла,
+ *  например, все русские сериалы. Запланированное остаётся в пуле: см.
+ *  excludedIds в UserHistory. history=null — общий популярный пул. */
+async function getCandidatePool(
+  supabase: SupabaseService,
+  contentType: CatalogType,
+  history: UserHistory | null,
+): Promise<Candidate[]> {
+  const batchId = await getActiveBatchId(supabase, contentType);
+  if (!batchId) return [];
+
+  const excludedIds = history?.excludedIds ?? [];
+  const genreIds = history?.genreIds ?? [];
+  const quotas = history?.countryQuotas ?? [];
+  const requiredTypeIds = history?.requiredTypeIds ?? [];
+  const excludedTypeIds = history?.excludedTypeIds ?? [];
+
+  // Тайтл бывает сразу нескольких стран, поэтому сумма долей может быть
+  // больше 1 — сжимаем так, чтобы хотя бы десятая часть пула оставалась
+  // «любой страны»: иначе человек не увидит ничего за пределами привычного.
+  const shareSum = quotas.reduce((s, q) => s + q.share, 0);
+  const scale = shareSum > 0.9 ? 0.9 / shareSum : 1;
+
+  const picked: Candidate[] = [];
+  for (const q of quotas) {
+    const part = await queryPool(supabase, contentType, batchId, {
+      skipIds: [...excludedIds, ...picked.map((c) => c.id)],
+      genreIds,
+      requiredTypeIds,
+      excludedTypeIds,
+      countryId: q.id,
+      limit: Math.floor(CANDIDATE_LIMIT * q.share * scale),
+    });
+    picked.push(...part);
+  }
+
+  const rest = await queryPool(supabase, contentType, batchId, {
+    skipIds: [...excludedIds, ...picked.map((c) => c.id)],
+    genreIds,
+    requiredTypeIds,
+    excludedTypeIds,
+    limit: CANDIDATE_LIMIT - picked.length,
+  });
+  return [...picked, ...rest];
 }
 
 /** Топ по популярности всего раздела — фоллбэк, когда у пользователя нет
@@ -229,7 +460,7 @@ async function getPopularPool(
   contentType: CatalogType,
   limit: number,
 ): Promise<Candidate[]> {
-  return getCandidatePool(supabase, contentType, [], []).then((all) => all.slice(0, limit));
+  return getCandidatePool(supabase, contentType, null).then((all) => all.slice(0, limit));
 }
 
 interface RecommendedItem {
@@ -237,14 +468,37 @@ interface RecommendedItem {
   reason: string | null;
 }
 
+/** «id: Название (2026; Россия; драма, комедия)» — год, страна и жанры
+ *  нужны модели для новинок: про сериал 2026 года она по одному названию
+ *  ничего не знает и раньше сочиняла причину наугад («мрачный нуар» у
+ *  «Тайн Смолвиля», «криминальные детективы» у «Теда Лассо»). */
+function describeCandidate(c: Candidate, dicts: Dictionaries): string {
+  const meta = [
+    c.year ? String(c.year) : null,
+    c.countryIds.map((id) => dicts.countryNames.get(id)).filter(Boolean).slice(0, 2).join(', ') || null,
+    c.genreIds
+      .filter((id) => !dicts.typeGenreIds.has(id))
+      .map((id) => dicts.genreNames.get(id)?.toLowerCase())
+      .filter(Boolean)
+      .slice(0, 4)
+      .join(', ') || null,
+  ].filter(Boolean);
+  return `${c.id}: ${c.title}${meta.length > 0 ? ` (${meta.join('; ')})` : ''}`;
+}
+
 /**
  * Один вызов OpenRouter: строгий JSON со списком id из пула кандидатов.
  * Халлюцинированные id (не из пула) отбрасываются — модель это уже
  * подводило на других проектах, доверять её id вслепую нельзя.
+ *
+ * Выбирает модель только из пула, а не «что угодно из головы»: её знания
+ * обрываются на дате обучения (новинок каталога она не знает), а
+ * придуманный ею тайтл может просто отсутствовать в нашем каталоге.
  */
 async function requestRecommendations(
-  watchedTitles: string[],
+  entries: HistoryEntry[],
   candidates: Candidate[],
+  dicts: Dictionaries,
 ): Promise<RecommendedItem[]> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   // Молчаливый выход здесь раньше маскировал отсутствие ключа: крон отдавал
@@ -257,17 +511,27 @@ async function requestRecommendations(
   if (candidates.length === 0) return [];
 
   const historyLine =
-    watchedTitles.length > 0
-      ? `Пользователь смотрел: ${watchedTitles.join(', ')}.`
+    entries.length > 0
+      ? 'История пользователя (свежее — выше; «посмотрел/смотрит/дошёл до N серии» — сильный ' +
+        'интерес, «только открыл» — слабый сигнал, могло не понравиться, «бросил» — не понравилось, ' +
+        '«хочет посмотреть» — интерес без просмотра):\n' +
+        entries.map((e) => `- ${e.title} — ${e.status}`).join('\n')
       : 'У пользователя пока нет истории просмотра — просто выбери самое достойное из списка.';
 
-  const candidateLines = candidates.map((c) => `${c.id}: ${c.title}`).join('\n');
+  const candidateLines = candidates.map((c) => describeCandidate(c, dicts)).join('\n');
 
   const prompt =
     `${historyLine}\n\n` +
-    `Кандидаты (id: название):\n${candidateLines}\n\n` +
+    `Кандидаты (id: название (год; страна; жанры)):\n${candidateLines}\n\n` +
     `Выбери до ${RECOMMENDATION_LIMIT} тайтлов, которые стоит посмотреть дальше, ` +
     'в порядке убывания уверенности (лучший — первым). ' +
+    'Учитывай, из каких стран пользователь смотрит, и держи похожую пропорцию. ' +
+    // Каталог помечает часть детских мультсериалов («Маша и медведь»,
+    // «Смешарики») просто как сериал-комедию без признака анимации — по
+    // данным их из пула не отсечь, отсекает модель, которая их знает.
+    'Не предлагай детские мультфильмы и мультсериалы, если в истории нет детского. ' +
+    'Часть кандидатов — новинки, которых ты можешь не знать: суди о них по году, стране и жанрам ' +
+    'и не придумывай им сюжет; причина должна опираться на эти данные или на то, что ты точно знаешь. ' +
     'Используй ТОЛЬКО id из списка кандидатов, ничего не придумывай. ' +
     'Ответь строго JSON без пояснений и без markdown-разметки: ' +
     '{"items":[{"id":number,"reason":"краткая причина на русском, не длиннее 12 слов"}]}';
@@ -493,17 +757,16 @@ export async function refreshRecommendations(): Promise<RefreshRecommendationsRe
   const rankedByUser = new Map<string, Record<CatalogType, number[]>>();
 
   for (const contentType of ['anime', 'cinema'] as CatalogType[]) {
+    const dicts = await getDictionaries(supabase, contentType);
     const popularPool = await getPopularPool(supabase, contentType, RECOMMENDATION_LIMIT);
 
     await mapWithConcurrency(userIds, OPENROUTER_CONCURRENCY, async (userId) => {
-      const history = await getUserHistory(supabase, userId, contentType);
+      const history = await getUserHistory(supabase, userId, contentType, dicts);
       const candidates =
-        history.watchedIds.length > 0
-          ? await getCandidatePool(supabase, contentType, history.excludedIds, history.genreIds)
-          : popularPool;
+        history.watchedIds.length > 0 ? await getCandidatePool(supabase, contentType, history) : popularPool;
 
       const pool = candidates.length > 0 ? candidates : popularPool;
-      const items = await requestRecommendations(history.watchedTitles, pool);
+      const items = await requestRecommendations(history.entries, pool, dicts);
       const finalItems = items.length > 0 ? items : [];
 
       await replaceRecommendations(supabase, userId, contentType, finalItems);
