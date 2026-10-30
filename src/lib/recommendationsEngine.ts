@@ -3,6 +3,11 @@ import { mapWithConcurrency } from '@/lib/concurrency';
 import { cacheBackdrops, type BackdropCandidate } from '@/lib/backdropCache';
 import type { BackdropKind } from '@/lib/backdropPath';
 import { vlessDispatcher } from '@/lib/net/vlessProxy';
+import {
+  checkOpenRouterBalance,
+  fetchOpenRouterBalance,
+  notifyAdminsAboutOpenRouter,
+} from '@/lib/openrouterBalance';
 import type { CatalogType } from '@/lib/types';
 
 /** Рекомендации строятся только по каталогам аниме и кино: у подкастов нет
@@ -499,6 +504,9 @@ async function requestRecommendations(
   entries: HistoryEntry[],
   candidates: Candidate[],
   dicts: Dictionaries,
+  /** Вызывается на HTTP 402 — кончились кредиты OpenRouter (см.
+   *  lib/openrouterBalance.ts). */
+  onPaymentRequired: () => void,
 ): Promise<RecommendedItem[]> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   // Молчаливый выход здесь раньше маскировал отсутствие ключа: крон отдавал
@@ -564,6 +572,7 @@ async function requestRecommendations(
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       console.error(`[recommendationsEngine] OpenRouter HTTP ${res.status}: ${body.slice(0, 500)}`);
+      if (res.status === 402) onPaymentRequired();
       return [];
     }
 
@@ -733,6 +742,10 @@ async function fetchCinemaBackdropUrls(
 export interface RefreshRecommendationsResult {
   usersProcessed: number;
   recommendationsWritten: number;
+  /** Остаток кредитов OpenRouter в начале прогона (null — не узнали) и был
+   *  ли хоть один отказ в оплате — чтобы по логу крона было видно причину
+   *  пустых подборок. */
+  openrouter: { remaining: number | null; paymentRequired: boolean };
   backdrops: { attempted: number; stored: number; missed: number; failed: number; errors: string[] };
 }
 
@@ -748,6 +761,8 @@ export interface RefreshRecommendationsResult {
 export async function refreshRecommendations(): Promise<RefreshRecommendationsResult> {
   const supabase = createServiceClient();
   const userIds = await getActiveUserIds(supabase);
+  const balance = await checkOpenRouterBalance();
+  let paymentRequired = false;
 
   let recommendationsWritten = 0;
   // Полный ранжированный список каждого пользователя (или популярный
@@ -766,7 +781,9 @@ export async function refreshRecommendations(): Promise<RefreshRecommendationsRe
         history.watchedIds.length > 0 ? await getCandidatePool(supabase, contentType, history) : popularPool;
 
       const pool = candidates.length > 0 ? candidates : popularPool;
-      const items = await requestRecommendations(history.entries, pool, dicts);
+      const items = await requestRecommendations(history.entries, pool, dicts, () => {
+        paymentRequired = true;
+      });
       const finalItems = items.length > 0 ? items : [];
 
       await replaceRecommendations(supabase, userId, contentType, finalItems);
@@ -814,9 +831,15 @@ export async function refreshRecommendations(): Promise<RefreshRecommendationsRe
 
   const cacheResult = await cacheBackdrops(backdropCandidates);
 
+  // Кредиты могли кончиться посреди прогона, когда проверка в начале ещё
+  // видела остаток, — баланс перечитываем, чтобы в уведомлении была
+  // свежая цифра и верный дедуп-ключ.
+  if (paymentRequired) await notifyAdminsAboutOpenRouter('empty', await fetchOpenRouterBalance());
+
   return {
     usersProcessed: userIds.length,
     recommendationsWritten,
+    openrouter: { remaining: balance?.remaining ?? null, paymentRequired },
     backdrops: {
       attempted: cacheResult.attempted,
       stored: cacheResult.stored,
